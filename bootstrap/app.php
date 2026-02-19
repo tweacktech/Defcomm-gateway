@@ -24,10 +24,9 @@ return Application::configure(basePath: dirname(__DIR__))
             AddLinkHeadersForPreloadedAssets::class,
         ]);
 
-        $middleware->api(append: [
-            ClientCredentialsMiddleware::class,
-        ]);
+        // $middleware->api(append: [
+        //     ClientCredentialsMiddleware::class,
+        // ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
-        //
     })->create();

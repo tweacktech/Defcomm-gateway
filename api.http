@@ -1,0 +1,19 @@
+GET url HTTP/1.1
+get(url: 'http://127.0.0.1:8000/api/run-python')
+
+###
+POST url HTTP/1.1
+post(
+  url: 'http://127.0.0.1:8000/api/run-python',
+  headers: {
+    'Authorization': 'Bearer your_access_token',
+    'Content-Type': 'application/json'
+  }
+),
+  body: {
+    "code": "print('Hello, World!')"
+  }
+)
+
+###
+

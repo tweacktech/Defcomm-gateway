@@ -8,19 +8,19 @@ from deep_translator import GoogleTranslator
 def translate_text(source_lang=None, target_lang=None, text_to_translate=None,speech=True):
     """
     Translate text between languages using Google Translator
-    
+
     Args:
         source_lang (str): Source language
-        target_lang (str): Target language  
+        target_lang (str): Target language
         text_to_translate (str): Text to translate
-    
+
     Returns:
         str: Translated text or error message
     """
     # Create an instance to get supported languages
     translator = GoogleTranslator(source='en', target='es')
     list_of_sources = translator.get_supported_languages(as_dict=True)
-    
+
     # Get input if not provided
     if source_lang is None:
         source_lang = input("Enter the source language: ")
@@ -28,16 +28,16 @@ def translate_text(source_lang=None, target_lang=None, text_to_translate=None,sp
         target_lang = input("Enter the target language: ")
     if text_to_translate is None:
         text_to_translate = input("Enter the text to be translated: ")
-    
+
     # Check if both languages are supported
     if (source_lang in list_of_sources or source_lang in list_of_sources.values()) and \
        (target_lang in list_of_sources or target_lang in list_of_sources.values()):
-        
+
         translated = GoogleTranslator(
             source=source_lang,
             target=target_lang
         ).translate(text_to_translate)
-        
+
         result = f"Translated text: {translated}"
         print(result)
         if speech:
@@ -47,7 +47,7 @@ def translate_text(source_lang=None, target_lang=None, text_to_translate=None,sp
         error_msg = f"Either '{source_lang}' or '{target_lang}' is not supported"
         print(error_msg)
         return error_msg
-    
+
 
 # this function
 def text_to_speech_advanced(
@@ -61,7 +61,7 @@ def text_to_speech_advanced(
 ) -> Optional[str]:
     """
     Advanced text-to-speech function supporting multiple engines
-    
+
     Args:
         text: Text to convert to speech
         language: Language code (en, es, fr, de, etc.)
@@ -70,21 +70,21 @@ def text_to_speech_advanced(
         speed: Speaking speed (0.5 to 2.0)
         save_path: Path to save audio file
         play: Whether to play audio immediately
-    
+
     Returns:
         Path to audio file if saved, None otherwise
     """
-    
+
     if engine.lower() == 'gtts':
         # Online engine (gTTS)
         try:
             from gtts import gTTS
-            
+
             # Adjust speed (gTTS only supports slow=True/False)
             slow = speed < 1.0 and speed >= 0.5
-            
+
             tts = gTTS(text=text, lang=language, slow=slow)
-            
+
             if save_path:
                 tts.save(save_path)
                 audio_file = save_path
@@ -92,7 +92,7 @@ def text_to_speech_advanced(
                 temp_dir = tempfile.gettempdir()
                 audio_file = os.path.join(temp_dir, f"tts_{hash(text)}.mp3")
                 tts.save(audio_file)
-            
+
             if play:
                 if os.name == 'nt':
                     os.system(f"start {audio_file}")
@@ -101,42 +101,42 @@ def text_to_speech_advanced(
                         os.system(f"afplay {audio_file}")
                     else:
                         os.system(f"mpg123 {audio_file} || play {audio_file}")
-            
+
             return audio_file
-            
+
         except ImportError:
             print("gTTS not installed. Install with: pip install gtts")
             return None
-            
+
     elif engine.lower() == 'pyttsx3':
         # Offline engine
         try:
             import pyttsx3
-            
+
             engine = pyttsx3.init()
-            
+
             # Set voice
             voices = engine.getProperty('voices')
             if voice.lower() == 'female' and len(voices) > 1:
                 engine.setProperty('voice', voices[1].id)
             else:
                 engine.setProperty('voice', voices[0].id)
-            
+
             # Set rate and volume
             current_rate = engine.getProperty('rate')
             engine.setProperty('rate', int(current_rate * speed))
             engine.setProperty('volume', 1.0)
-            
+
             # Speak
             engine.say(text)
             engine.runAndWait()
-            
+
             return None
-            
+
         except ImportError:
             print("pyttsx3 not installed. Install with: pip install pyttsx3")
             return None
-    
+
     else:
         print(f"Engine '{engine}' not supported. Use 'gtts' or 'pyttsx3'")
         return None
@@ -215,10 +215,10 @@ def speech_to_text(
 if __name__ == "__main__":
     # Way 1: Interactive mode (with prompts)
     # translate_text()
-    
+
     # Way 2: Direct mode (with parameters)
     # translate_text("english", "spanish", "Hello, how are you?")
-    
+
       # Online version
     # text_to_speech_advanced(
     #     "Hello, this is a test of the text to speech system.",
@@ -226,11 +226,11 @@ if __name__ == "__main__":
     #     engine='gtts',
     #     play=True
     # )
-    
+
     # Offline version (if pyttsx3 installed)
     # text_to_speech_advanced("Hello world", engine='pyttsx3', voice='male')
-    
-    
+
+
     speech_to_text(
     source="mic", #// mic or file
     audio_file="voice.wav",

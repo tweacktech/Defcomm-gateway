@@ -27,7 +27,7 @@ const mainNavItems: NavItem[] = [
 const footerNavItems: NavItem[] = [
     {
         title: 'Access tokens',
-        href: '/',
+        href: '/access-token',
         icon: Settings,
     },
     {
