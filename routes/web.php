@@ -18,8 +18,9 @@ Route::prefix('')->group(function () {
         return Inertia::render('dashboard');
     })->name('dashboard');
 
-    //route to generate access token for apiClients
+    // route to generate access token for apiClients
     Route::get('access-token', [ProfileController::class, 'accessToken']);
+    Route::post('generate-access-token', [ProfileController::class, 'genAccessToken']);
 })->middleware(['auth', 'verified']);
 Route::get('/run-python', [PythonController::class, 'run']);
 

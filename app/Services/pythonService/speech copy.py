@@ -1,7 +1,6 @@
 import os
 import sys
 import tempfile
-import subprocess
 from typing import Optional
 from deep_translator import GoogleTranslator
 import argparse
@@ -100,7 +99,6 @@ def text_to_speech_advanced(
             tts = gTTS(text=text, lang=language, slow=slow)
 
             if save_path:
-                os.makedirs(os.path.dirname(save_path), exist_ok=True)
                 tts.save(save_path)
                 audio_file = save_path
             else:
@@ -144,7 +142,6 @@ def text_to_speech_advanced(
             _engine.setProperty("volume", 1.0)
 
             if save_path:
-                os.makedirs(os.path.dirname(save_path), exist_ok=True)
                 _engine.save_to_file(text, save_path)
                 _engine.runAndWait()
                 return save_path
@@ -166,76 +163,6 @@ def text_to_speech_advanced(
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 2a. AUDIO CONVERSION  (mp3 / mp4 / ogg / m4a → wav 16kHz mono)
-#     SpeechRecognition only reads WAV — ffmpeg handles everything else.
-# ─────────────────────────────────────────────────────────────────────────────
-
-def convert_to_wav(input_path: str) -> Optional[str]:
-    """
-    Convert any audio/video file to a 16kHz mono WAV suitable for
-    Google Speech Recognition.
-
-    - If the file is already .wav it is returned as-is (no re-encode).
-    - Requires ffmpeg to be installed on the system.
-
-    Args:
-        input_path: Absolute path to the source audio file.
-
-    Returns:
-        Path to the WAV file, or None on failure.
-    """
-    if not os.path.exists(input_path):
-        print(f"convert_to_wav: file not found: {input_path}", file=sys.stderr)
-        return None
-
-    # Already a wav — return immediately
-    if input_path.lower().endswith(".wav"):
-        return input_path
-
-    wav_path = os.path.join(
-        tempfile.gettempdir(),
-        f"stt_converted_{abs(hash(input_path))}.wav"
-    )
-
-    try:
-        result = subprocess.run(
-            [
-                "ffmpeg",
-                "-y",              # overwrite output without asking
-                "-i", input_path,  # input file (any format ffmpeg supports)
-                "-ar", "16000",    # sample rate: 16kHz (optimal for Google STT)
-                "-ac", "1",        # channels: mono
-                "-f",  "wav",      # force wav container
-                wav_path,
-            ],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.PIPE,
-        )
-
-        if result.returncode != 0:
-            print(
-                f"ffmpeg error (code {result.returncode}): {result.stderr.decode().strip()}",
-                file=sys.stderr,
-            )
-            return None
-
-        print(f"Converted to wav: {wav_path}", file=sys.stderr)
-        return wav_path
-
-    except FileNotFoundError:
-        print(
-            "ffmpeg not found. Install it:\n"
-            "  macOS : brew install ffmpeg\n"
-            "  Ubuntu: sudo apt install ffmpeg",
-            file=sys.stderr,
-        )
-        return None
-    except Exception as e:
-        print(f"Unexpected conversion error: {e}", file=sys.stderr)
-        return None
-
-
-# ─────────────────────────────────────────────────────────────────────────────
 # 2. SPEECH-TO-TEXT
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -248,13 +175,12 @@ def speech_to_text(
 ) -> Optional[str]:
     """
     Convert speech to text using Google Speech Recognition.
-    Non-WAV files are automatically converted via ffmpeg before processing.
 
     Args:
-        language:          BCP-47 language code (en-US, en-NG, yo-NG, ha-NG, ig-NG …).
-        source:            'mic' for microphone or 'file' for audio file.
-        audio_file:        Path to audio file when source='file'.
-        timeout:           Seconds to wait before giving up listening.
+        language:         BCP-47 language code (en-US, en-NG, yo-NG, ha-NG, ig-NG …).
+        source:           'mic' for microphone or 'file' for audio file.
+        audio_file:       Path to audio file when source='file'.
+        timeout:          Seconds to wait before giving up listening.
         phrase_time_limit: Max recording duration in seconds.
 
     Returns:
@@ -268,7 +194,6 @@ def speech_to_text(
         return None
 
     recognizer = sr.Recognizer()
-    _temp_wav = None  # track any temp file we create so we can clean up
 
     try:
         if source == "mic":
@@ -295,18 +220,7 @@ def speech_to_text(
             if not os.path.exists(audio_file):
                 print(f"Audio file not found: {audio_file}", file=sys.stderr)
                 return None
-
-            # ── Convert to WAV if needed ────────────────────────────────────
-            wav_file = convert_to_wav(audio_file)
-            if wav_file is None:
-                print("Could not convert audio to WAV. Aborting STT.", file=sys.stderr)
-                return None
-
-            # Track temp file for cleanup (only if a new file was created)
-            if wav_file != audio_file:
-                _temp_wav = wav_file
-
-            with sr.AudioFile(wav_file) as src:
+            with sr.AudioFile(audio_file) as src:
                 audio = recognizer.record(src)
 
         else:
@@ -325,14 +239,6 @@ def speech_to_text(
         print(f"Google API error: {e}", file=sys.stderr)
     except Exception as e:
         print(f"Unexpected STT error: {e}", file=sys.stderr)
-    finally:
-        # Clean up temp wav if we created one
-        if _temp_wav and os.path.exists(_temp_wav):
-            try:
-                os.unlink(_temp_wav)
-                print(f"Cleaned up temp wav: {_temp_wav}", file=sys.stderr)
-            except Exception:
-                pass
 
     return None
 
@@ -419,7 +325,24 @@ def speech_to_speech(
 ) -> Optional[str]:
     """
     Full speech-to-speech translation pipeline.
-    Flow:  Microphone/File → (convert to WAV) → STT → Translate → TTS → Speaker/File
+
+    Flow:  Microphone/File → STT → Translate → TTS → Speaker/File
+
+    Supported Nigerian languages: english, hausa, yoruba, igbo, pidgin
+    (pidgin falls back to English STT/TTS — no native model exists yet)
+
+    Args:
+        source_lang:       Input language name  (e.g. 'english', 'yoruba').
+        target_lang:       Output language name (e.g. 'hausa', 'igbo').
+        source:            'mic' or 'file'.
+        audio_file:        Path to audio file when source='file'.
+        engine:            TTS engine — 'gtts' (online) or 'pyttsx3' (offline).
+        timeout:           Mic listen timeout in seconds.
+        phrase_time_limit: Max mic recording duration in seconds.
+        save_output:       Optional path to save the output audio file.
+
+    Returns:
+        Translated text string, or None on failure.
     """
 
     source_lang = source_lang.lower().strip()
@@ -427,15 +350,18 @@ def speech_to_speech(
 
     supported = list(NIGERIAN_LANGUAGE_MAP["stt"].keys())
 
+    # ── Validate ────────────────────────────────────────────────────────────
     if source_lang not in supported:
-        print(f"Source language '{source_lang}' not supported. Choose from: {supported}", file=sys.stderr)
+        print(f"Source language '{source_lang}' not supported.", file=sys.stderr)
+        print(f"Choose from: {supported}", file=sys.stderr)
         return None
 
     if target_lang not in supported:
-        print(f"Target language '{target_lang}' not supported. Choose from: {supported}", file=sys.stderr)
+        print(f"Target language '{target_lang}' not supported.", file=sys.stderr)
+        print(f"Choose from: {supported}", file=sys.stderr)
         return None
 
-    # ── Step 1 : Speech → Text (convert_to_wav happens inside speech_to_text) ──
+    # ── Step 1 : Speech → Text ───────────────────────────────────────────────
     recognized_text = speech_to_text(
         language=NIGERIAN_LANGUAGE_MAP["stt"][source_lang],
         source=source,
@@ -466,8 +392,8 @@ def speech_to_speech(
             print(f"Translation error: {e}", file=sys.stderr)
             return None
 
-    # ── Step 3 : Translated Text → Speech ───────────────────────────────────
     if do_tts:
+        # ── Step 3 : Translated Text → Speech ───────────────────────────────
         tts_lang = resolve_tts_language(
             NIGERIAN_LANGUAGE_MAP["tts"][target_lang],
             engine=engine
@@ -483,7 +409,6 @@ def speech_to_speech(
 
         if save_output:
             print(f"Output saved to: {save_output}", file=sys.stderr)
-
     return translated_text
 
 
@@ -498,15 +423,15 @@ def speech_to_speech_interactive():
     print("\n🌍  Nigerian Speech-to-Speech Translator")
     print(f"   Supported languages: {', '.join(supported)}\n")
 
-    source_lang = input("Source language [english]: ").strip().lower() or "english"
-    target_lang = input("Target language [yoruba]:  ").strip().lower() or "yoruba"
-    source      = input("Input source (mic/file) [mic]: ").strip().lower() or "mic"
-    audio_file  = None
+    source_lang  = input("Source language [english]: ").strip().lower() or "english"
+    target_lang  = input("Target language [yoruba]:  ").strip().lower() or "yoruba"
+    source       = input("Input source (mic/file) [mic]: ").strip().lower() or "mic"
+    audio_file   = None
 
     if source == "file":
         audio_file = input("Audio file path: ").strip()
 
-    save_output = input("Save output audio? Enter path or leave blank: ").strip() or None
+    save_output  = input("Save output audio? Enter path or leave blank: ").strip() or None
 
     speech_to_speech(
         source_lang=source_lang,
@@ -518,10 +443,6 @@ def speech_to_speech_interactive():
         do_tts=True,
     )
 
-
-# ─────────────────────────────────────────────────────────────────────────────
-# 6. INTERNAL HELPER
-# ─────────────────────────────────────────────────────────────────────────────
 
 def _translate_nigerian_text(source_lang: str, target_lang: str, text: str) -> str:
     source_lang = source_lang.lower().strip()
@@ -537,58 +458,108 @@ def _translate_nigerian_text(source_lang: str, target_lang: str, text: str) -> s
         source=NIGERIAN_LANGUAGE_MAP["translate"][source_lang],
         target=NIGERIAN_LANGUAGE_MAP["translate"][target_lang],
     ).translate(text)
-
     if not translated:
         raise RuntimeError("Translation returned empty result.")
     return translated
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# 7. CLI ENTRY POINT  (called by Laravel via Process::run)
-# ─────────────────────────────────────────────────────────────────────────────
+# def main(argv) -> int:
+#     parser = argparse.ArgumentParser(description="Speech/text translation utility")
+#     parser.add_argument("--source", required=True, help="Source language (english|hausa|yoruba|igbo|pidgin)")
+#     parser.add_argument("--target", required=True, help="Target language (english|hausa|yoruba|igbo|pidgin)")
+#     parser.add_argument("--text", help="Text to translate (text-to-text)")
+#     parser.add_argument("--file", dest="audio_file", help="Audio file path (speech-to-speech via file)")
+#     parser.add_argument("--engine", default="gtts", choices=["gtts", "pyttsx3"], help="TTS engine")
+#     parser.add_argument("--save-output", dest="save_output", help="Optional output audio path")
+#     parser.add_argument("--play", action="store_true", help="Play generated audio (default: false)")
+#     parser.add_argument("--tts", action="store_true", help="Enable text-to-speech output (default: false)")
+
+#     args = parser.parse_args(argv)
+
+#     try:
+#         if bool(args.text) == bool(args.audio_file):
+#             raise ValueError("Provide exactly one of --text or --file.")
+
+#         if args.text is not None:
+#             out = _translate_nigerian_text(args.source, args.target, args.text)
+#             print(out)
+#             return 0
+
+#         out = speech_to_speech(
+#             source_lang=args.source,
+#             target_lang=args.target,
+#             source="file",
+#             audio_file=args.audio_file,
+#             engine=args.engine,
+#             save_output=args.save_output,
+#             play=args.play,
+#             do_tts=args.tts,
+#         )
+#         if not out:
+#             raise RuntimeError("Speech pipeline failed.")
+#         print(out)
+#         return 0
+
+#     except Exception as e:
+#         print(str(e), file=sys.stderr)
+#         return 2
+
+
+# # ─────────────────────────────────────────────────────────────────────────────
+# # ENTRY POINT
+# # ─────────────────────────────────────────────────────────────────────────────
+
+# if __name__ == "__main__":
+#     raise SystemExit(main(sys.argv[1:]))
+
 
 def main(argv) -> int:
-    parser = argparse.ArgumentParser(description="Nigerian Speech/Text Translation Utility")
-    parser.add_argument("--source",      required=True, help="Source language (english|hausa|yoruba|igbo|pidgin)")
-    parser.add_argument("--target",      required=True, help="Target language (english|hausa|yoruba|igbo|pidgin)")
-    parser.add_argument("--text",        help="Text to translate (skips STT)")
-    parser.add_argument("--file",        dest="audio_file", help="Audio file path — mp3/mp4/ogg/wav (triggers STT)")
-    parser.add_argument("--engine",      default="gtts", choices=["gtts", "pyttsx3"])
-    parser.add_argument("--save-output", dest="save_output", help="Path to save output audio file")
-    parser.add_argument("--play",        action="store_true", help="Play audio on the server")
-    parser.add_argument("--tts",         action="store_true", help="Enable TTS output")
+    parser = argparse.ArgumentParser(description="Speech/text translation utility")
+    parser.add_argument("--source", required=True)
+    parser.add_argument("--target", required=True)
+    parser.add_argument("--text", help="Text to translate")
+    parser.add_argument("--file", dest="audio_file", help="Audio file path")
+    parser.add_argument("--engine", default="gtts", choices=["gtts", "pyttsx3"])
+    parser.add_argument("--save-output", dest="save_output", help="Output audio path")
+    parser.add_argument("--play", action="store_true")
+    parser.add_argument("--tts", action="store_true")
 
     args = parser.parse_args(argv)
 
     try:
-        # Must provide exactly one of --text or --file
         if bool(args.text) == bool(args.audio_file):
             raise ValueError("Provide exactly one of --text or --file.")
 
-        # ── TEXT branch (translateText / textTranslateAudio) ─────────────────
         if args.text is not None:
+            # Step 1: translate
             translated = _translate_nigerian_text(args.source, args.target, args.text)
 
+            # Step 2: TTS — THIS was the missing piece, save_output was never passed
             if args.tts:
                 tts_lang = resolve_tts_language(
                     NIGERIAN_LANGUAGE_MAP["tts"].get(args.target.lower().strip(), "en"),
                     engine=args.engine
                 )
+
+                # Ensure the output directory exists
+                if args.save_output:
+                    os.makedirs(os.path.dirname(args.save_output), exist_ok=True)
+
                 audio_path = text_to_speech_advanced(
                     text=translated,
                     language=tts_lang,
                     engine=args.engine,
                     play=args.play,
-                    save_path=args.save_output,
+                    save_path=args.save_output,  # ✅ now actually passed
                 )
-                print(f"AUDIO:{audio_path}", file=sys.stderr)
 
-            print(translated)   # ← Laravel reads this via $result->output()
+                print(f"AUDIO:{audio_path}", file=sys.stderr)  # visible in Laravel logs
+
+            # stdout goes back to Laravel as $result->output()
+            print(translated)
             return 0
 
-        # ── FILE branch (translateAudio) ─────────────────────────────────────
-        # convert_to_wav() is called internally by speech_to_text()
-        # so mp3/mp4/ogg/m4a all work transparently here
+        # --file branch (speech-to-speech)
         out = speech_to_speech(
             source_lang=args.source,
             target_lang=args.target,
@@ -599,11 +570,9 @@ def main(argv) -> int:
             play=args.play,
             do_tts=args.tts,
         )
-
         if not out:
             raise RuntimeError("Speech pipeline failed.")
-
-        print(out)  # ← Laravel reads this via $result->output()
+        print(out)
         return 0
 
     except Exception as e:
@@ -613,3 +582,15 @@ def main(argv) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main(sys.argv[1:]))
+
+
+# **Root cause summary:**
+# ```
+# Before fix:
+# --text branch → _translate_nigerian_text() → print(translated) → exits
+#                 ↑ TTS never called, save_output never used
+
+# After fix:
+# --text branch → _translate_nigerian_text()
+#               → text_to_speech_advanced(save_path=args.save_output)  ✅
+#               → print(translated)
