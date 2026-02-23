@@ -64,7 +64,7 @@ class ProfileController extends Controller
      */
     public function accessToken(Request $request)
     {
-        return $user = $request->user();
+        $user = $request->user();
         $client_details = ApiClient::where('user_id', $user->id)->first();
         if (empty($client_details)) {
             $client_details = null;
@@ -75,22 +75,34 @@ class ProfileController extends Controller
 
     public function genAccessToken(Request $request)
     {
-        $user = $request->user();
-        $client_id = bin2hex(random_bytes(16));
-        $client_secret = bin2hex(random_bytes(32));
+        try {
+            $user = $request->user();
 
-        $client_details = ApiClient::create([
-            'user_id' => $user->id,
-            'name' => $user->name,
-            'client_id' => $client_id,
-            'client_secret' => $client_secret,
-            'ip_address' => $request->ip(),
-            'user_agent' => $request->userAgent(), ]);
+            return $request->all();
 
-        if (empty($client_details)) {
-            $client_details = null;
+            if (ApiClient::where('client_id', $client_id)->exists()) {
+                return redirect()->back()->withErrors(['error' => 'Client ID already exists. Please try again.']);
+            }
+            $client_id = bin2hex(random_bytes(16));
+            $client_secret = bin2hex(random_bytes(32));
+
+            $client_details = ApiClient::create([
+                'user_id' => $user->id,
+                'name' => $user->name,
+                'client_id' => $client_id,
+                'client_secret' => $client_secret,
+                'ip_address' => $request->ip(),
+                'user_agent' => $request->userAgent(), ]);
+
+            if (empty($client_details)) {
+                $client_details = null;
+            }
+
+            return Inertia::render('settings/token', ['client' => $client_details]);
+        } catch (Exception $e) {
+            Log::error('message'.$e->getMessage());
+
+            return redirect()->back();
         }
-
-        return Inertia::render('settings/token', ['client' => $client_details]);
     }
 }
