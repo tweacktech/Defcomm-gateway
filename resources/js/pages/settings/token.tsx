@@ -82,6 +82,7 @@ export default function Token() {
                     const newClient = props.client;
 
                     setCredentials(newClient);
+
                     setAccessToken(
                         props.access_token ?? newClient?.access_token ?? null,
                     );

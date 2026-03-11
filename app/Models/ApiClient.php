@@ -24,7 +24,8 @@ class ApiClient extends Model
     ];
 
     protected $hidden = [
-        'client_secret',
+        // 'client_secret',
+        'updated_at',
     ];
 
     /**

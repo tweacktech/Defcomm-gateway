@@ -43,7 +43,7 @@ export default function AuthSplitLayout({
 
                 {/* Right auth card */}
                 <div className="flex items-center justify-center">
-                    <div className="w-full max-w-md rounded-3xl bg-background/95 p-6 shadow-[0_24px_80px_rgba(0,0,0,0.85)] backdrop-blur-md sm:p-8">
+                    <div className="w-full max-w-md rounded-3xl bg-background/95 p-6 shadow-[0_24px_80px_rgba(0,0,0,0.85)] backdrop-blur-md sm:p-8 ">
                         <div className="mb-6 flex flex-col gap-3 text-center">
                             <div className="flex items-center justify-center gap-2 lg:hidden">
                                 <Link
