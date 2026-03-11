@@ -1,11 +1,4 @@
-import { Head, Link, usePage, router } from '@inertiajs/react';
-import { useState } from 'react';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import AppLayout from '@/layouts/app-layout';
-import type { BreadcrumbItem } from '@/types';
-import { edit } from '@/routes/profile';
+import { Head, usePage, router } from '@inertiajs/react';
 import {
     Copy,
     Check,
@@ -18,6 +11,13 @@ import {
     AlertCircle,
     Download,
 } from 'lucide-react';
+import { useState } from 'react';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import AppLayout from '@/layouts/app-layout';
+import { edit } from '@/routes/profile';
+import type { BreadcrumbItem } from '@/types';
 
 const breadcrumbs: BreadcrumbItem[] = [
     {
@@ -31,27 +31,33 @@ interface ApiClient {
     user_id: number;
     client_id: string;
     client_secret: string;
+    access_token?: string | null;
     name?: string;
     created_at: string;
     updated_at: string;
     expires_at?: string;
 }
 
-interface PageProps {
+type PageProps = {
     client: ApiClient | null;
+    access_token?: string | null;
     auth: {
-        user: any;
+        user: unknown;
     };
-}
+} & Record<string, unknown>;
 
 export default function Token() {
     // Get the client data from Inertia props
-    const { client } = usePage<PageProps>().props;
+    const { client, access_token } = usePage<PageProps>().props;
 
     const [copiedField, setCopiedField] = useState<string | null>(null);
+    const [showAccessToken, setShowAccessToken] = useState(false);
     const [showSecret, setShowSecret] = useState(false);
     const [isGenerating, setIsGenerating] = useState(false);
     const [credentials, setCredentials] = useState<ApiClient | null>(client);
+    const [accessToken, setAccessToken] = useState<string | null>(
+        access_token ?? client?.access_token ?? null,
+    );
 
     const handleCopy = async (text: string, field: string) => {
         try {
@@ -72,9 +78,13 @@ export default function Token() {
             {},
             {
                 onSuccess: (page) => {
-                    // Update credentials with the new data from the response
-                    const newClient = page.props.client as ApiClient;
+                    const props = page.props as unknown as PageProps;
+                    const newClient = props.client;
+
                     setCredentials(newClient);
+                    setAccessToken(
+                        props.access_token ?? newClient?.access_token ?? null,
+                    );
                     setIsGenerating(false);
                 },
                 onError: (errors) => {
@@ -151,6 +161,92 @@ export default function Token() {
                             <div className="space-y-6 p-6">
                                 {credentials ? (
                                     <>
+                                        {/* Access Token */}
+                                        <div className="space-y-2">
+                                            <Label
+                                                htmlFor="access_token"
+                                                className="text-sm font-medium"
+                                            >
+                                                Access Token
+                                                <span className="ml-2 text-xs text-yellow-600 dark:text-yellow-400">
+                                                    (Use as Bearer token)
+                                                </span>
+                                            </Label>
+                                            <div className="flex items-center gap-2">
+                                                <div className="relative flex-1">
+                                                    <Input
+                                                        id="access_token"
+                                                        type={
+                                                            showAccessToken
+                                                                ? 'text'
+                                                                : 'password'
+                                                        }
+                                                        value={
+                                                            accessToken
+                                                                ? showAccessToken
+                                                                    ? accessToken
+                                                                    : maskString(
+                                                                          accessToken,
+                                                                      )
+                                                                : ''
+                                                        }
+                                                        readOnly
+                                                        placeholder={
+                                                            accessToken
+                                                                ? undefined
+                                                                : 'Generate credentials to obtain an access token'
+                                                        }
+                                                        className="bg-muted/50 pr-36 font-mono text-sm"
+                                                    />
+                                                    <div className="absolute top-1/2 right-1 flex -translate-y-1/2 items-center gap-1">
+                                                        <Button
+                                                            size="sm"
+                                                            variant="ghost"
+                                                            className="h-7 px-2 text-xs"
+                                                            disabled={!accessToken}
+                                                            onClick={() =>
+                                                                setShowAccessToken(
+                                                                    !showAccessToken,
+                                                                )
+                                                            }
+                                                        >
+                                                            {showAccessToken ? (
+                                                                <EyeOff className="h-3.5 w-3.5" />
+                                                            ) : (
+                                                                <Eye className="h-3.5 w-3.5" />
+                                                            )}
+                                                        </Button>
+                                                        <Button
+                                                            size="sm"
+                                                            variant="ghost"
+                                                            className="h-7 px-2 text-xs"
+                                                            disabled={!accessToken}
+                                                            onClick={() =>
+                                                                accessToken &&
+                                                                handleCopy(
+                                                                    accessToken,
+                                                                    'access_token',
+                                                                )
+                                                            }
+                                                        >
+                                                            {copiedField ===
+                                                            'access_token' ? (
+                                                                <>
+                                                                    <Check className="mr-1 h-3.5 w-3.5 text-green-600" />
+                                                                    Copied!
+                                                                </>
+                                                            ) : (
+                                                                <>
+                                                                    <Copy className="mr-1 h-3.5 w-3.5" />
+                                                                    Copy
+                                                                </>
+                                                            )}
+                                                        </Button>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+
                                         {/* Client ID */}
                                         <div className="space-y-2">
                                             <Label
@@ -355,7 +451,7 @@ export default function Token() {
                                 {credentials && (
                                     <div className="rounded-lg bg-yellow-50 p-4 dark:bg-yellow-950/50">
                                         <div className="flex items-start gap-3">
-                                            <AlertCircle className="mt-0.5 h-5 w-5 flex-shrink-0 text-yellow-600 dark:text-yellow-400" />
+                                            <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-yellow-600 dark:text-yellow-400" />
                                             <div className="text-sm text-yellow-800 dark:text-yellow-300">
                                                 <p className="font-medium">
                                                     Important:

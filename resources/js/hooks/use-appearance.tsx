@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useSyncExternalStore } from 'react';
 
 export type ResolvedAppearance = 'light' | 'dark';
-export type Appearance = ResolvedAppearance | 'system';
+export type Appearance = ResolvedAppearance | 'system' | 'green';
 
 export type UseAppearanceReturn = {
     readonly appearance: Appearance;
@@ -31,6 +31,8 @@ const getStoredAppearance = (): Appearance => {
 };
 
 const isDarkMode = (appearance: Appearance): boolean => {
+    if (appearance === 'green') return true;
+
     return appearance === 'dark' || (appearance === 'system' && prefersDark());
 };
 
@@ -41,6 +43,10 @@ const applyTheme = (appearance: Appearance): void => {
 
     document.documentElement.classList.toggle('dark', isDark);
     document.documentElement.style.colorScheme = isDark ? 'dark' : 'light';
+    document.documentElement.classList.toggle(
+        'appearance-green',
+        appearance === 'green',
+    );
 };
 
 const subscribe = (callback: () => void) => {

@@ -6,10 +6,12 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Settings\ProfileDeleteRequest;
 use App\Http\Requests\Settings\ProfileUpdateRequest;
 use App\Models\ApiClient;
+use Exception;
 use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Log;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -78,9 +80,9 @@ class ProfileController extends Controller
         try {
             $user = $request->user();
 
-            return $request->all();
+            // return $request->all();
 
-            if (ApiClient::where('client_id', $client_id)->exists()) {
+            if (ApiClient::where('user_id', $user->id)->exists()) {
                 return redirect()->back()->withErrors(['error' => 'Client ID already exists. Please try again.']);
             }
             $client_id = bin2hex(random_bytes(16));
