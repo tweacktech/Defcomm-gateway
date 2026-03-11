@@ -23,5 +23,9 @@ Route::prefix('')->group(function () {
     Route::post('generate-access-token', [ProfileController::class, 'genAccessToken']);
 })->middleware(['auth', 'verified']);
 Route::get('/run-python', [PythonController::class, 'run']);
+Route::fallback(function () {
+    return Inertia::render('error');
+}
+);
 
 require __DIR__.'/settings.php';
