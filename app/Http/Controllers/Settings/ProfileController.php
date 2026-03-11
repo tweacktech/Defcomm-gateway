@@ -107,4 +107,24 @@ class ProfileController extends Controller
             return redirect()->back();
         }
     }
+
+    //Delet the generated token.
+    public function delAccessToken(Request $request)
+    {
+        try {
+            $user = $request->user();
+            if (ApiClient::where('user_id', $user->id)->exists()) {
+                ApiClient::where('user_id', $user->id)->delete();
+                return redirect()->back()->with('status', 'Access token deleted successfully.');
+            } else {
+                return redirect()->back()->withErrors(['error' => 'Client ID already exists. Please try again.']);
+            }
+
+            // return Inertia::render('settings/token');
+        } catch (Exception $e) {
+            Log::error('message'.$e->getMessage());
+
+            return redirect()->back();
+        }
+    }
 }
