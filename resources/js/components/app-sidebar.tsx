@@ -26,6 +26,11 @@ const mainNavItems: NavItem[] = [
 
 const footerNavItems: NavItem[] = [
     {
+        title: 'Access vault',
+        href: '/access-vault',
+        icon: Settings,
+    },
+    {
         title: 'Access tokens',
         href: '/access-token',
         icon: Settings,
