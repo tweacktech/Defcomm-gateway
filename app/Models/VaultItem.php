@@ -21,7 +21,7 @@ class VaultItem extends Model
     ];
 
     protected $hidden = [
-        'value',
+        // 'value',
     ];
 
     public function user(): BelongsTo
