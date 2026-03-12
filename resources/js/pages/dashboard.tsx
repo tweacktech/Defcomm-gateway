@@ -21,6 +21,12 @@ const breadcrumbs: BreadcrumbItem[] = [
 ];
 
 export default function Dashboard() {
+     const {
+            client,
+            access_token,
+            vault_items = [],
+        } = usePage<PageProps>().props;
+        
     const stats = [
         {
             title: 'Total Revenue',

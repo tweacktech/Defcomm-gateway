@@ -2,44 +2,51 @@
 
 namespace App\Http\Controllers;
 
-use App\Http\Controllers\Controller;
 use App\Models\VaultItem;
-use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\RedirectResponse;
 use Inertia\Inertia;
+use Inertia\Response;
+use Log;
 
 class VaultController extends Controller
 {
     /**
-     * List vault items for the authenticated user.
+     * Render the vault page with all items (values excluded).
      */
-    public function index(Request $request)
+    public function index(Request $request): Response
     {
-        $user = $request->user();
-
         $items = VaultItem::query()
-            ->where('user_id', $user->id)
+            ->where('user_id', $request->user()->id)
             ->orderByDesc('id')
             ->get(['id', 'name', 'description', 'created_at', 'updated_at']);
 
-
-      return Inertia::render('settings/vault',['items'=>$items]);
+        return Inertia::render('settings/vault', [
+            'vault_items' => $items,
+        ]);
     }
 
     /**
-     * Show a single vault item, decrypting its value.
-     * Only the owner may view the plaintext value.
+     * Re-render the vault page with one item's decrypted value exposed.
+     * The frontend reads `revealed_item` to show the value inline.
      */
-    public function show(Request $request, VaultItem $vaultItem): JsonResponse
+    public function show(Request $request, VaultItem $vaultItem): Response
     {
+        return $
         $this->authorizeOwner($request, $vaultItem);
 
-        return response()->json([
-            'data' => [
+        $items = VaultItem::query()
+            ->where('user_id', $request->user()->id)
+            ->orderByDesc('id')
+            ->get(['id', 'name', 'description', 'created_at', 'updated_at']);
+
+        return Inertia::render('settings/vault', [
+            'vault_items'   => $items,
+            'revealed_item' => [
                 'id'          => $vaultItem->id,
                 'name'        => $vaultItem->name,
-                'value'       => decrypt($vaultItem->value),
                 'description' => $vaultItem->description,
+                'value'       => decrypt($vaultItem->value),
                 'created_at'  => $vaultItem->created_at,
                 'updated_at'  => $vaultItem->updated_at,
             ],
@@ -47,91 +54,75 @@ class VaultController extends Controller
     }
 
     /**
-     * Store a new vault item for the authenticated user.
+     * Store a new vault item.
      */
-    public function store(Request $request): JsonResponse
+    public function store(Request $request): RedirectResponse
     {
-        $user = $request->user();
-
         $validated = $request->validate([
             'name'        => ['required', 'string', 'max:255'],
             'value'       => ['required', 'string'],
             'description' => ['nullable', 'string'],
         ]);
 
-        $item = VaultItem::create([
-            'user_id'     => $user->id,
+        VaultItem::create([
+            'user_id'     => $request->user()->id,
             'name'        => $validated['name'],
             'value'       => encrypt($validated['value']),
             'description' => $validated['description'] ?? null,
         ]);
 
-        return response()->json([
-            'data' => [
-                'id'          => $item->id,
-                'name'        => $item->name,
-                'description' => $item->description,
-                'created_at'  => $item->created_at,
-                'updated_at'  => $item->updated_at,
-            ],
-        ], 201);
+        return redirect()->back()->with('success', 'Vault item created successfully.');
     }
 
     /**
      * Update an existing vault item.
-     * Value is re-encrypted on every update.
+     * Re-encrypts value only when a new one is supplied.
      */
-    public function update(Request $request, VaultItem $vaultItem): JsonResponse
+    public function update(Request $request, VaultItem $vaultItem): RedirectResponse
     {
         $this->authorizeOwner($request, $vaultItem);
 
         $validated = $request->validate([
             'name'        => ['sometimes', 'required', 'string', 'max:255'],
-            'value'       => ['sometimes', 'required', 'string'],
+            'value'       => ['sometimes', 'nullable', 'string'],
             'description' => ['nullable', 'string'],
         ]);
 
         $vaultItem->fill([
-            'name'        => $validated['name']        ?? $vaultItem->name,
-            'value'       => isset($validated['value']) ? encrypt($validated['value']) : $vaultItem->value,
+            'name'        => $validated['name'] ?? $vaultItem->name,
+            'value'       => !empty($validated['value'])
+                                 ? encrypt($validated['value'])
+                                 : $vaultItem->value,
             'description' => array_key_exists('description', $validated)
-                ? $validated['description']
-                : $vaultItem->description,
+                                 ? $validated['description']
+                                 : $vaultItem->description,
         ])->save();
 
-        return response()->json([
-            'data' => [
-                'id'          => $vaultItem->id,
-                'name'        => $vaultItem->name,
-                'description' => $vaultItem->description,
-                'created_at'  => $vaultItem->created_at,
-                'updated_at'  => $vaultItem->updated_at,
-            ],
-        ]);
+        return redirect()->back()->with('success', 'Vault item updated.');
     }
 
     /**
      * Delete a vault item permanently.
      */
-    public function destroy(Request $request, VaultItem $vaultItem): JsonResponse
+    public function destroy(Request $request, VaultItem $vaultItem): RedirectResponse
     {
         $this->authorizeOwner($request, $vaultItem);
 
         $vaultItem->delete();
 
-        return response()->json(null, 204);
+        return redirect()->back()->with('success', 'Vault item deleted.');
     }
 
     // -------------------------------------------------------------------------
-    // Helpers
-    // -------------------------------------------------------------------------
 
-    /**
-     * Abort with 403 if the vault item does not belong to the requesting user.
-     */
     private function authorizeOwner(Request $request, VaultItem $vaultItem): void
     {
-        if ($vaultItem->user_id !== $request->user()->id) {
+        Log::info('Authorizing vault item access', [
+            'vault_item_id' => $vaultItem->id,
+            'vault_item_user_id' => $vaultItem->user_id,
+            'request_user_id' => $request->user()->id,
+        ]);
+        if ((int) $vaultItem->user_id !== (int) $request->user()->id) {
             abort(403, 'You do not have permission to access this vault item.');
         }
     }
