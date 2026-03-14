@@ -1,5 +1,5 @@
 import { Link } from '@inertiajs/react';
-import { BookOpen, Folder, LayoutGrid, Settings } from 'lucide-react';
+import { BookOpen, Folder, Key, LayoutGrid, Settings, Vault } from 'lucide-react';
 import { NavFooter } from '@/components/nav-footer';
 import { NavMain } from '@/components/nav-main';
 import { NavUser } from '@/components/nav-user';
@@ -22,18 +22,24 @@ const mainNavItems: NavItem[] = [
         href: dashboard(),
         icon: LayoutGrid,
     },
-];
-
-const footerNavItems: NavItem[] = [
+   {
+        title: 'Access Drive',
+        href: '/drive',
+        icon: Folder,
+    },
     {
         title: 'Access vault',
         href: '/access-vault',
-        icon: Settings,
+        icon: Vault,
     },
-    {
+    
+];
+
+const footerNavItems: NavItem[] = [
+   {
         title: 'Access tokens',
         href: '/access-token',
-        icon: Settings,
+        icon: Key,
     },
     {
         title: 'Repository',

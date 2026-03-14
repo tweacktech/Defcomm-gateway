@@ -16,6 +16,9 @@ return new class extends Migration {
             $table->string('email')->unique();
             $table->timestamp('email_verified_at')->nullable();
             $table->string('password');
+            $table->unsignedBigInteger('storage_limit')
+                  ->default(2 * 1024 ** 3)   // 2 GB
+                  ->comment('Per-user storage quota in bytes. Default 2 GB.');
             $table->enum('role', ['admin', 'client'])->default('client');
             $table->enum('status', ['active', 'inactive', 'suspended'])->default('active');
             $table->rememberToken();
@@ -36,6 +39,23 @@ return new class extends Migration {
             $table->longText('payload');
             $table->integer('last_activity')->index();
         });
+
+        DB::table('users')->insert([
+            [
+                'name' => 'Admin',
+                'email' => 'admin@example.com',
+                'password' => bcrypt('password'),
+                'role' => 'admin',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ], [
+                'name' => 'Meyor Pop',
+                'email' => 'meyorpop@gmail.com',
+                'password' => bcrypt('1234567890'),
+                'role' => 'client',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]]);
     }
 
     /**

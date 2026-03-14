@@ -4,8 +4,7 @@ use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
-return new class extends Migration
-{
+return new class extends Migration {
     /**
      * Run the migrations.
      */
@@ -24,12 +23,14 @@ return new class extends Migration
             $table->unsignedBigInteger('size')->default(0);   // bytes
             $table->string('extension')->nullable();          // pdf, png, docx…
             $table->boolean('is_starred')->default(false);
+            $table->enum('visibility', ['private', 'public'])->default('private');
             $table->softDeletes();                            // trash support
             $table->timestamps();
 
             $table->index(['user_id', 'parent_id', 'type']);
             $table->index(['user_id', 'is_starred']);
             $table->index(['user_id', 'deleted_at']);
+            $table->index(['user_id', 'visibility']);  
         });
     }
 

@@ -13,7 +13,7 @@ import { edit } from '@/routes/profile';
 import type { BreadcrumbItem } from '@/types';
 
 const breadcrumbs: BreadcrumbItem[] = [
-    { title: 'Profile settings', href: edit().url },
+    { title: 'Vault', href: edit().url },
 ];
 
 // ─── Types ────────────────────────────────────────────────────────────────────

@@ -6,7 +6,6 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
-use Illuminate\Support\Facades\Storage;
 
 class DriveItem extends Model
 {
@@ -16,12 +15,12 @@ class DriveItem extends Model
         'user_id', 'parent_id', 'type', 'name',
         'mime_type', 'disk', 'path', 'original_name',
         'size', 'extension', 'is_starred',
-    ];
+        'visibility', ];
 
     protected $casts = [
-        'user_id'    => 'integer',
-        'parent_id'  => 'integer',
-        'size'       => 'integer',
+        'user_id' => 'integer',
+        'parent_id' => 'integer',
+        'size' => 'integer',
         'is_starred' => 'boolean',
     ];
 
@@ -42,6 +41,35 @@ class DriveItem extends Model
         return $this->hasMany(DriveItem::class, 'parent_id')->orderByRaw("type = 'file'");
     }
 
+    /**
+     * All share records (links + transfers) for this item.
+     */
+    public function shares(): HasMany
+    {
+        return $this->hasMany(DriveShare::class);
+    }
+
+    /**
+     * Only active share links (type = 'link', is_active = true).
+     */
+    public function activeShareLinks(): HasMany
+    {
+        return $this->hasMany(DriveShare::class)
+                    ->where('type', 'link')
+                    ->where('is_active', true);
+    }
+
+    /**
+     * Pending transfer offers (type = 'transfer', status = 'pending').
+     * Used by the controller to block duplicate transfer attempts.
+     */
+    public function pendingTransfers(): HasMany
+    {
+        return $this->hasMany(DriveShare::class)
+                    ->where('type', 'transfer')
+                    ->where('transfer_status', 'pending')
+                    ->where('is_active', true);
+    }
     // ── Scopes ────────────────────────────────────────────────────────────────
 
     public function scopeForUser($query, int $userId)
@@ -79,21 +107,44 @@ class DriveItem extends Model
     /** Human-readable size string */
     public function formattedSize(): string
     {
-        if ($this->size === 0) return '—';
+        if ($this->size === 0) {
+            return '—';
+        }
         $units = ['B', 'KB', 'MB', 'GB', 'TB'];
-        $pow   = min((int) floor(log($this->size, 1024)), count($units) - 1);
-        return round($this->size / (1024 ** $pow), 1) . ' ' . $units[$pow];
+        $pow = min((int) floor(log($this->size, 1024)), count($units) - 1);
+
+        return round($this->size / (1024 ** $pow), 1).' '.$units[$pow];
     }
 
-    /** Temporary download URL (works for both local and S3) */
-    public function downloadUrl(): ?string
-    {
-        if (!$this->path) return null;
-        return Storage::disk($this->disk)->temporaryUrl(
-            $this->path,
-            now()->addMinutes(15),
-        );
-    }
+    /**
+     * All share records (links + transfers) for this item.
+     */
+    // public function shares(): HasMany
+    // {
+    //     return $this->hasMany(DriveShare::class);
+    // }
+
+    /**
+     * Only active share links (type = 'link', is_active = true).
+     */
+    // public function activeShareLinks(): HasMany
+    // {
+    //     return $this->hasMany(DriveShare::class)
+    //                 ->where('type', 'link')
+    //                 ->where('is_active', true);
+    // }
+
+    /**
+     * Pending transfer offers (type = 'transfer', status = 'pending').
+     * Used by the controller to block duplicate transfer attempts.
+     */
+    // public function pendingTransfers(): HasMany
+    // {
+    //     return $this->hasMany(DriveShare::class)
+    //                 ->where('type', 'transfer')
+    //                 ->where('transfer_status', 'pending')
+    //                 ->where('is_active', true);
+    // }
 
     /**
      * Build the breadcrumb ancestry array for this item.
@@ -102,7 +153,7 @@ class DriveItem extends Model
     public function breadcrumbs(): array
     {
         $crumbs = [];
-        $node   = $this->parent;
+        $node = $this->parent;
 
         while ($node) {
             array_unshift($crumbs, ['id' => $node->id, 'name' => $node->name]);
