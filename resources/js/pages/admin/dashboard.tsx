@@ -20,7 +20,7 @@ const breadcrumbs: BreadcrumbItem[] = [
     },
 ];
 
-export default function Dashboard( this.props.first) {
+export default function Dashboard() {
     //  const {
     //         client,
     //         access_token,

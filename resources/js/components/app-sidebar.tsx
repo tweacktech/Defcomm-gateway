@@ -41,14 +41,14 @@ const footerNavItems: NavItem[] = [
         href: '/access-token',
         icon: Key,
     },
-    {
-        title: 'Repository',
-        href: '/',
-        icon: Folder,
-    },
+    // {
+    //     title: 'Repository',
+    //     href: '/',
+    //     icon: Folder,
+    // },
     {
         title: 'Documentation',
-        href: '/',
+        href: '/document',
         icon: BookOpen,
     },
 ];

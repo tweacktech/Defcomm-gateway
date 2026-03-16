@@ -131,4 +131,17 @@ class ProfileController extends Controller
             return redirect()->back()->with('error', $e->getMessage());
         }
     }
+    // Delet the generated token.
+    public function document(Request $request)
+    {
+        try {
+           
+
+            return Inertia::render('document');
+        } catch (\Exception $e) {
+            Log::error('message'.$e->getMessage());
+
+            return redirect()->back()->with('error', $e->getMessage());
+        }
+    }
 }

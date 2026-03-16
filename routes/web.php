@@ -95,6 +95,10 @@ Route::prefix('')->middleware(['auth'])->group(function () {
     Route::get('/s/{token}', [DriveController::class, 'shareAccessPage'])->name('drive.share.access');
     Route::post('/s/{token}/unlock', [DriveController::class, 'unlockShare'])->name('drive.share.unlock');
     Route::get('/s/{token}/download', [DriveController::class, 'sharedDownload'])->name('drive.share.download');
+
+
+    //documentation page
+    Route::get('/document',[ProfileController::class, 'document']);
 })
 ->middleware(['auth', 'verified']);
 
