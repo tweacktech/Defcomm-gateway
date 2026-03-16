@@ -9,6 +9,7 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\Validator;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -46,7 +47,7 @@ class DriveController extends Controller
                 'extension', 'is_starred', 'visibility', 'created_at', 'updated_at',
             ]);
 
-        return Inertia::render('settings/drive', [
+        return Inertia::render('drive/drive', [
             'folder' => $folder ? $this->folderResource($folder) : null,
             'items' => $items,
             'breadcrumbs' => $folder ? $folder->breadcrumbs() : [],
@@ -72,7 +73,7 @@ class DriveController extends Controller
                 'extension', 'is_starred', 'visibility', 'created_at', 'updated_at',
             ]);
 
-        return Inertia::render('settings/drive', [
+        return Inertia::render('drive/drive', [
             'folder' => null,
             'items' => $items,
             'breadcrumbs' => [],
@@ -97,7 +98,7 @@ class DriveController extends Controller
                 'extension', 'is_starred', 'visibility', 'deleted_at',
             ]);
 
-        return Inertia::render('settings/drive', [
+        return Inertia::render('drive/drive', [
             'folder' => null,
             'items' => $items,
             'breadcrumbs' => [],
@@ -116,25 +117,34 @@ class DriveController extends Controller
      */
     public function createFolder(Request $request): RedirectResponse
     {
-        $validated = $request->validate([
-            'name' => ['required', 'string', 'max:255'],
-            'parent_id' => ['nullable', 'integer', 'exists:drive_items,id'],
-        ]);
+        try {
+            $validated = $request->validate([
+                'name' => ['required', 'string', 'max:255'],
+                'parent_id' => ['nullable', 'integer', 'exists:drive_items,id'],
+            ]);
 
-        if ($validated['parent_id'] ?? null) {
-            $parent = DriveItem::findOrFail($validated['parent_id']);
-            $this->authorizeOwner($request, $parent);
+            if ($validated['parent_id'] ?? null) {
+                $parent = DriveItem::findOrFail($validated['parent_id']);
+                $this->authorizeOwner($request, $parent);
+            }
+
+            DriveItem::updateOrCreate([
+                'user_id' => $request->user()->id,
+                'parent_id' => $validated['parent_id'] ?? null,
+                'type' => 'folder',
+                'name' => $validated['name'],
+            ], [
+                'user_id' => $request->user()->id,
+                'parent_id' => $validated['parent_id'] ?? null,
+                'type' => 'folder',
+                'name' => $validated['name'],
+                'visibility' => 'private',
+            ]);
+
+            return redirect()->back()->with('success', 'Folder created.');
+        } catch (\Exception $e) {
+            return redirect()->back()->with('error', ''.$e->getMessage());
         }
-
-        DriveItem::create([
-            'user_id' => $request->user()->id,
-            'parent_id' => $validated['parent_id'] ?? null,
-            'type' => 'folder',
-            'name' => $validated['name'],
-            'visibility' => 'private',
-        ]);
-
-        return redirect()->back()->with('success', 'Folder created.');
     }
 
     // =========================================================================
@@ -150,11 +160,19 @@ class DriveController extends Controller
     public function upload(Request $request): RedirectResponse
     {
         try {
-            $request->validate([
-                'files' => ['required', 'array', 'min:1'],
-                'files.*' => ['required', 'file', 'max:102400'], // 100 MB each
-                'parent_id' => ['nullable', 'integer', 'exists:drive_items,id'],
+            // $request->validate([
+            //     'files' => ['required', 'array', 'min:1'],
+            //     'files.*' => ['required', 'file', 'max:102400'], // 100 MB each
+            //     'parent_id' => ['nullable', 'integer', 'exists:drive_items,id'],
+            // ]);
+            $validator=Validator::make($request->all(),[
+                'files'=>'required | array | min:1',
+                'files.*' =>'required | file | max:102400', //100 MB each
+                'parent_id' =>'nullable| integer | exists:drive_items,id'
             ]);
+            if($validator->failed()){
+                return redirect()->back()->with('error',$validator->error());
+            }
 
             $userId = $request->user()->id;
             $parentId = $request->input('parent_id');
@@ -226,6 +244,7 @@ class DriveController extends Controller
     /** PATCH /drive/items/{item}/move */
     public function move(Request $request, DriveItem $item): RedirectResponse
     {
+        try{
         $this->authorizeOwner($request, $item);
 
         $validated = $request->validate([
@@ -248,6 +267,11 @@ class DriveController extends Controller
         $item->update(['parent_id' => $newParentId]);
 
         return redirect()->back()->with('success', 'Moved.');
+
+          } catch (\Exception $e) {
+            return redirect()->back()->with('error', $e->getMessage());
+        }
+
     }
 
     /** PATCH /drive/items/{item}/star */
@@ -327,6 +351,7 @@ class DriveController extends Controller
      */
     public function setVisibility(Request $request, DriveItem $item): RedirectResponse
     {
+        try{
         $this->authorizeOwner($request, $item);
 
         $validated = $request->validate([
@@ -338,6 +363,9 @@ class DriveController extends Controller
         $label = $validated['visibility'] === 'public' ? 'Public' : 'Private';
 
         return redirect()->back()->with('success', "Visibility set to {$label}.");
+          } catch (\Exception $e) {
+            return redirect()->back()->with('error', $e->getMessage());
+        }
     }
 
     // =========================================================================
@@ -359,6 +387,7 @@ class DriveController extends Controller
      */
     public function createShareLink(Request $request, DriveItem $item): RedirectResponse
     {
+        try{
         $this->authorizeOwner($request, $item);
 
         $validated = $request->validate([
@@ -388,6 +417,10 @@ class DriveController extends Controller
             'success' => 'Share link created.',
             'share_url' => $shareUrl,
         ]);
+
+          } catch (\Exception $e) {
+            return redirect()->back()->with('error', $e->getMessage());
+        }
     }
 
     /**

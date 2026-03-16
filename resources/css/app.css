@@ -131,6 +131,22 @@
     --sidebar-border: oklch(0.269 0 0);
     --sidebar-ring: oklch(0.439 0 0);
 }
+/* ── Defcomm Green theme ─────────────────────────────── */
+.green {
+    --background: 80 30% 8%;          /* very dark olive */
+    --foreground: 80 20% 92%;         /* off-white */
+    --card: 80 25% 11%;
+    --card-foreground: 80 20% 92%;
+    --primary: 82 60% 38%;            /* olive green */
+    --primary-foreground: 0 0% 100%;
+    --muted: 80 15% 18%;
+    --muted-foreground: 80 10% 60%;
+    --border: 80 15% 20%;
+    --sidebar-border: 80 15% 20%;
+    --accent: 82 40% 20%;
+    --accent-foreground: 80 20% 92%;
+    /* adjust any other tokens to match your Defcomm design */
+}
 
 @layer base {
     * {

@@ -22,7 +22,7 @@ class VaultController extends Controller
             ->paginate(10, ['id', 'name', 'description', 'created_at', 'updated_at'])
             ->withQueryString();
 
-        return Inertia::render('settings/vault', [
+        return Inertia::render('vault/vault', [
             'vault_items' => $vault_items,
             'revealed_item' => null,
         ]);
@@ -41,7 +41,7 @@ class VaultController extends Controller
             ->paginate(10, ['id', 'name', 'description', 'created_at', 'updated_at'])
             ->withQueryString();
 
-        return Inertia::render('settings/vault', [
+        return Inertia::render('vault/vault', [
             'vault_items' => $vault_items,
             'revealed_item' => [
                 'id' => $vaultItem->id,

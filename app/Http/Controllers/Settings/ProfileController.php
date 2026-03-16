@@ -2,7 +2,6 @@
 
 namespace App\Http\Controllers\Settings;
 
-use App\Http\Controllers\Api\ServiceController;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Settings\ProfileDeleteRequest;
 use App\Http\Requests\Settings\ProfileUpdateRequest;
@@ -13,26 +12,11 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
 use Inertia\Inertia;
-use App\Models\Service;
 use Inertia\Response;
 
 class ProfileController extends Controller
 {
-    public function dashboard()
-    {
-        $user = Auth::user();
-        $service = Service::get();
-        if ($user->is_admin) {
-            return Inertia::render('admin/dashboard', [
-                'service' => $service,
-            ]);
-        } else {
-            return Inertia::render('dashboard', [
-                'service' => $service,
-            ]);
-        }
-    }
-
+    use \App\Traits\LogsActivity;
     /**
      * Show the user's profile settings page.
      */
@@ -67,6 +51,8 @@ class ProfileController extends Controller
     {
         $user = $request->user();
 
+        $this->log('logout',    'User logged logout', 'auth');
+
         Auth::logout();
 
         $user->delete();
@@ -99,7 +85,7 @@ class ProfileController extends Controller
             // return $request->all();
 
             if (ApiClient::where('user_id', $user->id)->exists()) {
-                return redirect()->back()->withErrors(['error' => 'Client ID already exists. Please try again.']);
+                return redirect()->back()->with('error', 'Client ID already exists. Please try again.');
             }
             $client_id = bin2hex(random_bytes(16));
             $client_secret = bin2hex(random_bytes(32));
@@ -116,11 +102,12 @@ class ProfileController extends Controller
                 $client_details = null;
             }
 
-            return Inertia::render('settings/token', ['client' => $client_details]);
+            return redirect()->back()->with('success', 'Keys generated successfully .');
+            // return Inertia::render('settings/token', ['client' => $client_details]);
         } catch (\Exception $e) {
             Log::error('message'.$e->getMessage());
 
-            return redirect()->back();
+            return redirect()->back()->with('error', $e->getMessage());
         }
     }
 
@@ -134,14 +121,14 @@ class ProfileController extends Controller
 
                 return redirect()->back()->with('status', 'Access token deleted successfully.');
             } else {
-                return redirect()->back()->withErrors(['error' => 'Client ID already exists. Please try again.']);
+                return redirect()->back()->with('error', 'Client ID already exists. Please try again.');
             }
 
             // return Inertia::render('settings/token');
         } catch (\Exception $e) {
             Log::error('message'.$e->getMessage());
 
-            return redirect()->back();
+            return redirect()->back()->with('error', $e->getMessage());
         }
     }
 }
