@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Http\Services;
+namespace App\Services;
 
 use Google\Protobuf\FieldMask;
 use Google\ApiCore\ApiException;

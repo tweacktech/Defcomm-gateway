@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Http\Services;
+namespace App\Services;
 
 use Jenssegers\Agent\Agent;
 use App\Models\UserLoginLog;
