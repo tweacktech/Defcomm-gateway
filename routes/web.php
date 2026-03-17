@@ -3,7 +3,9 @@
 use App\Http\Controllers\API\PythonController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DriveController;
+use App\Http\Controllers\ServiceController;
 use App\Http\Controllers\Settings\ProfileController;
+use App\Http\Controllers\UserController;
 use App\Http\Controllers\VaultController;
 use App\Models\Service;
 use Illuminate\Support\Facades\Route;
@@ -96,9 +98,36 @@ Route::prefix('')->middleware(['auth'])->group(function () {
     Route::post('/s/{token}/unlock', [DriveController::class, 'unlockShare'])->name('drive.share.unlock');
     Route::get('/s/{token}/download', [DriveController::class, 'sharedDownload'])->name('drive.share.download');
 
+    // documentation page
+    Route::get('/document', [ProfileController::class, 'document']);
 
-    //documentation page
-    Route::get('/document',[ProfileController::class, 'document']);
+    Route::middleware(['auth'])->prefix('admin')->name('admin.')->group(function () {
+        // List + search
+        Route::get('/users', [UserController::class, 'index'])->name('users.index');
+
+        // Edit user info (name, email, password, role)
+        Route::patch('/users/{user}', [UserController::class, 'update'])->name('users.update');
+
+        // Activate / deactivate account
+        Route::patch('/users/{user}/status', [UserController::class, 'toggleStatus'])->name('users.status');
+
+        // Revoke all tokens (force logout from all devices)
+        Route::delete('/users/{user}/tokens', [UserController::class, 'revokeAllTokens'])->name('users.tokens.revoke-all');
+
+        // Revoke a single token
+        Route::delete('/users/{user}/tokens/{tokenId}', [UserController::class, 'revokeSingleToken'])->name('users.tokens.revoke');
+
+        // Delete user account
+        Route::delete('/users/{user}', [UserController::class, 'destroy'])->name('users.destroy');
+    });
+
+    Route::middleware(['auth'])->prefix('admin')->group(function () {
+        Route::get('/services', [ServiceController::class, 'index'])->name('services.index');
+        Route::post('/services', [ServiceController::class, 'store'])->name('services.store');
+        Route::patch('/services/{service}', [ServiceController::class, 'update'])->name('services.update');
+        Route::patch('/services/{service}/toggle', [ServiceController::class, 'toggle'])->name('services.toggle');
+        Route::delete('/services/{service}', [ServiceController::class, 'destroy'])->name('services.destroy');
+    });
 })
 ->middleware(['auth', 'verified']);
 

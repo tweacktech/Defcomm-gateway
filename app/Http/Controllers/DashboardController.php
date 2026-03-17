@@ -22,11 +22,12 @@ class DashboardController extends Controller
             ->orderBy('name')
             ->get(['id', 'name', 'description', 'is_active', 'created_at']);
 
-        if ($user->is_admin) {
+        if ($user->role=='admin') {
             return Inertia::render('admin/admin-dashboard', [
-                'services'       => $services,
-                'stats'          => $this->adminStats(),
-                'activity_logs'  => $this->allActivity(),
+                'services'      => $services,
+                'stats'         => $this->adminStats(),
+                'user_summary'  => $this->userSummary(),
+                'activity_logs' => $this->allActivity(),
             ]);
         }
 
@@ -36,12 +37,29 @@ class DashboardController extends Controller
         ]);
     }
 
-    // ── Activity helpers ──────────────────────────────────────────────────────
+    // ── Private helpers ───────────────────────────────────────────────────────
 
-    /**
-     * Last 20 actions performed by the authenticated user.
-     * Shown on the client dashboard.
-     */
+    private function adminStats(): array
+    {
+        return [
+            'total_services'  => Service::count(),
+            'active_services' => Service::where('is_active', true)->count(),
+            'total_users'     => User::count(),
+            // 'total_orders'  => Order::count(),
+        ];
+    }
+
+    private function userSummary(): array
+    {
+        return [
+            'total'         => User::count(),
+            'active'        => User::where('status', 'active')->count(),
+            'inactive'      => User::where('status', 'inactive')->count(),
+            'admins'        => User::where('role', 'admin')->count(),
+            'new_this_week' => User::where('created_at', '>=', now()->subWeek())->count(),
+        ];
+    }
+
     private function userActivity(int $userId): array
     {
         return ActivityLog::forUser($userId)
@@ -61,10 +79,6 @@ class DashboardController extends Controller
             ->toArray();
     }
 
-    /**
-     * Last 50 actions platform-wide, with causer info.
-     * Shown on the admin dashboard.
-     */
     private function allActivity(): array
     {
         return ActivityLog::with('causer:id,name,email')
@@ -87,17 +101,5 @@ class DashboardController extends Controller
                 ] : null,
             ])
             ->toArray();
-    }
-
-    // ── Admin stats ───────────────────────────────────────────────────────────
-
-    private function adminStats(): array
-    {
-        return [
-            'total_services'  => Service::count(),
-            'active_services' => Service::where('is_active', true)->count(),
-            'total_users'     => User::count(),
-            // 'total_orders'  => Order::count(),
-        ];
     }
 }
