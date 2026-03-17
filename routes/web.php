@@ -101,25 +101,16 @@ Route::prefix('')->middleware(['auth'])->group(function () {
     // documentation page
     Route::get('/document', [ProfileController::class, 'document']);
 
-    Route::middleware(['auth'])->prefix('admin')->name('admin.')->group(function () {
-        // List + search
-        Route::get('/users', [UserController::class, 'index'])->name('users.index');
+Route::middleware(['auth'])->prefix('admin')->name('admin.')->group(function () {
 
-        // Edit user info (name, email, password, role)
-        Route::patch('/users/{user}', [UserController::class, 'update'])->name('users.update');
-
-        // Activate / deactivate account
-        Route::patch('/users/{user}/status', [UserController::class, 'toggleStatus'])->name('users.status');
-
-        // Revoke all tokens (force logout from all devices)
-        Route::delete('/users/{user}/tokens', [UserController::class, 'revokeAllTokens'])->name('users.tokens.revoke-all');
-
-        // Revoke a single token
-        Route::delete('/users/{user}/tokens/{tokenId}', [UserController::class, 'revokeSingleToken'])->name('users.tokens.revoke');
-
-        // Delete user account
-        Route::delete('/users/{user}', [UserController::class, 'destroy'])->name('users.destroy');
-    });
+    Route::get('/users',                             [UserController::class, 'index'])->name('users.index');
+    Route::patch('/users/{user}',                    [UserController::class, 'update'])->name('users.update');
+    Route::patch('/users/{user}/role',               [UserController::class, 'setRole'])->name('users.role');
+    Route::patch('/users/{user}/status',             [UserController::class, 'setStatus'])->name('users.status');
+    Route::delete('/users/{user}/tokens',            [UserController::class, 'revokeAllTokens'])->name('users.tokens.revoke-all');
+    Route::delete('/users/{user}/tokens/{clientId}', [UserController::class, 'revokeSingleToken'])->name('users.tokens.revoke');
+    Route::delete('/users/{user}',                   [UserController::class, 'destroy'])->name('users.destroy');
+});
 
     Route::middleware(['auth'])->prefix('admin')->group(function () {
         Route::get('/services', [ServiceController::class, 'index'])->name('services.index');

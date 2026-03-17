@@ -2,7 +2,7 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\ActivityLog;
+use App\Models\ApiClient;
 use App\Models\User;
 use App\Traits\LogsActivity;
 use Illuminate\Http\RedirectResponse;
@@ -16,6 +16,9 @@ class UserController extends Controller
 {
     use LogsActivity;
 
+    private const STATUSES = ['active', 'inactive', 'suspended'];
+    private const ROLES    = ['admin', 'client'];
+
     // ── Pages ─────────────────────────────────────────────────────────────────
 
     /**
@@ -26,20 +29,26 @@ class UserController extends Controller
         $this->requireAdmin($request);
 
         $search = $request->input('search', '');
+        $status = $request->input('status', 'all');
+        $role   = $request->input('role', 'all');
 
         $users = User::query()
             ->when($search, fn ($q) => $q->where(function ($q) use ($search) {
                 $q->where('name',  'like', "%{$search}%")
                   ->orWhere('email', 'like', "%{$search}%");
             }))
-            ->withCount('tokens')
+            ->when(in_array($status, self::STATUSES), fn ($q) => $q->where('status', $status))
+            ->when(in_array($role, self::ROLES),      fn ($q) => $q->where('role', $role))
+            ->withCount('apiClients as tokens_count')
             ->latest()
             ->paginate(20)
             ->through(fn ($u) => $this->userResource($u));
 
-        return Inertia::render('admin/users/index', [
+        return Inertia::render('admin/admin-users-index', [
             'users'   => $users,
             'search'  => $search,
+            'status'  => $status,
+            'role'    => $role,
             'summary' => $this->userSummary(),
         ]);
     }
@@ -48,7 +57,7 @@ class UserController extends Controller
 
     /**
      * PATCH /admin/users/{user}
-     * Update name, email, role, optional password.
+     * Update name and email. Password optional.
      */
     public function update(Request $request, User $user): RedirectResponse
     {
@@ -59,13 +68,11 @@ class UserController extends Controller
             'email'                 => ['required', 'email', Rule::unique('users')->ignore($user->id)],
             'password'              => ['nullable', 'string', 'min:8', 'confirmed'],
             'password_confirmation' => ['nullable', 'string'],
-            'is_admin'              => ['boolean'],
         ]);
 
         $data = [
-            'name'     => $validated['name'],
-            'email'    => $validated['email'],
-            'is_admin' => $validated['is_admin'] ?? $user->is_admin,
+            'name'  => $validated['name'],
+            'email' => $validated['email'],
         ];
 
         if (! empty($validated['password'])) {
@@ -80,55 +87,110 @@ class UserController extends Controller
     }
 
     /**
-     * PATCH /admin/users/{user}/status
-     * Toggle is_active — activate or deactivate the account.
+     * PATCH /admin/users/{user}/role
+     * Set role: admin | client.
      */
-    public function toggleStatus(Request $request, User $user): RedirectResponse
+    public function setRole(Request $request, User $user): RedirectResponse
+    {
+        $this->requireAdmin($request);
+
+        // Prevent admin from demoting themselves
+        if ((int) $user->id === (int) $request->user()->id) {
+            return redirect()->back()->withErrors([
+                'role' => 'You cannot change your own role.',
+            ]);
+        }
+
+        $validated = $request->validate([
+            'role' => ['required', Rule::in(self::ROLES)],
+        ]);
+
+        $old = $user->role;
+        $user->update(['role' => $validated['role']]);
+
+        $this->log(
+            'role_changed',
+            "User {$user->email} role changed from {$old} to {$validated['role']}",
+            'auth',
+            $user
+        );
+
+        return redirect()->back()->with('success', "{$user->name} is now a {$validated['role']}.");
+    }
+
+    /**
+     * PATCH /admin/users/{user}/status
+     * Set status: active | inactive | suspended.
+     */
+    public function setStatus(Request $request, User $user): RedirectResponse
     {
         $this->requireAdmin($request);
 
         if ((int) $user->id === (int) $request->user()->id) {
             return redirect()->back()->withErrors([
-                'status' => 'You cannot deactivate your own account.',
+                'status' => 'You cannot change the status of your own account.',
             ]);
         }
 
-        $user->update(['is_active' => ! $user->is_active]);
+        $validated = $request->validate([
+            'status' => ['required', Rule::in(self::STATUSES)],
+        ]);
 
-        $action = $user->is_active ? 'activated' : 'deactivated';
+        $old = $user->status;
+        $user->update(['status' => $validated['status']]);
 
-        $this->log($action, "Account {$action} for {$user->email}", 'auth', $user);
+        $this->log(
+            'status_changed',
+            "User {$user->email} status changed from {$old} to {$validated['status']}",
+            'auth',
+            $user
+        );
 
-        return redirect()->back()->with('success', "{$user->name} {$action}.");
+        return redirect()->back()->with('success', "{$user->name} set to {$validated['status']}.");
     }
 
     /**
      * DELETE /admin/users/{user}/tokens
-     * Revoke ALL Sanctum tokens (force logout from all devices).
+     * Deactivate + delete ALL ApiClient tokens for this user.
      */
     public function revokeAllTokens(Request $request, User $user): RedirectResponse
     {
         $this->requireAdmin($request);
 
-        $count = $user->tokens()->count();
-        $user->tokens()->delete();
+        $count = $user->apiClients()->count();
 
-        $this->log('token_revoked', "Revoked all {$count} token(s) for {$user->email}", 'auth', $user);
+        $user->apiClients()->update(['active' => false]);
+        $user->apiClients()->delete();
+
+        $this->log(
+            'token_revoked',
+            "Revoked all {$count} API client(s) for {$user->email}",
+            'auth',
+            $user
+        );
 
         return redirect()->back()->with('success', "{$count} token(s) revoked for {$user->name}.");
     }
 
     /**
-     * DELETE /admin/users/{user}/tokens/{tokenId}
-     * Revoke a single Sanctum token.
+     * DELETE /admin/users/{user}/tokens/{clientId}
+     * Revoke a single ApiClient token.
      */
-    public function revokeSingleToken(Request $request, User $user, int $tokenId): RedirectResponse
+    public function revokeSingleToken(Request $request, User $user, int $clientId): RedirectResponse
     {
         $this->requireAdmin($request);
 
-        $user->tokens()->findOrFail($tokenId)->delete();
+        $client = ApiClient::where('user_id', $user->id)->findOrFail($clientId);
 
-        $this->log('token_revoked', "Revoked token #{$tokenId} for {$user->email}", 'auth', $user);
+        $client->update(['active' => false]);
+        $client->delete();
+
+        $this->log(
+            'token_revoked',
+            "Revoked API client #{$clientId} for {$user->email}",
+            'auth',
+            $user
+        );
 
         return redirect()->back()->with('success', 'Token revoked.');
     }
@@ -141,23 +203,27 @@ class UserController extends Controller
         $this->requireAdmin($request);
 
         if ((int) $user->id === (int) $request->user()->id) {
-            return redirect()->back()->withErrors(['delete' => 'You cannot delete your own account.']);
+            return redirect()->back()->withErrors([
+                'delete' => 'You cannot delete your own account.',
+            ]);
         }
 
         $email = $user->email;
-        $user->tokens()->delete();
+
+        $user->apiClients()->delete();
         $user->delete();
 
         $this->log('deleted', "Deleted user {$email}", 'auth');
 
-        return redirect()->route('admin.users.index')->with('success', "User {$email} deleted.");
+        return redirect()->route('admin.users.index')
+            ->with('success', "User {$email} deleted.");
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 
     private function requireAdmin(Request $request): void
     {
-        if (! $request->user()?->role =='admin') {
+        if ($request->user()?->role !== 'admin') {
             abort(403);
         }
     }
@@ -168,9 +234,9 @@ class UserController extends Controller
             'id'            => $user->id,
             'name'          => $user->name,
             'email'         => $user->email,
-            'is_admin'      => (bool) $user->is_admin,
-            'is_active'     => (bool) ($user->is_active ?? true),
-            'token_count'   => $user->tokens_count ?? $user->tokens()->count(),
+            'role'          => $user->role,             // 'admin' | 'client'
+            'status'        => $user->status,           // 'active' | 'inactive' | 'suspended'
+            'token_count'   => (int) ($user->tokens_count ?? $user->apiClients()->count()),
             'created_at'    => $user->created_at->toIso8601String(),
             'created_ago'   => $user->created_at->diffForHumans(),
             'last_seen_at'  => $user->last_seen_at?->toIso8601String(),
@@ -182,9 +248,11 @@ class UserController extends Controller
     {
         return [
             'total'         => User::count(),
-            'active'        => User::where('is_active', true)->count(),
-            'inactive'      => User::where('is_active', false)->count(),
-            'admins'        => User::where('is_admin', true)->count(),
+            'active'        => User::where('status', 'active')->count(),
+            'inactive'      => User::where('status', 'inactive')->count(),
+            'suspended'     => User::where('status', 'suspended')->count(),
+            'admins'        => User::where('role', 'admin')->count(),
+            'clients'       => User::where('role', 'client')->count(),
             'new_this_week' => User::where('created_at', '>=', now()->subWeek())->count(),
         ];
     }
