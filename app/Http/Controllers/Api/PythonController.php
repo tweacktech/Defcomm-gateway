@@ -80,46 +80,16 @@ class PythonController extends Controller
     }
 
     // For passing an audio file
-    // public function translateAudio(Request $request)
-    // {
-    //     $request->validate([
-    //         'audio' => 'required|file|mimes:wav,mp3,ogg,mp4,',
-    //         'source_lang' => 'required|string',
-    //         'target_lang' => 'required|string',
-    //     ]);
-
-    //     // Store audio temporarily
-    //     $path = $request->file('audio')->store('temp/audio');
-    //     $fullPath = storage_path("app/{$path}");
-    //     $script = base_path('app/Services/pythonService/speech.py');
-
-    //     $result = Process::timeout(120)->run([
-    //         'python3',
-    //         $script,
-    //         '--source',
-    //         $request->string('source_lang')->toString(),
-    //         '--target',
-    //         $request->string('target_lang')->toString(),
-    //         '--file',
-    //         $fullPath,
-    //     ]);
-
-    //     // Clean up temp file
-    //     Storage::delete($path);
-
-    //     if ($result->failed()) {
-    //         return response()->json([
-    //             'success' => false,
-    //             'error' => $result->errorOutput(),
-    //         ], 500);
-    //     }
-
-    //     return response()->json([
-    //         'success' => true,
-    //         'output' => trim($result->output()),
-    //     ]);
-    // }
-
+    /**
+     * @SWG\Get(
+     *     path="/users",
+     *     summary="Get a list of users",
+     *     tags={"Users"},
+     *
+     *     @SWG\Response(response=200, description="Successful operation"),
+     *     @SWG\Response(response=400, description="Invalid request")
+     * )
+     */
     public function translateAudio(Request $request)
     {
         try {

@@ -56,7 +56,8 @@ class DriveShare extends Model
         string $permission = 'view',
         ?string $password = null,
         ?int $maxUses = null,
-        ?\Carbon\Carbon $expiresAt = null,
+        ? string $expiresAt = null,
+        // ?\Carbon\Carbon $expiresAt = null,
     ): self {
         $payload = $item->id.':'.Str::random(32);
         $token = rtrim(strtr(base64_encode(Crypt::encryptString($payload)), '+/', '-_'), '=');

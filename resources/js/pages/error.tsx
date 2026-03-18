@@ -11,9 +11,7 @@ type Props = {
     canRegister: boolean;
 };
 
-export default function error({
-
-}: Props) {
+export default function error() {
     return (
         <AuthLayout
             title="Page not found"
@@ -21,7 +19,7 @@ export default function error({
         >
             <Head title="Error page" />
 
-             <TextLink href='/' tabIndex={5}>
+             <TextLink href='/dashboard' tabIndex={5}>
                                     Home page
                                 </TextLink>
         </AuthLayout>
