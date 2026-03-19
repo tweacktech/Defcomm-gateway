@@ -115,7 +115,7 @@ Route::prefix('')->middleware(['auth'])->group(function () {
         Route::delete('/services/{service}', [ServiceController::class, 'destroy'])->name('services.destroy');
     });
 
-     Route::get('/services/{key}', [ServiceController::class, 'serviceDetails'])->name('services.index');
+     Route::get('/services/{key}', [ServiceController::class, 'serviceDetails'])->name('services.details')->middleware('auth');
 });
 
   // ── Public share access — NO auth required ─────────────────────────────────────
