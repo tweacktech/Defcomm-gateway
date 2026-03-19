@@ -93,10 +93,6 @@ Route::prefix('')->middleware(['auth'])->group(function () {
         Route::post('/drive/transfer/{token}/decline', [DriveController::class, 'declineTransfer'])->name('drive.transfer.decline');
     });
 
-    // ── Public share access — NO auth required ─────────────────────────────────────
-    Route::get('/s/{token}', [DriveController::class, 'shareAccessPage'])->name('drive.share.access');
-    Route::post('/s/{token}/unlock', [DriveController::class, 'unlockShare'])->name('drive.share.unlock');
-    Route::get('/s/{token}/download', [DriveController::class, 'sharedDownload'])->name('drive.share.download');
 
     // documentation page
     Route::get('/document', [ProfileController::class, 'document']);
@@ -121,6 +117,12 @@ Route::prefix('')->middleware(['auth'])->group(function () {
 
      Route::get('/services/{key}', [ServiceController::class, 'serviceDetails'])->name('services.index');
 });
+
+  // ── Public share access — NO auth required ─────────────────────────────────────
+    Route::get('/s/{token}', [DriveController::class, 'shareAccessPage'])->name('drive.share.access');
+    Route::post('/s/{token}/unlock', [DriveController::class, 'unlockShare'])->name('drive.share.unlock');
+    Route::get('/s/{token}/download', [DriveController::class, 'sharedDownload'])->name('drive.share.download');
+
 
 Route::get('/run-python', [PythonController::class, 'run']);
 Route::fallback(function () {

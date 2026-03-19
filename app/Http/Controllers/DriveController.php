@@ -78,8 +78,7 @@ class DriveController extends Controller
         $this->log(
             'starred',
             'Starred an item',
-            'Drive',
-            $items
+            'Drive'
         );
 
         return Inertia::render('drive/drive', [
