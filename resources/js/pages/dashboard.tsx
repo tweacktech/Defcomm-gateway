@@ -11,6 +11,7 @@ import type { BreadcrumbItem } from '@/types';
 
 interface Service {
     id: number;
+    key: string;
     name: string;
     description: string | null;
     price: number | null;
@@ -122,7 +123,7 @@ export default function Dashboard() {
                                             <span className="font-mono text-sm font-semibold">
                                                 {fmtPrice(svc.price)}
                                             </span>
-                                            <Link href={`/services/${svc.id}`}
+                                            <Link href={`/services/${svc.key}`}
                                                 className="flex items-center gap-1 rounded-lg border border-sidebar-border/70 px-3 py-1.5 text-xs font-medium transition hover:bg-accent/50">
                                                 Learn more <ArrowUpRight className="h-3 w-3" />
                                             </Link>

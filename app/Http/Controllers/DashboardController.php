@@ -20,19 +20,19 @@ class DashboardController extends Controller
 
         $services = Service::query()
             ->orderBy('name')
-            ->get(['id', 'name', 'description', 'is_active', 'created_at']);
+            ->get(['id', 'key', 'name', 'description', 'is_active', 'created_at']);
 
-        if ($user->role=='admin') {
+        if ($user->role == 'admin') {
             return Inertia::render('admin/admin-dashboard', [
-                'services'      => $services,
-                'stats'         => $this->adminStats(),
-                'user_summary'  => $this->userSummary(),
+                'services' => $services,
+                'stats' => $this->adminStats(),
+                'user_summary' => $this->userSummary(),
                 'activity_logs' => $this->allActivity(),
             ]);
         }
 
         return Inertia::render('dashboard', [
-            'services'      => $services,
+            'services' => $services,
             'activity_logs' => $this->userActivity($user->id),
         ]);
     }
@@ -42,9 +42,9 @@ class DashboardController extends Controller
     private function adminStats(): array
     {
         return [
-            'total_services'  => Service::count(),
+            'total_services' => Service::count(),
             'active_services' => Service::where('is_active', true)->count(),
-            'total_users'     => User::count(),
+            'total_users' => User::count(),
             // 'total_orders'  => Order::count(),
         ];
     }
@@ -52,10 +52,10 @@ class DashboardController extends Controller
     private function userSummary(): array
     {
         return [
-            'total'         => User::count(),
-            'active'        => User::where('status', 'active')->count(),
-            'inactive'      => User::where('status', 'inactive')->count(),
-            'admins'        => User::where('role', 'admin')->count(),
+            'total' => User::count(),
+            'active' => User::where('status', 'active')->count(),
+            'inactive' => User::where('status', 'inactive')->count(),
+            'admins' => User::where('role', 'admin')->count(),
             'new_this_week' => User::where('created_at', '>=', now()->subWeek())->count(),
         ];
     }
@@ -67,14 +67,14 @@ class DashboardController extends Controller
             ->limit(20)
             ->get(['id', 'event', 'description', 'module', 'created_at'])
             ->map(fn ($log) => [
-                'id'          => $log->id,
-                'event'       => $log->event,
+                'id' => $log->id,
+                'event' => $log->event,
                 'description' => $log->description,
-                'module'      => $log->module,
-                'icon'        => $log->iconName(),
-                'color'       => $log->colorClass(),
-                'created_at'  => $log->created_at->toIso8601String(),
-                'time_ago'    => $log->created_at->diffForHumans(),
+                'module' => $log->module,
+                'icon' => $log->iconName(),
+                'color' => $log->colorClass(),
+                'created_at' => $log->created_at->toIso8601String(),
+                'time_ago' => $log->created_at->diffForHumans(),
             ])
             ->toArray();
     }
@@ -86,17 +86,17 @@ class DashboardController extends Controller
             ->limit(50)
             ->get(['id', 'causer_id', 'causer_type', 'event', 'description', 'module', 'created_at'])
             ->map(fn ($log) => [
-                'id'          => $log->id,
-                'event'       => $log->event,
+                'id' => $log->id,
+                'event' => $log->event,
                 'description' => $log->description,
-                'module'      => $log->module,
-                'icon'        => $log->iconName(),
-                'color'       => $log->colorClass(),
-                'created_at'  => $log->created_at->toIso8601String(),
-                'time_ago'    => $log->created_at->diffForHumans(),
-                'causer'      => $log->causer ? [
-                    'id'    => $log->causer->id,
-                    'name'  => $log->causer->name,
+                'module' => $log->module,
+                'icon' => $log->iconName(),
+                'color' => $log->colorClass(),
+                'created_at' => $log->created_at->toIso8601String(),
+                'time_ago' => $log->created_at->diffForHumans(),
+                'causer' => $log->causer ? [
+                    'id' => $log->causer->id,
+                    'name' => $log->causer->name,
                     'email' => $log->causer->email,
                 ] : null,
             ])

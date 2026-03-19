@@ -6,7 +6,6 @@ use App\Models\DriveItem;
 use App\Models\DriveShare;
 use App\Models\User;
 use App\Traits\LogsActivity;
-use Carbon\Carbon;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
@@ -194,6 +193,7 @@ class DriveController extends Controller
             ]);
             if ($validator->failed()) {
                 \Log::error($validator->error());
+
                 return redirect()->back()->with('error', $validator->error());
             }
 
@@ -462,7 +462,7 @@ class DriveController extends Controller
                 ? now()->addDays((int) $validated['expires_in_days'])
                 : null;
 
-                // \Log::error($expiresAt);
+            // \Log::error($expiresAt);
             $share = DriveShare::makeLink(
                 item: $item,
                 permission: $validated['permission'],
@@ -475,7 +475,7 @@ class DriveController extends Controller
 
             $shareUrl = route('drive.share.access', $share->token);
 
-            $this->log('ShareLink','create item share link','Drive');
+            $this->log('ShareLink', 'create item share link', 'Drive');
 
             return redirect()->back()->with([
                 'success' => 'Share link created.',
@@ -554,7 +554,7 @@ class DriveController extends Controller
         $needsPassword = $share->hasPassword()
                       && !$request->session()->get($unlockedKey);
 
-        return Inertia::render('drive/share-access', [
+        return Inertia::render('drive/drive-shares', [
             'share' => [
                 'id' => $share->id,
                 'token' => $share->token,

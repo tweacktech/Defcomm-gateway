@@ -17,7 +17,7 @@ class ServiceController extends Controller
     // ── Pages ─────────────────────────────────────────────────────────────────
 
     /**
-     * GET /admin/services
+     * GET /admin/services.
      */
     public function index(Request $request): Response
     {
@@ -27,12 +27,11 @@ class ServiceController extends Controller
         $status = $request->input('status', 'all'); // all | active | inactive
 
         $services = Service::query()
-            ->when($search, fn ($q) =>
-                $q->where('name', 'like', "%{$search}%")
+            ->when($search, fn ($q) => $q->where('name', 'like', "%{$search}%")
                   ->orWhere('key', 'like', "%{$search}%")
                   ->orWhere('description', 'like', "%{$search}%")
             )
-            ->when($status === 'active',   fn ($q) => $q->where('is_active', true))
+            ->when($status === 'active', fn ($q) => $q->where('is_active', true))
             ->when($status === 'inactive', fn ($q) => $q->where('is_active', false))
             ->orderBy('name')
             ->paginate(15)
@@ -40,25 +39,25 @@ class ServiceController extends Controller
 
         return Inertia::render('admin/admin-services-index', [
             'services' => $services,
-            'filters'  => compact('search', 'status'),
-            'summary'  => $this->summary(),
+            'filters' => compact('search', 'status'),
+            'summary' => $this->summary(),
         ]);
     }
 
     // ── Mutations ─────────────────────────────────────────────────────────────
 
     /**
-     * POST /admin/services
+     * POST /admin/services.
      */
     public function store(Request $request): RedirectResponse
     {
         $this->requireAdmin($request);
 
         $validated = $request->validate([
-            'key'         => ['required', 'string', 'max:100', 'unique:services,key'],
-            'name'        => ['required', 'string', 'max:255'],
+            'key' => ['required', 'string', 'max:100', 'unique:services,key'],
+            'name' => ['required', 'string', 'max:255'],
             'description' => ['nullable', 'string', 'max:5000'],
-            'is_active'   => ['boolean'],
+            'is_active' => ['boolean'],
         ]);
 
         $service = Service::create($validated);
@@ -69,18 +68,18 @@ class ServiceController extends Controller
     }
 
     /**
-     * PATCH /admin/services/{service}
+     * PATCH /admin/services/{service}.
      */
     public function update(Request $request, Service $service): RedirectResponse
     {
         $this->requireAdmin($request);
 
         $validated = $request->validate([
-            'key'         => ['required', 'string', 'max:100',
-                              Rule::unique('services', 'key')->ignore($service->id)],
-            'name'        => ['required', 'string', 'max:255'],
+            'key' => ['required', 'string', 'max:100',
+                Rule::unique('services', 'key')->ignore($service->id)],
+            'name' => ['required', 'string', 'max:255'],
             'description' => ['nullable', 'string', 'max:5000'],
-            'is_active'   => ['boolean'],
+            'is_active' => ['boolean'],
         ]);
 
         $service->update($validated);
@@ -98,7 +97,7 @@ class ServiceController extends Controller
     {
         $this->requireAdmin($request);
 
-        $service->update(['is_active' => ! $service->is_active]);
+        $service->update(['is_active' => !$service->is_active]);
 
         $state = $service->is_active ? 'activated' : 'deactivated';
 
@@ -108,7 +107,7 @@ class ServiceController extends Controller
     }
 
     /**
-     * DELETE /admin/services/{service}
+     * DELETE /admin/services/{service}.
      */
     public function destroy(Request $request, Service $service): RedirectResponse
     {
@@ -134,12 +133,12 @@ class ServiceController extends Controller
     private function serviceResource(Service $service): array
     {
         return [
-            'id'          => $service->id,
-            'key'         => $service->key,
-            'name'        => $service->name,
+            'id' => $service->id,
+            'key' => $service->key,
+            'name' => $service->name,
             'description' => $service->description,
-            'is_active'   => $service->is_active,
-            'created_at'  => $service->created_at->toIso8601String(),
+            'is_active' => $service->is_active,
+            'created_at' => $service->created_at->toIso8601String(),
             'created_ago' => $service->created_at->diffForHumans(),
             'updated_ago' => $service->updated_at->diffForHumans(),
         ];
@@ -148,9 +147,40 @@ class ServiceController extends Controller
     public function summary(): array
     {
         return [
-            'total'    => Service::count(),
-            'active'   => Service::where('is_active', true)->count(),
+            'total' => Service::count(),
+            'active' => Service::where('is_active', true)->count(),
             'inactive' => Service::where('is_active', false)->count(),
         ];
+    }
+
+    public function serviceDetails(string $key): Response
+    {
+        $service = Service::where('key', $key)->firstOrFail();
+
+        if ($service->key === 'translator') {
+            // For example, if you want to show usage stats for the translator service
+            $usageStats = $this->getTranslatorUsageStats();
+
+            return Inertia::render('translator', [
+                'service' => $this->serviceResource($service),
+                'usageStats' => $usageStats,
+            ]);
+        } elseif ($service->key === 'encryption') {
+            return Inertia::render('encryption', [
+                'service' => $this->serviceResource($service),
+            ]);
+        } elseif ($service->key === 'vault') {
+            return Inertia::render('vault/vault', [
+                'service' => $this->serviceResource($service),
+            ]);
+        } elseif ($service->key === 'drive') {
+            return Inertia::render('drive/drive', [
+                'service' => $this->serviceResource($service),
+            ]);
+        }else {
+            return Inertia::render('service-details', [
+                'service' => $this->serviceResource($service),
+            ]);
+        }
     }
 }

@@ -118,8 +118,9 @@ Route::prefix('')->middleware(['auth'])->group(function () {
         Route::patch('/services/{service}/toggle', [ServiceController::class, 'toggle'])->name('services.toggle');
         Route::delete('/services/{service}', [ServiceController::class, 'destroy'])->name('services.destroy');
     });
-})
-->middleware(['auth', 'verified']);
+
+     Route::get('/services/{key}', [ServiceController::class, 'serviceDetails'])->name('services.index');
+});
 
 Route::get('/run-python', [PythonController::class, 'run']);
 Route::fallback(function () {
