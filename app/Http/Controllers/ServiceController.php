@@ -159,7 +159,7 @@ class ServiceController extends Controller
 
         if ($service->key === 'translator') {
             // For example, if you want to show usage stats for the translator service
-            $usageStats = $this->getTranslatorUsageStats();
+            $usageStats = 10;
 
             return Inertia::render('translator', [
                 'service' => $this->serviceResource($service),

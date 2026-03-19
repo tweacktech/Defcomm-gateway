@@ -225,7 +225,7 @@ export default function AdminDashboard() {
                                                 </td>
                                                 <td className="px-6 py-3 text-muted-foreground">{fmtDate(svc.created_at)}</td>
                                                 <td className="px-6 py-3">
-                                                    <Link href={`/services/${svc.id}/edit`}
+                                                    <Link href={`admin/services?$search=${svc.id}/edit`}
                                                         className="text-xs text-primary hover:underline">Edit</Link>
                                                 </td>
                                             </tr>
