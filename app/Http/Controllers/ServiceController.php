@@ -153,6 +153,11 @@ class ServiceController extends Controller
         ];
     }
 
+    public function translator(): Response
+    {
+        return $this->serviceDetails('translator');
+    }
+
     public function serviceDetails(string $key): Response
     {
         $service = Service::where('key', $key)->firstOrFail();

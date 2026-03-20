@@ -1,13 +1,12 @@
 <?php
 
-use App\Http\Controllers\API\PythonController;
+use App\Http\Controllers\Api\PythonController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DriveController;
 use App\Http\Controllers\ServiceController;
 use App\Http\Controllers\Settings\ProfileController;
 use App\Http\Controllers\UserController;
 use App\Http\Controllers\VaultController;
-use App\Models\Service;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
 use Laravel\Fortify\Features;
@@ -18,6 +17,15 @@ Route::get('/', function () {
     // ]);
     return Inertia::render('auth/login');
 })->name('home');
+
+/*
+|--------------------------------------------------------------------------
+| Public Drive share links (guests — no authentication)
+|--------------------------------------------------------------------------
+*/
+Route::get('/s/{token}', [DriveController::class, 'shareAccessPage'])->name('drive.share.access');
+Route::post('/s/{token}/unlock', [DriveController::class, 'unlockShare'])->name('drive.share.unlock');
+Route::get('/s/{token}/download', [DriveController::class, 'sharedDownload'])->name('drive.share.download');
 
 Route::prefix('')->middleware(['auth'])->group(function () {
     // dashboard
@@ -115,14 +123,10 @@ Route::prefix('')->middleware(['auth'])->group(function () {
         Route::delete('/services/{service}', [ServiceController::class, 'destroy'])->name('services.destroy');
     });
 
-     Route::get('/services/{key}', [ServiceController::class, 'serviceDetails'])->name('services.details')->middleware('auth');
+    Route::get('/translator', [ServiceController::class, 'translator'])->name('translator');
+
+    Route::get('/services/{key}', [ServiceController::class, 'serviceDetails'])->name('services.details')->middleware('auth');
 });
-
-  // ── Public share access — NO auth required ─────────────────────────────────────
-    Route::get('/s/{token}', [DriveController::class, 'shareAccessPage'])->name('drive.share.access');
-    Route::post('/s/{token}/unlock', [DriveController::class, 'unlockShare'])->name('drive.share.unlock');
-    Route::get('/s/{token}/download', [DriveController::class, 'sharedDownload'])->name('drive.share.download');
-
 
 Route::get('/run-python', [PythonController::class, 'run']);
 Route::fallback(function () {

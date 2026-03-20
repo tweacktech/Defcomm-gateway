@@ -43,7 +43,7 @@ export default function Translator() {
         { title: 'Dashboard', href: '/dashboard' },
         {
             title: service.name,
-            href: `/services/${service.key}`,
+            href: '/translator',
         },
     ];
 

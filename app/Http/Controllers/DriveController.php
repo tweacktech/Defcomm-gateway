@@ -542,7 +542,7 @@ class DriveController extends Controller
             ->firstOrFail();
 
         if (!$share->isUsable()) {
-            return Inertia::render('drive/share-expired', [
+            return Inertia::render('drive/drive-share-expired', [
                 'reason' => $share->isExpired()
                     ? 'expired'
                     : ($share->isExhausted() ? 'exhausted' : 'revoked'),
@@ -553,7 +553,7 @@ class DriveController extends Controller
         $needsPassword = $share->hasPassword()
                       && !$request->session()->get($unlockedKey);
 
-        return Inertia::render('drive/drive-shares', [
+        return Inertia::render('drive/drive-shares-public', [
             'share' => [
                 'id' => $share->id,
                 'token' => $share->token,
