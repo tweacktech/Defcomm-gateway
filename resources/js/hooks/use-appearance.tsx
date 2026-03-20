@@ -43,10 +43,7 @@ const applyTheme = (appearance: Appearance): void => {
 
     document.documentElement.classList.toggle('dark', isDark);
     document.documentElement.style.colorScheme = isDark ? 'dark' : 'light';
-    document.documentElement.classList.toggle(
-        'appearance-green',
-        appearance === 'green',
-    );
+    document.documentElement.classList.toggle('green', appearance === 'green');
 };
 
 const subscribe = (callback: () => void) => {

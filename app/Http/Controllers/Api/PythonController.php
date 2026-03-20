@@ -258,8 +258,8 @@ class PythonController extends Controller
 
             return response()->json([
                 'success' => true,
-                'output' => trim($result->output()),  // translated text
-                'audio_url' => asset('storage/audio/'.basename($saveOutput)), // audio file URL
+                'output' => trim($result->output()),
+                'audio_url' => asset('audio/'.$filename),
             ]);
         } catch (\Exception $e) {
             return response()->json([

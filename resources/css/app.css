@@ -131,21 +131,35 @@
     --sidebar-border: oklch(0.269 0 0);
     --sidebar-ring: oklch(0.439 0 0);
 }
-/* ── Defcomm Green theme ─────────────────────────────── */
+/* ── Defcomm Green theme (requires `green` + `dark` on <html>) ─────────── */
 .green {
-    --background: 80 30% 8%;          /* very dark olive */
-    --foreground: 80 20% 92%;         /* off-white */
-    --card: 80 25% 11%;
-    --card-foreground: 80 20% 92%;
-    --primary: 82 60% 38%;            /* olive green */
-    --primary-foreground: 0 0% 100%;
-    --muted: 80 15% 18%;
-    --muted-foreground: 80 10% 60%;
-    --border: 80 15% 20%;
-    --sidebar-border: 80 15% 20%;
-    --accent: 82 40% 20%;
-    --accent-foreground: 80 20% 92%;
-    /* adjust any other tokens to match your Defcomm design */
+    --background: hsl(80 28% 9%);
+    --foreground: hsl(80 15% 93%);
+    --card: hsl(80 22% 12%);
+    --card-foreground: hsl(80 15% 93%);
+    --popover: hsl(80 22% 12%);
+    --popover-foreground: hsl(80 15% 93%);
+    --primary: hsl(82, 61%, 26%);
+    --primary-foreground: hsl(0 0% 100%);
+    --secondary: hsl(80 18% 18%);
+    --secondary-foreground: hsl(80 15% 93%);
+    --muted: hsl(80 16% 18%);
+    --muted-foreground: hsl(80 12% 58%);
+    --accent: hsl(82 32% 22%);
+    --accent-foreground: hsl(80 15% 93%);
+    --destructive: hsl(0 62% 42%);
+    --destructive-foreground: hsl(0 0% 98%);
+    --border: hsl(80 14% 22%);
+    --input: hsl(80 14% 22%);
+    --ring: hsl(82, 52%, 28%);
+    --sidebar: hsl(80 24% 10%);
+    --sidebar-foreground: hsl(80 15% 93%);
+    --sidebar-primary: hsl(82 45% 42%);
+    --sidebar-primary-foreground: hsl(0 0% 100%);
+    --sidebar-accent: hsl(80 18% 18%);
+    --sidebar-accent-foreground: hsl(80 15% 93%);
+    --sidebar-border: hsl(80 14% 22%);
+    --sidebar-ring: hsl(82 40% 38%);
 }
 
 @layer base {

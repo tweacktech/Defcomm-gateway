@@ -1,198 +1,372 @@
-import { Head, usePage, router } from '@inertiajs/react';
-import {
-    Copy,
-    Check,
-    Eye,
-    EyeOff,
-    RefreshCw,
-    Key,
-    Shield,
-    Clock,
-    AlertCircle,
-    Download,
-} from 'lucide-react';
-import { useState } from 'react';
+import { Head, Link, usePage } from '@inertiajs/react';
+import { Languages, Loader2, Mic, Volume2 } from 'lucide-react';
+import { useCallback, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import AppLayout from '@/layouts/app-layout';
-import { edit } from '@/routes/profile';
+import { cn } from '@/lib/utils';
 import type { BreadcrumbItem } from '@/types';
 
-const breadcrumbs: BreadcrumbItem[] = [
-    {
-        title: 'Documentation',
-        href: edit().url,
-    },
-];
-
-interface ApiClient {
+type Service = {
     id: number;
-    user_id: number;
-    client_id: string;
-    client_secret: string;
-    access_token?: string | null;
-    name?: string;
-    created_at: string;
-    updated_at: string;
-    expires_at?: string;
-}
+    key: string;
+    name: string;
+    description: string | null;
+    is_active: boolean;
+};
 
 type PageProps = {
-    client: ApiClient | null;
-    access_token?: string | null;
-    auth: {
-        user: unknown;
-    };
+    service: Service;
+    usageStats?: number;
 } & Record<string, unknown>;
 
+async function parseJsonResponse(res: Response): Promise<{
+    success?: boolean;
+    output?: string;
+    audio_url?: string;
+    error?: string;
+    stdout?: string;
+}> {
+    const text = await res.text();
+    try {
+        return JSON.parse(text) as Record<string, unknown>;
+    } catch {
+        return { success: false, error: text || `HTTP ${res.status}` };
+    }
+}
+
 export default function Translator() {
-    // Get the client data from Inertia props
-    const { client, access_token } = usePage<PageProps>().props;
+    const { service, usageStats } = usePage<PageProps>().props;
 
-    const [credentials, setCredentials] = useState<ApiClient | null>(client);
+    const breadcrumbs: BreadcrumbItem[] = [
+        { title: 'Dashboard', href: '/dashboard' },
+        {
+            title: service.name,
+            href: `/services/${service.key}`,
+        },
+    ];
 
+    const [sourceLang, setSourceLang] = useState('en');
+    const [targetLang, setTargetLang] = useState('es');
+    const [text, setText] = useState('Hello, world.');
+    const [textOut, setTextOut] = useState('');
+    const [audioUrl, setAudioUrl] = useState<string | null>(null);
+    const [audioFile, setAudioFile] = useState<File | null>(null);
+    const [loading, setLoading] = useState<'text' | 'tts' | 'audio' | null>(
+        null,
+    );
+    const [error, setError] = useState<string | null>(null);
+
+    const runTextTranslate = useCallback(async () => {
+        setError(null);
+        setLoading('text');
+        setTextOut('');
+        setAudioUrl(null);
+        try {
+            const res = await fetch('/api/client/translate-text', {
+                method: 'POST',
+                headers: {
+                    Accept: 'application/json',
+                    'Content-Type': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest',
+                },
+                credentials: 'same-origin',
+                body: JSON.stringify({
+                    text,
+                    source_lang: sourceLang,
+                    target_lang: targetLang,
+                }),
+            });
+            const data = await parseJsonResponse(res);
+            if (!res.ok || data.success === false) {
+                setError(
+                    data.error ||
+                        data.stdout ||
+                        `Request failed (${res.status})`,
+                );
+                return;
+            }
+            setTextOut(data.output ?? '');
+        } catch (e) {
+            setError(e instanceof Error ? e.message : 'Request failed');
+        } finally {
+            setLoading(null);
+        }
+    }, [sourceLang, targetLang, text]);
+
+    const runTextTranslateAudio = useCallback(async () => {
+        setError(null);
+        setLoading('tts');
+        setTextOut('');
+        setAudioUrl(null);
+        try {
+            const res = await fetch('/api/client/text-translate-audio', {
+                method: 'POST',
+                headers: {
+                    Accept: 'application/json',
+                    'Content-Type': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest',
+                },
+                credentials: 'same-origin',
+                body: JSON.stringify({
+                    text,
+                    source_lang: sourceLang,
+                    target_lang: targetLang,
+                }),
+            });
+            const data = await parseJsonResponse(res);
+            if (!res.ok || data.success === false) {
+                setError(data.error || `Request failed (${res.status})`);
+                return;
+            }
+            setTextOut(data.output ?? '');
+            if (data.audio_url) {
+                setAudioUrl(data.audio_url);
+            }
+        } catch (e) {
+            setError(e instanceof Error ? e.message : 'Request failed');
+        } finally {
+            setLoading(null);
+        }
+    }, [sourceLang, targetLang, text]);
+
+    const runAudioTranslate = useCallback(async () => {
+        if (!audioFile) {
+            setError('Choose an audio file first.');
+            return;
+        }
+        setError(null);
+        setLoading('audio');
+        setTextOut('');
+        setAudioUrl(null);
+        try {
+            const form = new FormData();
+            form.append('audio', audioFile);
+            form.append('source_lang', sourceLang);
+            form.append('target_lang', targetLang);
+
+            const res = await fetch('/api/client/translate-audio', {
+                method: 'POST',
+                headers: {
+                    Accept: 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest',
+                },
+                credentials: 'same-origin',
+                body: form,
+            });
+            const data = await parseJsonResponse(res);
+            if (!res.ok || data.success === false) {
+                setError(
+                    data.error ||
+                        data.stdout ||
+                        `Request failed (${res.status})`,
+                );
+                return;
+            }
+            setTextOut(data.output ?? '');
+            if (data.audio_url) {
+                setAudioUrl(data.audio_url);
+            }
+        } catch (e) {
+            setError(e instanceof Error ? e.message : 'Request failed');
+        } finally {
+            setLoading(null);
+        }
+    }, [audioFile, sourceLang, targetLang]);
 
     return (
         <AppLayout breadcrumbs={breadcrumbs}>
-            <Head title="API Credentials" />
+            <Head title={service.name} />
 
             <div className="flex flex-col gap-8 p-6">
-                {/* Header */}
-                <div>
-                    <h1 className="text-2xl font-bold tracking-tight">
-                        API Credentials
-                    </h1>
-                    <p className="text-muted-foreground">
-                        Manage your client credentials for API authentication
-                    </p>
-                </div>
-
-                {/* Main Content */}
-                <div className="grid gap-8 lg:grid-cols-3">
-                    {/* Credentials Card */}
-                    <div className="space-y-6 lg:col-span-2">
-                        <div className="rounded-xl border border-sidebar-border/70 bg-card">
-                            <div className="border-b p-6">
-                                <div className="flex items-center justify-between">
-                                    <div className="flex items-center gap-3">
-                                        <div className="rounded-lg bg-primary/10 p-2.5">
-                                            <Key className="h-5 w-5 text-primary" />
-                                        </div>
-                                        <div>
-                                            <h2 className="text-lg font-semibold">
-                                                Client Credentials
-                                            </h2>
-                                            <p className="text-sm text-muted-foreground">
-                                                Use these credentials to
-                                                authenticate your API requests
-                                            </p>
-                                        </div>
-                                    </div>
-
-                                        <div className="flex items-center gap-2">
-                                            <span className="flex items-center gap-1 rounded-full bg-green-100 px-3 py-1 text-xs font-medium text-green-700 dark:bg-green-900/30 dark:text-green-400">
-                                                <span className="h-1.5 w-1.5 rounded-full bg-green-600" />
-                                                Active
-                                            </span>
-                                        </div>
-
-                                </div>
-                            </div>
-
-                            <div className="space-y-6 p-6">
-                                <div className="py-12 text-center">
-                                    <Key className="mx-auto mb-4 h-12 w-12 text-muted-foreground/50" />
-                                    <h3 className="mb-2 text-lg font-medium">
-                                        No credentials found
-                                    </h3>
-                                    <p className="mb-6 text-sm text-muted-foreground">
-                                        You haven't generated any API
-                                        credentials yet. Generate your first set
-                                        to get started.
-                                    </p>
-                                </div>
-
-                                {/* Warning for regeneration */}
-
-                                    <div className="rounded-lg bg-yellow-50 p-4 dark:bg-yellow-950/50">
-                                        <div className="flex items-start gap-3">
-                                            <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-yellow-600 dark:text-yellow-400" />
-                                            <div className="text-sm text-yellow-800 dark:text-yellow-300">
-                                                <p className="font-medium">
-                                                    Important:
-                                                </p>
-                                                <p>
-                                                    Regenerating credentials
-                                                    will immediately invalidate
-                                                    your existing credentials.
-                                                    Any applications using the
-                                                    old credentials will need to
-                                                    be updated.
-                                                </p>
-                                            </div>
-                                        </div>
-                                    </div>
-                            </div>
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                    <div className="flex items-start gap-3">
+                        <div className="rounded-xl bg-primary/10 p-3">
+                            <Languages className="h-6 w-6 text-primary" />
                         </div>
-                    </div>
-
-                    {/* Sidebar - Keep the same as before */}
-                    <div className="space-y-4">
-                        {/* Info Card */}
-                        <div className="rounded-xl border border-sidebar-border/70 bg-card p-6">
-                            <h3 className="mb-4 font-semibold">
-                                Using Your Credentials
-                            </h3>
-                            <div className="space-y-4 text-sm">
-                                <p className="text-muted-foreground">
-                                    Include your credentials in the
-                                    Authorization header:
+                        <div>
+                            <h1 className="text-2xl font-bold tracking-tight">
+                                {service.name}
+                            </h1>
+                            <p className="text-sm text-muted-foreground">
+                                {service.description ??
+                                    'Try the Python translation pipeline (text, text + speech, or audio in).'}
+                            </p>
+                            {usageStats != null && (
+                                <p className="mt-1 text-xs text-muted-foreground">
+                                    Usage (demo stat): {usageStats}
                                 </p>
-                                <div className="rounded-lg bg-muted p-3 font-mono text-xs">
-                                    Authorization: Bearer {'{client_secret}'}
-                                </div>
-                                <div className="space-y-2">
-                                    <p className="font-medium">
-                                        Example Request:
-                                    </p>
-                                    <pre className="overflow-x-auto rounded-lg bg-muted p-3 text-xs">
-                                        {`curl -X GET https://api.example.com/v1/users \\
-  -H "Authorization: Bearer YOUR_CLIENT_SECRET" \\
-  -H "X-Client-ID: YOUR_CLIENT_ID"`}
-                                    </pre>
-                                </div>
-                            </div>
-                        </div>
-
-                        {/* Security Tips */}
-                        <div className="rounded-xl border border-sidebar-border/70 bg-card p-6">
-                            <h3 className="mb-4 font-semibold">
-                                Security Tips
-                            </h3>
-                            <ul className="space-y-3 text-sm">
-                                <li className="flex items-start gap-2">
-                                    <Shield className="mt-0.5 h-4 w-4 text-green-600" />
-                                    <span className="text-muted-foreground">
-                                        Never share your client secret publicly
-                                    </span>
-                                </li>
-                                <li className="flex items-start gap-2">
-                                    <Shield className="mt-0.5 h-4 w-4 text-green-600" />
-                                    <span className="text-muted-foreground">
-                                        Rotate credentials regularly
-                                    </span>
-                                </li>
-                                <li className="flex items-start gap-2">
-                                    <Shield className="mt-0.5 h-4 w-4 text-green-600" />
-                                    <span className="text-muted-foreground">
-                                        Use environment variables for storage
-                                    </span>
-                                </li>
-                            </ul>
+                            )}
                         </div>
                     </div>
+                    <Button variant="outline" size="sm" asChild>
+                        <Link href="/dashboard">Back to dashboard</Link>
+                    </Button>
                 </div>
+
+                {error && (
+                    <div
+                        className="rounded-lg border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive"
+                        role="alert"
+                    >
+                        {error}
+                    </div>
+                )}
+
+                <div className="grid gap-6 lg:grid-cols-2">
+                    <div className="space-y-4 rounded-xl border border-sidebar-border/70 bg-card p-6">
+                        <h2 className="text-lg font-semibold">
+                            Languages &amp; text
+                        </h2>
+                        <p className="text-sm text-muted-foreground">
+                            Use{' '}
+                            <a
+                                className="text-primary underline-offset-4 hover:underline"
+                                href="https://deep-translator.readthedocs.io/en/latest/README.html#usage"
+                                target="_blank"
+                                rel="noreferrer"
+                            >
+                                deep-translator
+                            </a>{' '}
+                            language codes (e.g.{' '}
+                            <code className="text-xs">en</code>,{' '}
+                            <code className="text-xs">es</code>,{' '}
+                            <code className="text-xs">fr</code>).
+                        </p>
+                        <div className="grid gap-4 sm:grid-cols-2">
+                            <div className="space-y-2">
+                                <Label htmlFor="src">Source language</Label>
+                                <Input
+                                    id="src"
+                                    value={sourceLang}
+                                    onChange={(e) =>
+                                        setSourceLang(e.target.value.trim())
+                                    }
+                                    placeholder="en"
+                                    autoComplete="off"
+                                />
+                            </div>
+                            <div className="space-y-2">
+                                <Label htmlFor="tgt">Target language</Label>
+                                <Input
+                                    id="tgt"
+                                    value={targetLang}
+                                    onChange={(e) =>
+                                        setTargetLang(e.target.value.trim())
+                                    }
+                                    placeholder="es"
+                                    autoComplete="off"
+                                />
+                            </div>
+                        </div>
+                        <div className="space-y-2">
+                            <Label htmlFor="txt">Text</Label>
+                            <textarea
+                                id="txt"
+                                value={text}
+                                onChange={(e) => setText(e.target.value)}
+                                rows={5}
+                                className={cn(
+                                    'border-input placeholder:text-muted-foreground flex w-full rounded-md border bg-transparent px-3 py-2 text-sm shadow-xs transition-[color,box-shadow] outline-none',
+                                    'focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px]',
+                                )}
+                            />
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                            <Button
+                                type="button"
+                                onClick={runTextTranslate}
+                                disabled={loading !== null || !text.trim()}
+                            >
+                                {loading === 'text' ? (
+                                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                ) : null}
+                                Translate text
+                            </Button>
+                            <Button
+                                type="button"
+                                variant="secondary"
+                                onClick={runTextTranslateAudio}
+                                disabled={loading !== null || !text.trim()}
+                            >
+                                {loading === 'tts' ? (
+                                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                ) : (
+                                    <Volume2 className="mr-2 h-4 w-4" />
+                                )}
+                                Translate + TTS
+                            </Button>
+                        </div>
+                    </div>
+
+                    <div className="space-y-4 rounded-xl border border-sidebar-border/70 bg-card p-6">
+                        <h2 className="text-lg font-semibold">
+                            Audio file → translate
+                        </h2>
+                        <p className="text-sm text-muted-foreground">
+                            Upload WAV, MP3, OGG, or MP4. The backend runs{' '}
+                            <code className="text-xs">speech.py</code> with{' '}
+                            <code className="text-xs">--file</code> and returns
+                            translated text plus optional TTS audio.
+                        </p>
+                        <div className="space-y-2">
+                            <Label htmlFor="audio">Audio file</Label>
+                            <Input
+                                id="audio"
+                                type="file"
+                                accept=".wav,.mp3,.ogg,.mp4,audio/*"
+                                onChange={(e) =>
+                                    setAudioFile(e.target.files?.[0] ?? null)
+                                }
+                            />
+                        </div>
+                        <Button
+                            type="button"
+                            onClick={runAudioTranslate}
+                            disabled={loading !== null || !audioFile}
+                        >
+                            {loading === 'audio' ? (
+                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                            ) : (
+                                <Mic className="mr-2 h-4 w-4" />
+                            )}
+                            Translate audio
+                        </Button>
+                    </div>
+                </div>
+
+                {(textOut || audioUrl) && (
+                    <div className="space-y-4 rounded-xl border border-sidebar-border/70 bg-card p-6">
+                        <h2 className="text-lg font-semibold">Result</h2>
+                        {textOut ? (
+                            <div className="space-y-2">
+                                <Label>Output</Label>
+                                <pre className="max-h-64 overflow-auto whitespace-pre-wrap rounded-lg border border-border bg-muted/40 p-4 text-sm">
+                                    {textOut}
+                                </pre>
+                            </div>
+                        ) : null}
+                        {audioUrl ? (
+                            <div className="space-y-2">
+                                <Label>Generated audio</Label>
+                                <audio
+                                    className="w-full"
+                                    controls
+                                    src={audioUrl}
+                                />
+                                <a
+                                    className="text-sm text-primary underline-offset-4 hover:underline"
+                                    href={audioUrl}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                >
+                                    Open audio URL
+                                </a>
+                            </div>
+                        ) : null}
+                    </div>
+                )}
             </div>
         </AppLayout>
     );
