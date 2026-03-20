@@ -11,6 +11,7 @@ use Illuminate\Support\Facades\Storage;
 class PythonController extends Controller
 {
     use LogsActivity;
+
     public function run(Request $request)
     {
         try {
@@ -92,6 +93,126 @@ class PythonController extends Controller
      *     @SWG\Response(response=400, description="Invalid request")
      * )
      */
+    // public function translateAudio(Request $request)
+    // {
+    //     try {
+    //         $request->validate([
+    //             'audio' => 'required|file|mimes:wav,mp3,ogg,mp4',
+    //             'source_lang' => 'required|string',
+    //             'target_lang' => 'required|string',
+    //         ]);
+
+    //         // return $request->audio;
+
+    //         /*
+    //         |--------------------------------------------------------------------------
+    //         | Ensure directories exist
+    //         |--------------------------------------------------------------------------
+    //         */
+    //         $tempDir = storage_path('app/temp/audio');
+    //         $outputDir = public_path('audio');
+
+    //         if (!file_exists($tempDir)) {
+    //             mkdir($tempDir, 0755, true);
+    //         }
+
+    //         if (!file_exists($outputDir)) {
+    //             mkdir($outputDir, 0755, true);
+    //         }
+
+    //         /*
+    //         |--------------------------------------------------------------------------
+    //         | Move uploaded file (IMPORTANT FIX)
+    //         |--------------------------------------------------------------------------
+    //         */
+    //         $inputFilename = uniqid('input_').'.'.$request->file('audio')->extension();
+    //         $fullPath = $tempDir.DIRECTORY_SEPARATOR.$inputFilename;
+
+    //         // move instead of store()
+    //         $request->file('audio')->move($tempDir, $inputFilename);
+
+    //         // Safety check
+    //         if (!file_exists($fullPath)) {
+    //             return response()->json([
+    //                 'success' => false,
+    //                 'error' => 'Uploaded file was not saved correctly.',
+    //                 'path' => $fullPath,
+    //             ], 500);
+    //         }
+
+    //         /*
+    //         |--------------------------------------------------------------------------
+    //         | Output audio path
+    //         |--------------------------------------------------------------------------
+    //         */
+    //         $outputFilename = uniqid('tts_').'.mp3';
+    //         $saveOutput = $outputDir.DIRECTORY_SEPARATOR.$outputFilename;
+
+    //         $script = base_path('app/Services/pythonService/speech.py');
+
+    //         /*
+    //         |--------------------------------------------------------------------------
+    //         | Run Python process
+    //         |--------------------------------------------------------------------------
+    //         */
+    //         $result = Process::timeout(120)->run([
+    //             'python3',
+    //             $script,
+    //             '--source', $request->input('source_lang'),
+    //             '--target', $request->input('target_lang'),
+    //             '--file', $fullPath,
+    //             '--tts',
+    //             '--save-output', $saveOutput,
+    //         ]);
+
+    //         /*
+    //         |--------------------------------------------------------------------------
+    //         | Delete temp input AFTER python finishes
+    //         |--------------------------------------------------------------------------
+    //         */
+    //         @unlink($fullPath);
+
+    //         if ($result->failed()) {
+    //             return response()->json([
+    //                 'success' => false,
+    //                 'error' => $result->errorOutput(),
+    //                 'stdout' => $result->output(),
+    //             ], 500);
+    //         }
+
+    //         /*
+    //         |--------------------------------------------------------------------------
+    //         | Confirm output file exists
+    //         |--------------------------------------------------------------------------
+    //         */
+    //         if (!file_exists($saveOutput)) {
+    //             return response()->json([
+    //                 'success' => false,
+    //                 'error' => 'Audio file was not created by Python.',
+    //                 'stderr' => $result->errorOutput(),
+    //                 'checked_path' => $saveOutput,
+    //             ], 500);
+    //         }
+
+    //         /*
+    //         |--------------------------------------------------------------------------
+    //         | Success Response
+    //         |--------------------------------------------------------------------------
+    //         */
+    //         return response()->json([
+    //             'success' => true,
+    //             'output' => trim($result->output()),
+    //             'audio_url' => asset('audio/'.$outputFilename),
+    //         ]);
+    //     } catch (\Throwable $e) {
+    //         return response()->json([
+    //             'success' => false,
+    //             'error' => $e->getMessage(),
+    //             'line' => $e->getLine(),
+    //         ], 500);
+    //     }
+    // }
+
     public function translateAudio(Request $request)
     {
         try {
@@ -101,36 +222,16 @@ class PythonController extends Controller
                 'target_lang' => 'required|string',
             ]);
 
-            // return $request->audio;
+            $userId = auth()->id() ?? 'guest';
 
             /*
             |--------------------------------------------------------------------------
-            | Ensure directories exist
+            | Store input in temp (Laravel way)
             |--------------------------------------------------------------------------
             */
-            $tempDir = storage_path('app/temp/audio');
-            $outputDir = public_path('audio');
+            $storedPath = $request->file('audio')->store("temp/audio/{$userId}", 'local');
+            $fullPath = storage_path("app/{$storedPath}");
 
-            if (!file_exists($tempDir)) {
-                mkdir($tempDir, 0755, true);
-            }
-
-            if (!file_exists($outputDir)) {
-                mkdir($outputDir, 0755, true);
-            }
-
-            /*
-            |--------------------------------------------------------------------------
-            | Move uploaded file (IMPORTANT FIX)
-            |--------------------------------------------------------------------------
-            */
-            $inputFilename = uniqid('input_').'.'.$request->file('audio')->extension();
-            $fullPath = $tempDir.DIRECTORY_SEPARATOR.$inputFilename;
-
-            // move instead of store()
-            $request->file('audio')->move($tempDir, $inputFilename);
-
-            // Safety check
             if (!file_exists($fullPath)) {
                 return response()->json([
                     'success' => false,
@@ -141,9 +242,15 @@ class PythonController extends Controller
 
             /*
             |--------------------------------------------------------------------------
-            | Output audio path
+            | Output directory (TEMP, not public)
             |--------------------------------------------------------------------------
             */
+            $outputDir = storage_path('/audio/output');
+
+            if (!file_exists($outputDir)) {
+                mkdir($outputDir, 0755, true);
+            }
+
             $outputFilename = uniqid('tts_').'.mp3';
             $saveOutput = $outputDir.DIRECTORY_SEPARATOR.$outputFilename;
 
@@ -151,7 +258,7 @@ class PythonController extends Controller
 
             /*
             |--------------------------------------------------------------------------
-            | Run Python process
+            | Run Python
             |--------------------------------------------------------------------------
             */
             $result = Process::timeout(120)->run([
@@ -166,7 +273,7 @@ class PythonController extends Controller
 
             /*
             |--------------------------------------------------------------------------
-            | Delete temp input AFTER python finishes
+            | Delete temp input
             |--------------------------------------------------------------------------
             */
             @unlink($fullPath);
@@ -181,7 +288,7 @@ class PythonController extends Controller
 
             /*
             |--------------------------------------------------------------------------
-            | Confirm output file exists
+            | Confirm output exists
             |--------------------------------------------------------------------------
             */
             if (!file_exists($saveOutput)) {
@@ -195,13 +302,13 @@ class PythonController extends Controller
 
             /*
             |--------------------------------------------------------------------------
-            | Success Response
+            | Return file (NOT public URL)
             |--------------------------------------------------------------------------
             */
             return response()->json([
                 'success' => true,
                 'output' => trim($result->output()),
-                'audio_url' => asset('audio/'.$outputFilename),
+                'file_path' => $saveOutput, // internal path
             ]);
         } catch (\Throwable $e) {
             return response()->json([
