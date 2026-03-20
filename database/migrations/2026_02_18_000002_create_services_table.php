@@ -16,7 +16,7 @@ return new class extends Migration {
             $table->string('key')->unique();
             $table->string('name');
             $table->text('description')->nullable();
-            $table->decimal('price', 12, 2)->nullable()->default(0);
+            $table->decimal('price', 12, 2)->nullable()->default(10.00);
             $table->boolean('is_active')->default(true);
             $table->timestamps();
         });

@@ -88,13 +88,75 @@ interface ActivityFeedProps {
     limit?: number;         // show first N rows, rest hidden behind "show more"
 }
 
+// export function ActivityFeed({
+//     logs,
+//     showCauser = false,
+//     title = 'Activity',
+//     limit = 10,
+// }: ActivityFeedProps) {
+//     const visible = logs.slice(0, limit);
+
+//     return (
+//         <div className="rounded-xl border border-sidebar-border/70 bg-card">
+//             {/* Header */}
+//             <div className="border-b p-6">
+//                 <div className="flex items-center gap-3">
+//                     <div className="rounded-lg bg-primary/10 p-2.5">
+//                         <Activity className="h-5 w-5 text-primary" />
+//                     </div>
+//                     <div>
+//                         <h2 className="text-lg font-semibold">{title}</h2>
+//                         <p className="text-sm text-muted-foreground">
+//                             {logs.length === 0
+//                                 ? 'No activity yet'
+//                                 : `${logs.length} event${logs.length !== 1 ? 's' : ''} recorded`}
+//                         </p>
+//                     </div>
+//                 </div>
+//             </div>
+
+//             {/* Body */}
+//             <div className="px-6 py-2">
+//                 {logs.length === 0 ? (
+//                     <div className="flex flex-col items-center justify-center gap-3 py-10 text-center">
+//                         <Activity className="h-8 w-8 text-muted-foreground/30" />
+//                         <p className="text-sm text-muted-foreground">
+//                             Actions you take will appear here.
+//                         </p>
+//                     </div>
+//                 ) : (
+//                     <>
+//                         {visible.map(log => (
+//                             <ActivityRow key={log.id} log={log} showCauser={showCauser} />
+//                         ))}
+//                         {logs.length > limit && (
+//                             <p className="py-3 text-center text-xs text-muted-foreground">
+//                                 + {logs.length - limit} older events — check the full log for details.
+//                             </p>
+//                         )}
+//                     </>
+//                 )}
+//             </div>
+//         </div>
+//     );
+// }
+
+import { useState } from 'react';
+
 export function ActivityFeed({
     logs,
     showCauser = false,
     title = 'Activity',
-    limit = 10,
+    limit = 8, // now acts as page size
 }: ActivityFeedProps) {
-    const visible = logs.slice(0, limit);
+    const [currentPage, setCurrentPage] = useState(1);
+
+    const pageSize = limit;
+    const totalPages = Math.ceil(logs.length / pageSize);
+
+    const start = (currentPage - 1) * pageSize;
+    const end = start + pageSize;
+    const visible = logs.slice(start, end);
 
     return (
         <div className="rounded-xl border border-sidebar-border/70 bg-card">
@@ -129,10 +191,30 @@ export function ActivityFeed({
                         {visible.map(log => (
                             <ActivityRow key={log.id} log={log} showCauser={showCauser} />
                         ))}
-                        {logs.length > limit && (
-                            <p className="py-3 text-center text-xs text-muted-foreground">
-                                + {logs.length - limit} older events — check the full log for details.
-                            </p>
+
+                        {/* Pagination Controls */}
+                        {totalPages > 1 && (
+                            <div className="flex items-center justify-between py-4 text-sm text-muted-foreground">
+                                <button
+                                    onClick={() => setCurrentPage(p => Math.max(p - 1, 1))}
+                                    disabled={currentPage === 1}
+                                    className="px-3 py-1 rounded border disabled:opacity-50"
+                                >
+                                    Previous
+                                </button>
+
+                                <span>
+                                    Page {currentPage} of {totalPages}
+                                </span>
+
+                                <button
+                                    onClick={() => setCurrentPage(p => Math.min(p + 1, totalPages))}
+                                    disabled={currentPage === totalPages}
+                                    className="px-3 py-1 rounded border disabled:opacity-50"
+                                >
+                                    Next
+                                </button>
+                            </div>
                         )}
                     </>
                 )}

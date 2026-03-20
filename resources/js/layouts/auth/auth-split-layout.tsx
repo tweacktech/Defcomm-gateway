@@ -12,7 +12,7 @@ export default function AuthSplitLayout({
 
     return (
         <div className="flex min-h-svh w-full items-center justify-center bg-linear-to-b from-[#0b1a08] via-[#050b04] to-black px-4 py-10 sm:px-6 lg:px-10">
-            <div className="grid w-full max-w-5xl gap-8 lg:grid-cols-2">
+            <div className="grid w-full max-w-5xl gap-12 lg:grid-cols-2">
                 {/* Left branding panel */}
                 <div className="relative hidden overflow-hidden rounded-3xl border border-white/5 bg-linear-to-br from-white/10 via-white/5 to-transparent p-10 text-white shadow-[0_24px_80px_rgba(0,0,0,0.8)] lg:flex lg:flex-col">
                     <div className="pointer-events-none absolute inset-0 opacity-25">
@@ -27,7 +27,7 @@ export default function AuthSplitLayout({
                                 className="inline-flex items-center text-lg font-semibold tracking-tight"
                             >
                                 <AppLogoIcon className="mr-2 size-8 fill-current text-white" />
-                                <span className="text-sm font-medium uppercase tracking-[0.28em] text-emerald-200/90">
+                                <span className="text-sm font-medium uppercase tracking-[0.28em] text-emerald-200/90 ml-3.5">
                                     {name}
                                 </span>
                             </Link>
@@ -45,10 +45,10 @@ export default function AuthSplitLayout({
                 <div className="flex items-center justify-center">
                     <div className="w-full max-w-md rounded-3xl bg-background/95 p-6 shadow-[0_24px_80px_rgba(0,0,0,0.85)] backdrop-blur-md sm:p-8 ">
                         <div className="mb-6 flex flex-col gap-3 text-center">
-                            <div className="flex items-center justify-center gap-2 lg:hidden">
+                            <div className="flex items-center justify-center gap-2 lg:hidden mr-1.5">
                                 <Link
                                     href={home()}
-                                    className="inline-flex items-center gap-2"
+                                    className="inline-flex items-center gap-2 mr-2"
                                 >
                                     <AppLogoIcon className="h-8 w-8 fill-current text-foreground" />
                                     {name && (

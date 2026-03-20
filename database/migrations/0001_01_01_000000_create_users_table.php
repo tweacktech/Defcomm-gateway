@@ -10,8 +10,17 @@ return new class extends Migration {
      */
     public function up(): void
     {
+        Schema::create('organizations', function (Blueprint $table) {
+            $table->id();
+            $table->string('name')->nullable();
+            $table->string('email')->unique()->nullabl();
+            $table->enum('status', ['active', 'inactive', 'suspended'])->default('active');
+            $table->timestamps();
+        });
+
         Schema::create('users', function (Blueprint $table) {
             $table->id();
+            $table->foreignId('organization_id')->nullable()->constrained('organizations')->nullOnDelete();
             $table->string('name')->nullable();
             $table->string('email')->unique();
             $table->timestamp('email_verified_at')->nullable();
@@ -40,6 +49,13 @@ return new class extends Migration {
             $table->integer('last_activity')->index();
         });
 
+        DB::table('organizations')->insert(
+            [
+                'name' => 'Default Organization',
+                'email' => 'organization@example.com'
+                
+                ]);
+
         DB::table('users')->insert([
             [
                 'name' => 'Admin',
@@ -50,6 +66,7 @@ return new class extends Migration {
                 'updated_at' => now(),
             ], [
                 'name' => 'Meyor Pop',
+                'organization_id'=>'1',
                 'email' => 'meyorpop@gmail.com',
                 'password' => bcrypt('1234567890'),
                 'role' => 'client',
@@ -63,6 +80,7 @@ return new class extends Migration {
      */
     public function down(): void
     {
+        // Schema::dropIfExists('organizations');
         Schema::dropIfExists('users');
         Schema::dropIfExists('password_reset_tokens');
         Schema::dropIfExists('sessions');

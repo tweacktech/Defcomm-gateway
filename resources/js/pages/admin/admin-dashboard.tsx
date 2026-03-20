@@ -4,8 +4,8 @@ import {
     AlertCircle, ArrowUpRight, CheckCircle2, XCircle,
     ToggleRight, UserCheck, UserX, ShieldCheck, UserPlus,
 } from 'lucide-react';
-import AppLayout from '@/layouts/app-layout';
 import { ActivityFeed, type ActivityEntry } from '@/components/activity-feed';
+import AppLayout from '@/layouts/app-layout';
 import type { BreadcrumbItem } from '@/types';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -141,7 +141,7 @@ export default function AdminDashboard() {
                             Welcome back, {auth.user.name}. Here's what's happening.
                         </p>
                     </div>
-                    <Link href="/services/create"
+                    <Link href="/admin/services"
                         className="flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition hover:opacity-90">
                         <Package className="h-4 w-4" />New Service
                     </Link>
@@ -202,7 +202,7 @@ export default function AdminDashboard() {
                                 </Link>
                             </div>
                         ) : (
-                            <div className="overflow-x-auto">
+                            <div className="overflow-auto">
                                 <table className="w-full text-sm">
                                     <thead>
                                         <tr className="border-b text-left">
@@ -225,8 +225,8 @@ export default function AdminDashboard() {
                                                 </td>
                                                 <td className="px-6 py-3 text-muted-foreground">{fmtDate(svc.created_at)}</td>
                                                 <td className="px-6 py-3">
-                                                    <Link href={`admin/services?$search=${svc.id}/edit`}
-                                                        className="text-xs text-primary hover:underline">Edit</Link>
+                                                    {/* <Link href={`admin/services?$search=${svc.id}/edit`}
+                                                        className="text-xs text-primary hover:underline">Edit</Link> */}
                                                 </td>
                                             </tr>
                                         ))}
