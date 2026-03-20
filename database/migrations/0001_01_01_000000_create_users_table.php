@@ -52,21 +52,21 @@ return new class extends Migration {
         DB::table('organizations')->insert(
             [
                 'name' => 'Default Organization',
-                'email' => 'organization@example.com'
-                
-                ]);
+                'email' => 'organization@example.com',
+            ]);
 
         DB::table('users')->insert([
             [
                 'name' => 'Admin',
                 'email' => 'admin@example.com',
+                'organization_id' => '1',
                 'password' => bcrypt('password'),
                 'role' => 'admin',
                 'created_at' => now(),
                 'updated_at' => now(),
             ], [
                 'name' => 'Meyor Pop',
-                'organization_id'=>'1',
+                'organization_id' => '1',
                 'email' => 'meyorpop@gmail.com',
                 'password' => bcrypt('1234567890'),
                 'role' => 'client',
@@ -80,7 +80,7 @@ return new class extends Migration {
      */
     public function down(): void
     {
-        // Schema::dropIfExists('organizations');
+        Schema::dropIfExists('organizations');
         Schema::dropIfExists('users');
         Schema::dropIfExists('password_reset_tokens');
         Schema::dropIfExists('sessions');

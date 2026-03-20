@@ -8,6 +8,7 @@ import {
     List, Search, HardDrive, Move, Share2, Lock, Globe,
     Link, Send, Eye, EyeOff, Copy, UserCheck, Clock,
     AlertTriangle, Shield,
+    Share,
 } from 'lucide-react';
 import { useState, useRef, useCallback, useEffect, DragEvent, ChangeEvent } from 'react';
 import { Button } from '@/components/ui/button';
@@ -924,7 +925,7 @@ export default function DriveIndex() {
     // ── Breadcrumbs ────────────────────────────────────────────────────────
 
     const appBreadcrumbs: BreadcrumbItem[] = [
-        { title: 'Drive', href: '/drive' },
+        { title: 'Drive', href: '/services/drive' },
         ...crumbs.map(c => ({ title: c.name, href: `/drive/folder/${c.id}` })),
         ...(folder ? [{ title: folder.name, href: `/drive/folder/${folder.id}` }] : []),
     ];
@@ -982,8 +983,9 @@ export default function DriveIndex() {
                         </button>
 
                         {[
-                            { label: 'My Drive', icon: HardDrive, href: '/drive',         active: view === 'my-drive' },
+                            { label: 'My Drive', icon: HardDrive, href: '/services/drive',         active: view === 'my-drive' },
                             { label: 'Starred',  icon: Star,      href: '/drive/starred', active: view === 'starred'  },
+                            { label: 'Transfer',  icon: Send,      href: '/drive/transfers', active: view === 'transfers'  },
                             { label: 'Trash',    icon: Trash2,    href: '/drive/trash',   active: view === 'trash'    },
                         ].map(nav => (
                             <button key={nav.label} onClick={() => router.get(nav.href)}

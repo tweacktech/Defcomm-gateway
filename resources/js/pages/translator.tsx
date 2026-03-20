@@ -47,8 +47,8 @@ export default function Translator() {
         },
     ];
 
-    const [sourceLang, setSourceLang] = useState('en');
-    const [targetLang, setTargetLang] = useState('es');
+    const [sourceLang, setSourceLang] = useState('english');
+    const [targetLang, setTargetLang] = useState('igbo');
     const [text, setText] = useState('Hello, world.');
     const [textOut, setTextOut] = useState('');
     const [audioUrl, setAudioUrl] = useState<string | null>(null);
@@ -230,9 +230,10 @@ export default function Translator() {
                                 deep-translator
                             </a>{' '}
                             language codes (e.g.{' '}
-                            <code className="text-xs">en</code>,{' '}
-                            <code className="text-xs">es</code>,{' '}
-                            <code className="text-xs">fr</code>).
+                            <code className="text-xs">english</code>,{' '}
+                            <code className="text-xs">igbo</code>,{' '}
+                            <code className="text-xs">hausa</code>,
+                            <code className="text-xs">yoruba</code>).
                         </p>
                         <div className="grid gap-4 sm:grid-cols-2">
                             <div className="space-y-2">
@@ -243,7 +244,7 @@ export default function Translator() {
                                     onChange={(e) =>
                                         setSourceLang(e.target.value.trim())
                                     }
-                                    placeholder="en"
+                                    placeholder="english"
                                     autoComplete="off"
                                 />
                             </div>
@@ -255,7 +256,7 @@ export default function Translator() {
                                     onChange={(e) =>
                                         setTargetLang(e.target.value.trim())
                                     }
-                                    placeholder="es"
+                                    placeholder="hausa"
                                     autoComplete="off"
                                 />
                             </div>

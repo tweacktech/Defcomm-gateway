@@ -714,6 +714,87 @@ class DriveController extends Controller
         return redirect()->back()->with('success', 'Transfer cancelled.');
     }
 
+    // ─────────────────────────────────────────────────────────────────────────────
+    // ADD these two methods to DriveController.php
+    // ─────────────────────────────────────────────────────────────────────────────
+    //
+    // 1. Add transfers() in the PAGES section (after trash())
+    // 2. Add transferResource() in the PRIVATE HELPERS section (after shareResource())
+    // ─────────────────────────────────────────────────────────────────────────────
+
+    // ── 1. Page method — add after trash() ───────────────────────────────────────
+
+    /**
+     * GET /drive/transfers
+     * Dashboard listing all incoming and outgoing transfer offers.
+     */
+    public function transfers(Request $request): Response
+    {
+        $userId = $request->user()->id;
+
+        // Transfers sent BY this user (owner perspective)
+        $outgoing = DriveShare::where('type', 'transfer')
+            ->where('owner_id', $userId)
+            ->with([
+                'driveItem:id,name,type,size,visibility',
+                'recipient:id,name,email',
+            ])
+            ->orderBy('created_at', 'desc')
+            ->get()
+            ->map(fn ($s) => $this->transferResource($s));
+
+        // Transfers sent TO this user (recipient perspective)
+        $incoming = DriveShare::where('type', 'transfer')
+            ->where('recipient_id', $userId)
+            ->with([
+                'driveItem:id,name,type,size,visibility',
+                'owner:id,name,email',
+            ])
+            ->orderBy('created_at', 'desc')
+            ->get()
+            ->map(fn ($s) => $this->transferResource($s));
+
+        return Inertia::render('drive/drive-transfers', [
+            'incoming' => $incoming,
+            'outgoing' => $outgoing,
+            'usage' => $this->storageUsage($userId),
+            'storage_limit' => $this->storageLimit($request->user()),
+        ]);
+    }
+
+    // ── 2. Private helper — add after shareResource() ────────────────────────────
+
+    private function transferResource(DriveShare $share): array
+    {
+        return [
+            'id' => $share->id,
+            'token' => $share->token,
+            'transfer_status' => $share->transfer_status,  // pending|accepted|declined
+            'is_active' => $share->is_active,
+            'created_at' => $share->created_at->toIso8601String(),
+            'created_ago' => $share->created_at->diffForHumans(),
+            'item' => $share->driveItem ? [
+                'id' => $share->driveItem->id,
+                'name' => $share->driveItem->name,
+                'type' => $share->driveItem->type,
+                'size_human' => $share->driveItem->formattedSize(),
+                'visibility' => $share->driveItem->visibility,
+            ] : null,
+            // Who sent it
+            'from' => $share->owner ? [
+                'id' => $share->owner->id,
+                'name' => $share->owner->name,
+                'email' => $share->owner->email,
+            ] : null,
+            // Who receives it
+            'to' => $share->recipient ? [
+                'id' => $share->recipient->id,
+                'name' => $share->recipient->name,
+                'email' => $share->recipient->email,
+            ] : null,
+        ];
+    }
+
     /**
      * Show the transfer acceptance page (recipient lands here from email link).
      *

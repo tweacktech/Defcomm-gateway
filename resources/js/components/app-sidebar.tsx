@@ -1,5 +1,5 @@
 import { Link } from '@inertiajs/react';
-import { BookOpen, Folder, Key, LayoutGrid, Settings, Vault } from 'lucide-react';
+import { BookOpen, Folder, Key, LayoutGrid, Mic, ScissorsSquareIcon, Settings, Vault } from 'lucide-react';
 import { NavFooter } from '@/components/nav-footer';
 import { NavMain } from '@/components/nav-main';
 import { NavUser } from '@/components/nav-user';
@@ -24,15 +24,25 @@ const mainNavItems: NavItem[] = [
     },
    {
         title: 'Access Drive',
-        href: '/drive',
+        href: '/services/drive',
         icon: Folder,
     },
     {
         title: 'Access vault',
-        href: '/access-vault',
+        href: '/services/vault',
         icon: Vault,
     },
-    
+    {
+        title: 'Access Translator',
+        href: '/services/translator',
+        icon: Mic,
+    },
+    {
+        title: 'Access Encryption',
+        href: '/services/encryption',
+        icon: ScissorsSquareIcon ,
+    },
+
 ];
 
 const footerNavItems: NavItem[] = [

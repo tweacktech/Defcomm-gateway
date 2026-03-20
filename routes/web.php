@@ -36,7 +36,7 @@ Route::prefix('')->middleware(['auth'])->group(function () {
     Route::post('generate-access-token', [ProfileController::class, 'genAccessToken']);
 
     // route for the vault service
-    Route::get('/access-vault', [VaultController::class, 'index']);
+    Route::get('/services/vault', [VaultController::class, 'index']);
     Route::get('/vault', [VaultController::class, 'index']);
     Route::get('/vault/{vaultItem}', [VaultController::class, 'show']);
     Route::post('/vault', [VaultController::class, 'store']);
@@ -63,9 +63,10 @@ Route::prefix('')->middleware(['auth'])->group(function () {
 
     Route::middleware(['auth'])->group(function () {
         // ── Pages ──────────────────────────────────────────────────────────────────
-        Route::get('/drive', [DriveController::class, 'index'])->name('drive.index');
+        Route::get('/services/drive', [DriveController::class, 'index'])->name('drive.index');
         Route::get('/drive/folder/{folder}', [DriveController::class, 'index'])->name('drive.folder');
         Route::get('/drive/starred', [DriveController::class, 'starred'])->name('drive.starred');
+        Route::get('/drive/transfers', [DriveController::class, 'transfers'])->name('drive.transfers'); // ← NEW
         Route::get('/drive/trash', [DriveController::class, 'trash'])->name('drive.trash');
 
         // ── Folder ─────────────────────────────────────────────────────────────────
@@ -101,7 +102,6 @@ Route::prefix('')->middleware(['auth'])->group(function () {
         Route::post('/drive/transfer/{token}/decline', [DriveController::class, 'declineTransfer'])->name('drive.transfer.decline');
     });
 
-
     // documentation page
     Route::get('/document', [ProfileController::class, 'document']);
 
@@ -123,7 +123,7 @@ Route::prefix('')->middleware(['auth'])->group(function () {
         Route::delete('/services/{service}', [ServiceController::class, 'destroy'])->name('services.destroy');
     });
 
-    Route::get('/translator', [ServiceController::class, 'translator'])->name('translator');
+    Route::get('/services/translator', [ServiceController::class, 'translator'])->name('translator');
 
     Route::get('/services/{key}', [ServiceController::class, 'serviceDetails'])->name('services.details')->middleware('auth');
 });

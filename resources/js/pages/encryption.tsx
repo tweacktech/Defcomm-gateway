@@ -21,7 +21,7 @@ import type { BreadcrumbItem } from '@/types';
 
 const breadcrumbs: BreadcrumbItem[] = [
     {
-        title: 'Documentation',
+        title: 'Encryption',
         href: edit().url,
     },
 ];
@@ -55,16 +55,16 @@ export default function Encryption() {
 
     return (
         <AppLayout breadcrumbs={breadcrumbs}>
-            <Head title="API Credentials" />
+            <Head title="Encryption" />
 
             <div className="flex flex-col gap-8 p-6">
                 {/* Header */}
                 <div>
                     <h1 className="text-2xl font-bold tracking-tight">
-                        API Credentials
+                        Encryption Service
                     </h1>
                     <p className="text-muted-foreground">
-                        Manage your client credentials for API authentication
+                        Manage your Encryption Service
                     </p>
                 </div>
 

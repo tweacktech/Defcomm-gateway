@@ -56,7 +56,7 @@ export default function Dashboard() {
                                     Welcome back, {auth.user.name}
                                 </h1>
                                 <p className="text-sm text-muted-foreground">
-                                    Explore our services and manage your account below.
+                                    Explore our services and manage your account below. Make sure you generate your access credentials before 
                                 </p>
                             </div>
                         </div>
