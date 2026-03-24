@@ -5,374 +5,300 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Traits\LogsActivity;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Process;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 
 class PythonController extends Controller
 {
     use LogsActivity;
 
+    private function getPythonPath(): string
+    {
+        return env('PYTHON_PATH', 'python3');
+    }
+
+    private function getScriptPath(): string
+    {
+        return base_path('app/Services/pythonService/speech.py');
+    }
+
+    private function getFullStoragePath(string $relativePath): string
+    {
+        return Storage::disk('local')->path($relativePath);
+    }
+
+    private function audioUrl(string $relativePath): string
+    {
+        return url('/audio/serve?path=' . urlencode($relativePath));
+        // return url('/api/audio/serve?path=' . urlencode($relativePath));
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Simple Run
+    |--------------------------------------------------------------------------
+    */
     public function run(Request $request)
     {
         try {
-            $script = base_path('app/Services/pythonService/speech.py');
             $result = Process::timeout(60)->run([
-                'python3',
-                $script,
-                '--source',
-                'english',
-                '--target',
-                'english',
-                '--text',
-                'ping',
+                $this->getPythonPath(),
+                $this->getScriptPath(),
+                '--source', 'english',
+                '--target', 'english',
+                '--text',   'ping',
             ]);
 
             if ($result->failed()) {
                 return response()->json([
                     'success' => false,
-                    'error' => $result->errorOutput(),
+                    'error'   => $result->errorOutput(),
                 ], 500);
             }
 
             return response()->json([
                 'success' => true,
-                'output' => trim($result->output()),
+                'output'  => trim($result->output()),
             ]);
-        } catch (\Exception $e) {
+
+        } catch (\Throwable $e) {
             return response()->json([
                 'success' => false,
-                'error' => $e->getMessage(),
+                'error'   => $e->getMessage(),
             ], 500);
         }
     }
 
-    // For passing arguments (source lang, target lang, text)
+    /*
+    |--------------------------------------------------------------------------
+    | Text Translation
+    |--------------------------------------------------------------------------
+    */
     public function translateText(Request $request)
     {
-        $request->validate([
-            'text' => 'required|string',
-            'source_lang' => 'required|string',
-            'target_lang' => 'required|string',
-        ]);
+        try {
+            $request->validate([
+                'text'        => 'required|string|max:6000',
+                'source_lang' => 'required|string',
+                'target_lang' => 'required|string',
+            ]);
 
-        // return $request->all();
+            $result = Process::timeout(60)->run([
+                $this->getPythonPath(),
+                $this->getScriptPath(),
+                '--source', $request->input('source_lang'),
+                '--target', $request->input('target_lang'),
+                '--text',   $request->input('text'),
+            ]);
 
-        $script = base_path('app/Services/pythonService/speech.py');
-        $result = Process::timeout(60)->run([
-            'python3',
-            $script,
-            '--source',
-            $request->string('source_lang')->toString(),
-            '--target',
-            $request->string('target_lang')->toString(),
-            '--text',
-            $request->string('text')->toString(),
-        ]);
+            if ($result->failed()) {
+                return response()->json([
+                    'success' => false,
+                    'error'   => $result->errorOutput(),
+                ], 500);
+            }
 
-        if ($result->failed()) {
+            return response()->json([
+                'success' => true,
+                'output'  => trim($result->output()),
+            ]);
+
+        } catch (\Throwable $e) {
             return response()->json([
                 'success' => false,
-                'error' => $result->errorOutput(),
+                'error'   => $e->getMessage(),
             ], 500);
         }
-
-        return response()->json([
-            'success' => true,
-            'output' => trim($result->output()),
-        ]);
     }
 
-    // For passing an audio file
-    /**
-     * @SWG\Get(
-     *     path="/users",
-     *     summary="Get a list of users",
-     *     tags={"Users"},
-     *
-     *     @SWG\Response(response=200, description="Successful operation"),
-     *     @SWG\Response(response=400, description="Invalid request")
-     * )
-     */
-    // public function translateAudio(Request $request)
-    // {
-    //     try {
-    //         $request->validate([
-    //             'audio' => 'required|file|mimes:wav,mp3,ogg,mp4',
-    //             'source_lang' => 'required|string',
-    //             'target_lang' => 'required|string',
-    //         ]);
-
-    //         // return $request->audio;
-
-    //         /*
-    //         |--------------------------------------------------------------------------
-    //         | Ensure directories exist
-    //         |--------------------------------------------------------------------------
-    //         */
-    //         $tempDir = storage_path('app/temp/audio');
-    //         $outputDir = public_path('audio');
-
-    //         if (!file_exists($tempDir)) {
-    //             mkdir($tempDir, 0755, true);
-    //         }
-
-    //         if (!file_exists($outputDir)) {
-    //             mkdir($outputDir, 0755, true);
-    //         }
-
-    //         /*
-    //         |--------------------------------------------------------------------------
-    //         | Move uploaded file (IMPORTANT FIX)
-    //         |--------------------------------------------------------------------------
-    //         */
-    //         $inputFilename = uniqid('input_').'.'.$request->file('audio')->extension();
-    //         $fullPath = $tempDir.DIRECTORY_SEPARATOR.$inputFilename;
-
-    //         // move instead of store()
-    //         $request->file('audio')->move($tempDir, $inputFilename);
-
-    //         // Safety check
-    //         if (!file_exists($fullPath)) {
-    //             return response()->json([
-    //                 'success' => false,
-    //                 'error' => 'Uploaded file was not saved correctly.',
-    //                 'path' => $fullPath,
-    //             ], 500);
-    //         }
-
-    //         /*
-    //         |--------------------------------------------------------------------------
-    //         | Output audio path
-    //         |--------------------------------------------------------------------------
-    //         */
-    //         $outputFilename = uniqid('tts_').'.mp3';
-    //         $saveOutput = $outputDir.DIRECTORY_SEPARATOR.$outputFilename;
-
-    //         $script = base_path('app/Services/pythonService/speech.py');
-
-    //         /*
-    //         |--------------------------------------------------------------------------
-    //         | Run Python process
-    //         |--------------------------------------------------------------------------
-    //         */
-    //         $result = Process::timeout(120)->run([
-    //             'python3',
-    //             $script,
-    //             '--source', $request->input('source_lang'),
-    //             '--target', $request->input('target_lang'),
-    //             '--file', $fullPath,
-    //             '--tts',
-    //             '--save-output', $saveOutput,
-    //         ]);
-
-    //         /*
-    //         |--------------------------------------------------------------------------
-    //         | Delete temp input AFTER python finishes
-    //         |--------------------------------------------------------------------------
-    //         */
-    //         @unlink($fullPath);
-
-    //         if ($result->failed()) {
-    //             return response()->json([
-    //                 'success' => false,
-    //                 'error' => $result->errorOutput(),
-    //                 'stdout' => $result->output(),
-    //             ], 500);
-    //         }
-
-    //         /*
-    //         |--------------------------------------------------------------------------
-    //         | Confirm output file exists
-    //         |--------------------------------------------------------------------------
-    //         */
-    //         if (!file_exists($saveOutput)) {
-    //             return response()->json([
-    //                 'success' => false,
-    //                 'error' => 'Audio file was not created by Python.',
-    //                 'stderr' => $result->errorOutput(),
-    //                 'checked_path' => $saveOutput,
-    //             ], 500);
-    //         }
-
-    //         /*
-    //         |--------------------------------------------------------------------------
-    //         | Success Response
-    //         |--------------------------------------------------------------------------
-    //         */
-    //         return response()->json([
-    //             'success' => true,
-    //             'output' => trim($result->output()),
-    //             'audio_url' => asset('audio/'.$outputFilename),
-    //         ]);
-    //     } catch (\Throwable $e) {
-    //         return response()->json([
-    //             'success' => false,
-    //             'error' => $e->getMessage(),
-    //             'line' => $e->getLine(),
-    //         ], 500);
-    //     }
-    // }
-
+    /*
+    |--------------------------------------------------------------------------
+    | Translate Audio (FILE → TEXT → AUDIO)
+    |--------------------------------------------------------------------------
+    */
     public function translateAudio(Request $request)
     {
         try {
             $request->validate([
-                'audio' => 'required|file|mimes:wav,mp3,ogg,mp4',
+                'audio'       => 'required|file|mimes:wav,mp3,ogg,mp4',
                 'source_lang' => 'required|string',
                 'target_lang' => 'required|string',
             ]);
 
-            $userId = auth()->id() ?? 'guest';
+            $inputPath     = $request->file('audio')->store('audio/input', 'local');
+            $fullInputPath = $this->getFullStoragePath($inputPath);
 
-            /*
-            |--------------------------------------------------------------------------
-            | Store input in temp (Laravel way)
-            |--------------------------------------------------------------------------
-            */
-            $storedPath = $request->file('audio')->store("temp/audio/{$userId}", 'local');
-            $fullPath = storage_path("app/{$storedPath}");
+            Log::debug('translateAudio input', [
+                'full'   => $fullInputPath,
+                'exists' => file_exists($fullInputPath),
+            ]);
 
-            if (!file_exists($fullPath)) {
+            if (!file_exists($fullInputPath)) {
                 return response()->json([
                     'success' => false,
-                    'error' => 'Uploaded file was not saved correctly.',
-                    'path' => $fullPath,
+                    'error'   => 'Input file not saved at: ' . $fullInputPath,
                 ], 500);
             }
 
-            /*
-            |--------------------------------------------------------------------------
-            | Output directory (TEMP, not public)
-            |--------------------------------------------------------------------------
-            */
-            $outputDir = storage_path('/audio/output');
+            $outputFilename     = 'tts_' . Str::uuid() . '.mp3';
+            $relativeOutputPath = 'audio/' . $outputFilename;
+            $fullOutputPath     = $this->getFullStoragePath($relativeOutputPath);
 
-            if (!file_exists($outputDir)) {
-                mkdir($outputDir, 0755, true);
-            }
-
-            $outputFilename = uniqid('tts_').'.mp3';
-            $saveOutput = $outputDir.DIRECTORY_SEPARATOR.$outputFilename;
-
-            $script = base_path('app/Services/pythonService/speech.py');
-
-            /*
-            |--------------------------------------------------------------------------
-            | Run Python
-            |--------------------------------------------------------------------------
-            */
             $result = Process::timeout(120)->run([
-                'python3',
-                $script,
-                '--source', $request->input('source_lang'),
-                '--target', $request->input('target_lang'),
-                '--file', $fullPath,
+                $this->getPythonPath(),
+                $this->getScriptPath(),
+                '--source',      $request->input('source_lang'),
+                '--target',      $request->input('target_lang'),
+                '--file',        $fullInputPath,
                 '--tts',
-                '--save-output', $saveOutput,
+                '--save-output', $fullOutputPath,
             ]);
 
-            /*
-            |--------------------------------------------------------------------------
-            | Delete temp input
-            |--------------------------------------------------------------------------
-            */
-            @unlink($fullPath);
+            Storage::disk('local')->delete($inputPath);
+
+            Log::debug('translateAudio result', [
+                'stdout'       => $result->output(),
+                'stderr'       => $result->errorOutput(),
+                'exitCode'     => $result->exitCode(),
+                'outputExists' => file_exists($fullOutputPath),
+            ]);
 
             if ($result->failed()) {
                 return response()->json([
                     'success' => false,
-                    'error' => $result->errorOutput(),
-                    'stdout' => $result->output(),
+                    'error'   => $result->errorOutput(),
+                    'stdout'  => $result->output(),
                 ], 500);
             }
 
-            /*
-            |--------------------------------------------------------------------------
-            | Confirm output exists
-            |--------------------------------------------------------------------------
-            */
-            if (!file_exists($saveOutput)) {
+            if (!file_exists($fullOutputPath)) {
                 return response()->json([
                     'success' => false,
-                    'error' => 'Audio file was not created by Python.',
-                    'stderr' => $result->errorOutput(),
-                    'checked_path' => $saveOutput,
+                    'error'   => 'Audio file not created',
+                    'stdout'  => $result->output(),
+                    'stderr'  => $result->errorOutput(),
                 ], 500);
             }
 
-            /*
-            |--------------------------------------------------------------------------
-            | Return file (NOT public URL)
-            |--------------------------------------------------------------------------
-            */
             return response()->json([
-                'success' => true,
-                'output' => trim($result->output()),
-                'file_path' => $saveOutput, // internal path
+                'success'   => true,
+                'output'    => trim($result->output()),
+                'audio_url' => $this->audioUrl($relativeOutputPath),
             ]);
+
         } catch (\Throwable $e) {
+            Log::error('translateAudio exception', ['error' => $e->getMessage()]);
             return response()->json([
                 'success' => false,
-                'error' => $e->getMessage(),
-                'line' => $e->getLine(),
+                'error'   => $e->getMessage(),
             ], 500);
         }
     }
 
-    // this translate text and then generates audio from the translated text,
-    // returning both the translation and a URL to the audio file.
+    /*
+    |--------------------------------------------------------------------------
+    | Text → Translate → Audio
+    |--------------------------------------------------------------------------
+    */
     public function textTranslateAudio(Request $request)
     {
         try {
             $request->validate([
-                'text' => 'required|string',
+                'text'        => 'required|string|max:6000',
                 'source_lang' => 'required|string',
                 'target_lang' => 'required|string',
             ]);
 
-            $script = base_path('app/Services/pythonService/speech.py');
+            $filename           = 'tts_' . Str::uuid() . '.wav';
+            $relativeOutputPath = 'audio/' . $filename;
+            $fullOutputPath     = $this->getFullStoragePath($relativeOutputPath);
 
-            // Optional: let caller specify where to save the audio output
-            // $saveOutput = storage_path('app/public/audio/'.uniqid('tts_').'.mp3');
-            // $saveOutput = public_path('audio/'.uniqid('tts_').'.mp3');
-
-            // Ensure directory exists
-            $audioDir = public_path('audio');
-            if (!file_exists($audioDir)) {
-                mkdir($audioDir, 0755, true);
-            }
-
-            $filename = uniqid('tts_').'.wav';
-            $saveOutput = $audioDir.DIRECTORY_SEPARATOR.$filename;
+            Log::debug('textTranslateAudio output path', [
+                'full' => $fullOutputPath,
+            ]);
 
             $result = Process::timeout(60)->run([
-                'python3',
-                $script,
-                '--source',      $request->string('source_lang')->toString(),
-                '--target',      $request->string('target_lang')->toString(),
-                '--text',        $request->string('text')->toString(),
-                '--tts',         // ✅ triggers text_to_speech_advanced()
-                // '--play',        // ✅ plays audio on the server (remove if server has no audio)
-                '--save-output', $saveOutput, // ✅ saves mp3 so you can return a URL
+                $this->getPythonPath(),
+                $this->getScriptPath(),
+                '--source',      $request->input('source_lang'),
+                '--target',      $request->input('target_lang'),
+                '--text',        $request->input('text'),
+                '--tts',
+                '--save-output', $fullOutputPath,
+            ]);
+
+            Log::debug('textTranslateAudio result', [
+                'stdout'       => $result->output(),
+                'stderr'       => $result->errorOutput(),
+                'exitCode'     => $result->exitCode(),
+                'outputExists' => file_exists($fullOutputPath),
             ]);
 
             if ($result->failed()) {
                 return response()->json([
                     'success' => false,
-                    'error' => $result->errorOutput(),
+                    'error'   => $result->errorOutput(),
+                ], 500);
+            }
+
+            if (!file_exists($fullOutputPath)) {
+                return response()->json([
+                    'success' => false,
+                    'error'   => 'Audio file not created',
+                    'stdout'  => $result->output(),
+                    'stderr'  => $result->errorOutput(),
                 ], 500);
             }
 
             return response()->json([
-                'success' => true,
-                'output' => trim($result->output()),
-                'audio_url' => asset('audio/'.$filename),
+                'success'   => true,
+                'output'    => trim($result->output()),
+                'audio_url' => $this->audioUrl($relativeOutputPath),
             ]);
-        } catch (\Exception $e) {
+
+        } catch (\Throwable $e) {
+            Log::error('textTranslateAudio exception', ['error' => $e->getMessage()]);
             return response()->json([
                 'success' => false,
-                'error' => $e->getMessage(),
+                'error'   => $e->getMessage(),
             ], 500);
         }
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Serve Audio
+    |--------------------------------------------------------------------------
+    */
+    public function serveAudio(Request $request)
+    {
+        $path = $request->query('path');
+
+        if (!$path || str_contains($path, '..')) {
+            abort(403, 'Forbidden');
+        }
+
+        if (!str_starts_with($path, 'audio/')) {
+            abort(403, 'Forbidden');
+        }
+
+        $fullPath = $this->getFullStoragePath($path);
+
+        Log::debug('serveAudio', [
+            'path'   => $path,
+            'full'   => $fullPath,
+            'exists' => file_exists($fullPath),
+        ]);
+
+        if (!file_exists($fullPath)) {
+            abort(404, 'Audio file not found');
+        }
+
+        return response()->file($fullPath, [
+            'Content-Type'        => mime_content_type($fullPath),
+            'Content-Disposition' => 'inline',
+        ]);
     }
 }

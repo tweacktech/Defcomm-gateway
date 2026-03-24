@@ -43,7 +43,7 @@ export default function Translator() {
         { title: 'Dashboard', href: '/dashboard' },
         {
             title: service.name,
-            href: '/translator',
+            href: '/services/translator',
         },
     ];
 
@@ -223,13 +223,13 @@ export default function Translator() {
                             Use{' '}
                             <a
                                 className="text-primary underline-offset-4 hover:underline"
-                                href="https://deep-translator.readthedocs.io/en/latest/README.html#usage"
+                                href="/translator"
                                 target="_blank"
                                 rel="noreferrer"
                             >
                                 deep-translator
                             </a>{' '}
-                            language codes (e.g.{' '}
+                            language Model (e.g.{' '}
                             <code className="text-xs">english</code>,{' '}
                             <code className="text-xs">igbo</code>,{' '}
                             <code className="text-xs">hausa</code>,

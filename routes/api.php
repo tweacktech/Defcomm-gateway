@@ -1,12 +1,10 @@
 <?php
 
+use App\Http\Controllers\Api\DriveApiController;
 use App\Http\Controllers\Api\PythonController;
 use App\Http\Controllers\Api\VaultApiController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
-use App\Http\Controllers\Api\DriveApiController;
-
-
 
 Route::get('/user', function (Request $request) {
     return $request->user();
@@ -27,6 +25,7 @@ Route::prefix('client')->group(function () {
     Route::delete('/vault/{id}', [VaultApiController::class, 'destroy']);
 });
 
+Route::get('/audio/serve', [PythonController::class, 'serveAudio']);
 
 /*
 |--------------------------------------------------------------------------
@@ -65,29 +64,28 @@ Route::prefix('drive')
     ->name('api.drive.')
     ->middleware(['auth:sanctum'])
     ->group(function () {
-
         // ── Read ─────────────────────────────────────────────────────────────
-        Route::get('/',            [DriveApiController::class, 'index'])->name('index');
-        Route::get('/starred',     [DriveApiController::class, 'starred'])->name('starred');
-        Route::get('/trash',       [DriveApiController::class, 'trash'])->name('trash');
-        Route::get('/search',      [DriveApiController::class, 'search'])->name('search');
-        Route::get('/usage',       [DriveApiController::class, 'usage'])->name('usage');
+        Route::get('/', [DriveApiController::class, 'index'])->name('index');
+        Route::get('/starred', [DriveApiController::class, 'starred'])->name('starred');
+        Route::get('/trash', [DriveApiController::class, 'trash'])->name('trash');
+        Route::get('/search', [DriveApiController::class, 'search'])->name('search');
+        Route::get('/usage', [DriveApiController::class, 'usage'])->name('usage');
         Route::get('/items/{item}', [DriveApiController::class, 'show'])->name('items.show');
 
         // ── Write ─────────────────────────────────────────────────────────────
-        Route::post('/folders',    [DriveApiController::class, 'createFolder'])->name('folders.create');
-        Route::post('/upload',     [DriveApiController::class, 'upload'])->name('upload');
+        Route::post('/folders', [DriveApiController::class, 'createFolder'])->name('folders.create');
+        Route::post('/upload', [DriveApiController::class, 'upload'])->name('upload');
 
         // ── Mutations ─────────────────────────────────────────────────────────
         Route::patch('/items/{item}/rename', [DriveApiController::class, 'rename'])->name('items.rename');
-        Route::patch('/items/{item}/move',   [DriveApiController::class, 'move'])->name('items.move');
-        Route::patch('/items/{item}/star',   [DriveApiController::class, 'star'])->name('items.star');
+        Route::patch('/items/{item}/move', [DriveApiController::class, 'move'])->name('items.move');
+        Route::patch('/items/{item}/star', [DriveApiController::class, 'star'])->name('items.star');
 
         // ── Delete / Restore ──────────────────────────────────────────────────
-        Route::delete('/items/{item}',         [DriveApiController::class, 'destroy'])->name('items.destroy');
-        Route::post('/items/{id}/restore',     [DriveApiController::class, 'restore'])->name('items.restore');
-        Route::delete('/items/{id}/force',     [DriveApiController::class, 'forceDelete'])->name('items.force-delete');
+        Route::delete('/items/{item}', [DriveApiController::class, 'destroy'])->name('items.destroy');
+        Route::post('/items/{id}/restore', [DriveApiController::class, 'restore'])->name('items.restore');
+        Route::delete('/items/{id}/force', [DriveApiController::class, 'forceDelete'])->name('items.force-delete');
 
         // ── Download ──────────────────────────────────────────────────────────
-        Route::get('/items/{item}/download',   [DriveApiController::class, 'download'])->name('items.download');
+        Route::get('/items/{item}/download', [DriveApiController::class, 'download'])->name('items.download');
     });

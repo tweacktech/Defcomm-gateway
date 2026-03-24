@@ -1,8 +1,10 @@
 <?php
 
+use App\Http\Controllers\Api\MeetApiController;
 use App\Http\Controllers\Api\PythonController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DriveController;
+use App\Http\Controllers\MeetController;
 use App\Http\Controllers\ServiceController;
 use App\Http\Controllers\Settings\ProfileController;
 use App\Http\Controllers\UserController;
@@ -128,6 +130,61 @@ Route::prefix('')->middleware(['auth'])->group(function () {
     Route::get('/services/{key}', [ServiceController::class, 'serviceDetails'])->name('services.details')->middleware('auth');
 });
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// routes/meet.php  — add inside your routes/web.php with require
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// // ── Internal Inertia routes (auth required) ────────────────────────────────
+// Route::middleware(['auth'])->prefix('meet')->name('meet.')->group(function () {
+//     Route::get('/',                          [MeetController::class, 'index'])->name('index');
+//     Route::post('/rooms',                    [MeetController::class, 'create'])->name('create');
+//     Route::get('/{uid}',                     [MeetController::class, 'room'])->name('room');
+//     Route::post('/{uid}/password',           [MeetController::class, 'unlock'])->name('unlock');
+//     Route::post('/{uid}/join',               [MeetController::class, 'join'])->name('join');
+//     Route::post('/{uid}/leave',              [MeetController::class, 'leave'])->name('leave');
+//     Route::post('/{uid}/signal',             [MeetController::class, 'signal'])->name('signal');
+//     Route::patch('/{uid}/end',               [MeetController::class, 'end'])->name('end');
+//     Route::patch('/{uid}/admit/{peerId}',    [MeetController::class, 'admit'])->name('admit');
+// });
+
+// Room page — controller decides view based on auth state + session
+Route::get('/meet/{uid}', [MeetController::class, 'room'])->name('meet.room');
+
+// Guest form submit (display_name + optional password)
+Route::post('/meet/{uid}/guest', [MeetController::class, 'guestJoin'])->name('meet.guest.join');
+
+// Participant JSON actions — auth optional, guests use peer_id from session
+Route::post('/meet/{uid}/join', [MeetController::class, 'join'])->name('meet.join');
+Route::post('/meet/{uid}/leave', [MeetController::class, 'leave'])->name('meet.leave');
+Route::post('/meet/{uid}/signal', [MeetController::class, 'signal'])->name('meet.signal');
+
+// ─────────────────────────────────────────────────────────────────────────────
+// AUTH REQUIRED
+// ─────────────────────────────────────────────────────────────────────────────
+
+Route::middleware(['auth'])->prefix('meet')->name('meet.')->group(function () {
+    Route::get('/', [MeetController::class, 'index'])->name('index');
+    Route::post('/rooms', [MeetController::class, 'create'])->name('create');
+
+    Route::post('/{uid}/password', [MeetController::class, 'unlock'])->name('unlock');
+    Route::patch('/{uid}/end', [MeetController::class, 'end'])->name('end');
+    Route::patch('/{uid}/admit/{peerId}', [MeetController::class, 'admit'])->name('admit');
+    Route::patch('/{uid}/kick/{peerId}', [MeetController::class, 'kick'])->name('kick');
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SDK REST API — Sanctum token
+// ─────────────────────────────────────────────────────────────────────────────
+
+Route::middleware(['auth:sanctum'])->prefix('api/meet')->name('api.meet.')->group(function () {
+    Route::get('/rooms', [MeetApiController::class, 'listRooms'])->name('rooms.index');
+    Route::post('/rooms', [MeetApiController::class, 'createRoom'])->name('rooms.create');
+    Route::get('/rooms/{uid}', [MeetApiController::class, 'getRoom'])->name('rooms.show');
+    Route::delete('/rooms/{uid}', [MeetApiController::class, 'endRoom'])->name('rooms.end');
+    Route::post('/rooms/{uid}/token', [MeetApiController::class, 'issueToken'])->name('rooms.token');
+});
+
+Route::get('/audio/serve', [PythonController::class, 'serveAudio']);
 Route::get('/run-python', [PythonController::class, 'run']);
 Route::fallback(function () {
     return Inertia::render('error');
