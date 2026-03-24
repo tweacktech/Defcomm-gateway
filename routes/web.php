@@ -120,6 +120,7 @@ Route::post('/meet/{uid}/guest', [MeetController::class, 'guestJoin'])->name('me
 
 // Participant JSON actions — auth optional, guests use peer_id from session
 Route::post('/meet/{uid}/join', [MeetController::class, 'join'])->name('meet.join')->middleware('auth');
+Route::post('/{uid}/end', [MeetController::class, 'end'])->name('end');
 Route::post('/meet/{uid}/leave', [MeetController::class, 'leave'])->name('meet.leave');
 Route::post('/meet/{uid}/signal', [MeetController::class, 'signal'])->name('meet.signal');
 
@@ -132,28 +133,9 @@ Route::middleware(['auth'])->prefix('meet')->name('meet.')->group(function () {
     Route::post('/rooms', [MeetController::class, 'create'])->name('create');
 
     Route::post('/{uid}/password', [MeetController::class, 'unlock'])->name('unlock');
-    Route::patch('/{uid}/end', [MeetController::class, 'end'])->name('end');
+    // Route::patch('/{uid}/end', [MeetController::class, 'end'])->name('end');
     Route::patch('/{uid}/admit/{peerId}', [MeetController::class, 'admit'])->name('admit');
     Route::patch('/{uid}/kick/{peerId}', [MeetController::class, 'kick'])->name('kick');
-
-
-    // // ── Recording chunk upload (public — validated by recording ownership) ────────
-    // Route::post(
-    //     '/{uid}/recording/{recordingId}/chunk',
-    //     [MeetController::class, 'recordingChunk']
-    // )->name('meet.recording.chunk');
-
-    // // ── Media state update (public — no auth, guests update too) ─────────────────
-    // Route::post(
-    //     '/{uid}/media-state',
-    //     [MeetController::class, 'updateMediaState']
-    // )->name('meet.media-state');
-
-
-    // Route::post('/{uid}/recording/start', [MeetController::class, 'startRecording'])->name('recording.start');
-    // Route::post('/{uid}/recording/{id}/stop', [MeetController::class, 'stopRecording'])->name('recording.stop');
-    // Route::get('/{uid}/recordings', [MeetController::class, 'listRecordings'])->name('recordings.list');
-    // Route::get('/recording/{id}/download', [MeetController::class, 'downloadRecording'])->name('recording.download');
 
 });
 
