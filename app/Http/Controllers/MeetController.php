@@ -4,15 +4,20 @@ namespace App\Http\Controllers;
 
 use App\Events\Meet\ParticipantJoined;
 use App\Events\Meet\ParticipantLeft;
+use App\Events\Meet\ParticipantMediaUpdated;
+use App\Events\Meet\RecordingStarted;
+use App\Events\Meet\RecordingStopped;
 use App\Events\Meet\RoomEnded;
 use App\Events\Meet\SignalSent;
 use App\Models\MeetParticipant;
+use App\Models\MeetRecording;
 use App\Models\MeetRoom;
 use App\Traits\LogsActivity;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -37,7 +42,7 @@ class MeetController extends Controller
             ->orderBy('created_at', 'desc')
             ->take(10)
             ->get()
-            ->map(fn ($r) => $this->roomResource($r));
+            ->map(fn($r) => $this->roomResource($r));
 
         return Inertia::render('meet/meet-index', [
             'rooms' => $rooms,
@@ -56,6 +61,7 @@ class MeetController extends Controller
      */
     public function room(Request $request, string $uid): Response|RedirectResponse
     {
+
         $room = MeetRoom::where('uid', $uid)
             ->with(['owner:id,name'])
             ->withCount('activeParticipants')
@@ -89,7 +95,6 @@ class MeetController extends Controller
                 'room' => $this->roomResource($room),
             ]);
         }
-
         return $this->renderRoom($request, $room, isGuest: false);
     }
 
@@ -264,18 +269,34 @@ class MeetController extends Controller
         $userId = $request->user()?->id;
         $isOwner = $userId && $room->owner_id === $userId;
 
-        $participant = MeetParticipant::create([
-            'room_id' => $room->id,
-            'user_id' => $userId,
-            'display_name' => $validated['display_name'],
-            'peer_id' => $validated['peer_id'],
-            'role' => $isOwner ? 'host' : 'participant',
-            'is_admitted' => $isOwner || !$room->waiting_room,
-            'video_on' => $validated['video_on'] ?? false,
-            'audio_on' => $validated['audio_on'] ?? false,
-            'joined_at' => now(),
-        ]);
+        // $participant = MeetParticipant::create([
+        //     'room_id' => $room->id,
+        //     'user_id' => $userId,
+        //     'display_name' => $validated['display_name'],
+        //     'peer_id' => $validated['peer_id'],
+        //     'role' => $isOwner ? 'host' : 'participant',
+        //     'is_admitted' => $isOwner || !$room->waiting_room,
+        //     'video_on' => $validated['video_on'] ?? false,
+        //     'audio_on' => $validated['audio_on'] ?? false,
+        //     'joined_at' => now(),
+        // ]);
+        $participant = MeetParticipant::updateOrCreate(
+            [
+                'room_id' => $room->id,
+                'peer_id' => $validated['peer_id'],
+            ],
+            [
+                'user_id' => $userId,
+                'display_name' => $validated['display_name'],
+                'role' => $isOwner ? 'host' : ($existingParticipant?->role ?? 'participant'),
+                'is_admitted' => $isOwner || !$room->waiting_room,
+                'video_on' => $validated['video_on'] ?? false,
+                'audio_on' => $validated['audio_on'] ?? false,
+                'joined_at' => now(),
+            ]
+        );
 
+        \Log::info('wow');
         broadcast(new ParticipantJoined($room, $participant))->toOthers();
 
         return response()->json([
@@ -417,4 +438,203 @@ class MeetController extends Controller
             'joined_at' => $p->joined_at->toIso8601String(),
         ];
     }
+
+
+    public function startRecording(Request $request, string $uid): JsonResponse
+    {
+        $room = MeetRoom::where('uid', $uid)->firstOrFail();
+
+        abort_unless($room->owner_id === $request->user()->id, 403, 'Only the host can start recording.');
+        abort_unless($room->recording_enabled, 403, 'Recording is not enabled for this room.');
+        abort_if($room->isEnded(), 410, 'Room has ended.');
+
+        // Only one active recording at a time
+        $existing = MeetRecording::where('room_id', $room->id)
+            ->where('status', 'recording')
+            ->first();
+
+        if ($existing) {
+            return response()->json(['recording_id' => $existing->id, 'status' => 'already_recording']);
+        }
+
+        $recording = MeetRecording::create([
+            'room_id' => $room->id,
+            'initiated_by' => $request->user()->id,
+            'disk' => config('meet.recording_disk', 'local'),
+            'status' => 'recording',
+            'started_at' => now(),
+        ]);
+
+        broadcast(new RecordingStarted($room, $recording->id, $request->user()->name))->toOthers();
+
+        $this->log('recording_started', "Started recording in {$room->uid}", 'meet', $room);
+
+        return response()->json([
+            'recording_id' => $recording->id,
+            'status' => 'recording',
+        ]);
+    }
+
+    /**
+     * POST /meet/{uid}/recording/{recordingId}/chunk
+     * Receive a binary WebM chunk from the client's MediaRecorder.
+     * The client sends chunks every ~5 seconds via fetch.
+     * No auth middleware needed — validated by recording ownership.
+     */
+    public function recordingChunk(Request $request, string $uid, int $recordingId): JsonResponse
+    {
+        $recording = MeetRecording::where('id', $recordingId)
+            ->where('status', 'recording')
+            ->firstOrFail();
+
+        $chunk = $request->getContent();
+
+        if (empty($chunk)) {
+            return response()->json(['error' => 'Empty chunk'], 400);
+        }
+
+        $disk = $recording->disk ?? 'local';
+        $dir = "meet-recordings/{$recording->room_id}";
+        $base = $recording->path ?? "{$dir}/rec_{$recordingId}";
+
+        // Append chunk to the recording file
+        Storage::disk($disk)->append("{$base}.webm", $chunk);
+
+        // Update path + size on first chunk
+        if (!$recording->path) {
+            $recording->update(['path' => "{$base}.webm"]);
+        }
+
+        // Update size
+        $size = Storage::disk($disk)->size("{$base}.webm");
+        $recording->update(['size' => $size]);
+
+        return response()->json(['status' => 'ok', 'size' => $size]);
+    }
+
+    /**
+     * POST /meet/{uid}/recording/{recordingId}/stop
+     * Host stops the recording. Marks it as processing → ready.
+     */
+    public function stopRecording(Request $request, string $uid, int $recordingId): JsonResponse
+    {
+        $room = MeetRoom::where('uid', $uid)->firstOrFail();
+        abort_unless($room->owner_id === $request->user()->id, 403);
+
+        $recording = MeetRecording::where('id', $recordingId)
+            ->where('room_id', $room->id)
+            ->firstOrFail();
+
+        $recording->finish();   // sets status=processing, stamps ended_at, duration
+
+        // Small recordings: mark ready immediately
+        // Large recordings: you'd dispatch a processing job here
+        $recording->update(['status' => 'ready']);
+
+        broadcast(new RecordingStopped($room, $recording->id))->toOthers();
+
+        $this->log('recording_stopped', "Stopped recording in {$room->uid}", 'meet', $room);
+
+        return response()->json([
+            'recording_id' => $recording->id,
+            'status' => 'ready',
+            'duration_seconds' => $recording->duration_seconds,
+            'size' => $recording->size,
+            'download_url' => $recording->downloadUrl(),
+        ]);
+    }
+
+    /**
+     * GET /meet/{uid}/recordings
+     * List recordings for this room (host only).
+     */
+    public function listRecordings(Request $request, string $uid): JsonResponse
+    {
+        $room = MeetRoom::where('uid', $uid)->firstOrFail();
+        abort_unless($room->owner_id === $request->user()->id, 403);
+
+        $recordings = $room->recordings()
+            ->orderBy('started_at', 'desc')
+            ->get()
+            ->map(fn($r) => [
+                'id' => $r->id,
+                'status' => $r->status,
+                'size' => $r->size,
+                'size_human' => $r->formattedSize(),
+                'duration' => $r->formattedDuration(),
+                'started_at' => $r->started_at->toIso8601String(),
+                'ended_at' => $r->ended_at?->toIso8601String(),
+                'download_url' => $r->isReady() ? $r->downloadUrl() : null,
+            ]);
+
+        return response()->json(['recordings' => $recordings]);
+    }
+
+    /**
+     * GET /meet/recording/{id}/download
+     * Serve local recording file.
+     */
+    public function downloadRecording(Request $request, int $id)
+    {
+        $recording = MeetRecording::findOrFail($id);
+        $room = MeetRoom::findOrFail($recording->room_id);
+
+        // Only room owner or the user who initiated recording can download
+        abort_unless(
+            $room->owner_id === $request->user()->id
+            || $recording->initiated_by === $request->user()->id,
+            403
+        );
+
+        abort_unless($recording->isReady() && $recording->path, 404);
+
+        return Storage::disk($recording->disk)->download(
+            $recording->path,
+            "meeting-{$room->uid}-recording-{$recording->id}.webm"
+        );
+    }
+
+    // =========================================================================
+    // MEDIA STATE  (replaces whisper — persists state for late joiners)
+    // =========================================================================
+
+    /**
+     * POST /meet/{uid}/media-state
+     * Participant broadcasts their camera/mic/screen/hand state.
+     * Using a proper broadcast event so late joiners can fetch state.
+     */
+    public function updateMediaState(Request $request, string $uid): JsonResponse
+    {
+        $room = MeetRoom::where('uid', $uid)->firstOrFail();
+
+        $validated = $request->validate([
+            'peer_id' => ['required', 'string'],
+            'video_on' => ['boolean'],
+            'audio_on' => ['boolean'],
+            'screen_sharing' => ['boolean'],
+            'hand_raised' => ['boolean'],
+        ]);
+
+        // Update DB record
+        MeetParticipant::where('peer_id', $validated['peer_id'])
+            ->where('room_id', $room->id)
+            ->update([
+                'video_on' => $validated['video_on'] ?? false,
+                'audio_on' => $validated['audio_on'] ?? false,
+                'screen_sharing' => $validated['screen_sharing'] ?? false,
+                'hand_raised' => $validated['hand_raised'] ?? false,
+            ]);
+
+        broadcast(new ParticipantMediaUpdated(
+            room: $room,
+            peerId: $validated['peer_id'],
+            videoOn: $validated['video_on'] ?? false,
+            audioOn: $validated['audio_on'] ?? false,
+            screenSharing: $validated['screen_sharing'] ?? false,
+            handRaised: $validated['hand_raised'] ?? false,
+        ))->toOthers();
+
+        return response()->json(['status' => 'ok']);
+    }
+
 }

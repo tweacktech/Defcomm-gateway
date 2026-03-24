@@ -1,6 +1,5 @@
 <?php
 
-use App\Http\Controllers\Api\MeetApiController;
 use App\Http\Controllers\Api\PythonController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DriveController;
@@ -44,24 +43,6 @@ Route::prefix('')->middleware(['auth'])->group(function () {
     Route::post('/vault', [VaultController::class, 'store']);
     Route::put('/vault/{vaultItem}', [VaultController::class, 'update']);
     Route::delete('/vault/{vaultItem}', [VaultController::class, 'destroy']);
-
-    // Route::prefix('drive')->name('drive.')->middleware(['auth'])->group(function () {
-    //     Route::get('/', [DriveController::class, 'index'])->name('index');
-    //     Route::get('/folder/{folder}', [DriveController::class, 'index'])->name('folder');
-    //     Route::get('/starred', [DriveController::class, 'starred'])->name('starred');
-    //     Route::get('/trash', [DriveController::class, 'trash'])->name('trash');
-
-    //     Route::post('/folders', [DriveController::class, 'createFolder'])->name('folders.create');
-    //     Route::post('/upload', [DriveController::class, 'upload'])->name('upload');
-
-    //     Route::patch('/items/{item}/rename', [DriveController::class, 'rename'])->name('items.rename');
-    //     Route::patch('/items/{item}/move', [DriveController::class, 'move'])->name('items.move');
-    //     Route::patch('/items/{item}/star', [DriveController::class, 'star'])->name('items.star');
-    //     Route::delete('/items/{item}', [DriveController::class, 'destroy'])->name('items.destroy');
-    //     Route::post('/items/{id}/restore', [DriveController::class, 'restore'])->name('items.restore');
-    //     Route::delete('/items/{id}/force', [DriveController::class, 'forceDelete'])->name('items.force-delete');
-    //     Route::get('/items/{item}/download', [DriveController::class, 'download'])->name('items.download');
-    // });
 
     Route::middleware(['auth'])->group(function () {
         // ── Pages ──────────────────────────────────────────────────────────────────
@@ -125,28 +106,12 @@ Route::prefix('')->middleware(['auth'])->group(function () {
         Route::delete('/services/{service}', [ServiceController::class, 'destroy'])->name('services.destroy');
     });
 
-    Route::get('/services/translator', [ServiceController::class, 'translator'])->name('translator');
-
+    // Route::get('/services/translator', [ServiceController::class, 'translator'])->name('translator');
     Route::get('/services/{key}', [ServiceController::class, 'serviceDetails'])->name('services.details')->middleware('auth');
+
 });
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// routes/meet.php  — add inside your routes/web.php with require
-// ═══════════════════════════════════════════════════════════════════════════════
-
-// // ── Internal Inertia routes (auth required) ────────────────────────────────
-// Route::middleware(['auth'])->prefix('meet')->name('meet.')->group(function () {
-//     Route::get('/',                          [MeetController::class, 'index'])->name('index');
-//     Route::post('/rooms',                    [MeetController::class, 'create'])->name('create');
-//     Route::get('/{uid}',                     [MeetController::class, 'room'])->name('room');
-//     Route::post('/{uid}/password',           [MeetController::class, 'unlock'])->name('unlock');
-//     Route::post('/{uid}/join',               [MeetController::class, 'join'])->name('join');
-//     Route::post('/{uid}/leave',              [MeetController::class, 'leave'])->name('leave');
-//     Route::post('/{uid}/signal',             [MeetController::class, 'signal'])->name('signal');
-//     Route::patch('/{uid}/end',               [MeetController::class, 'end'])->name('end');
-//     Route::patch('/{uid}/admit/{peerId}',    [MeetController::class, 'admit'])->name('admit');
-// });
-
+// Route::get('/services/meet', [MeetController::class, 'index'])->name('index')->middleware('auth');
 // Room page — controller decides view based on auth state + session
 Route::get('/meet/{uid}', [MeetController::class, 'room'])->name('meet.room');
 
@@ -154,7 +119,7 @@ Route::get('/meet/{uid}', [MeetController::class, 'room'])->name('meet.room');
 Route::post('/meet/{uid}/guest', [MeetController::class, 'guestJoin'])->name('meet.guest.join');
 
 // Participant JSON actions — auth optional, guests use peer_id from session
-Route::post('/meet/{uid}/join', [MeetController::class, 'join'])->name('meet.join');
+Route::post('/meet/{uid}/join', [MeetController::class, 'join'])->name('meet.join')->middleware('auth');
 Route::post('/meet/{uid}/leave', [MeetController::class, 'leave'])->name('meet.leave');
 Route::post('/meet/{uid}/signal', [MeetController::class, 'signal'])->name('meet.signal');
 
@@ -170,25 +135,57 @@ Route::middleware(['auth'])->prefix('meet')->name('meet.')->group(function () {
     Route::patch('/{uid}/end', [MeetController::class, 'end'])->name('end');
     Route::patch('/{uid}/admit/{peerId}', [MeetController::class, 'admit'])->name('admit');
     Route::patch('/{uid}/kick/{peerId}', [MeetController::class, 'kick'])->name('kick');
+
+
+    // // ── Recording chunk upload (public — validated by recording ownership) ────────
+    // Route::post(
+    //     '/{uid}/recording/{recordingId}/chunk',
+    //     [MeetController::class, 'recordingChunk']
+    // )->name('meet.recording.chunk');
+
+    // // ── Media state update (public — no auth, guests update too) ─────────────────
+    // Route::post(
+    //     '/{uid}/media-state',
+    //     [MeetController::class, 'updateMediaState']
+    // )->name('meet.media-state');
+
+
+    // Route::post('/{uid}/recording/start', [MeetController::class, 'startRecording'])->name('recording.start');
+    // Route::post('/{uid}/recording/{id}/stop', [MeetController::class, 'stopRecording'])->name('recording.stop');
+    // Route::get('/{uid}/recordings', [MeetController::class, 'listRecordings'])->name('recordings.list');
+    // Route::get('/recording/{id}/download', [MeetController::class, 'downloadRecording'])->name('recording.download');
+
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
-// SDK REST API — Sanctum token
-// ─────────────────────────────────────────────────────────────────────────────
 
-Route::middleware(['auth:sanctum'])->prefix('api/meet')->name('api.meet.')->group(function () {
-    Route::get('/rooms', [MeetApiController::class, 'listRooms'])->name('rooms.index');
-    Route::post('/rooms', [MeetApiController::class, 'createRoom'])->name('rooms.create');
-    Route::get('/rooms/{uid}', [MeetApiController::class, 'getRoom'])->name('rooms.show');
-    Route::delete('/rooms/{uid}', [MeetApiController::class, 'endRoom'])->name('rooms.end');
-    Route::post('/rooms/{uid}/token', [MeetApiController::class, 'issueToken'])->name('rooms.token');
-});
+// ── Recording chunk upload (public — validated by recording ownership) ────────
+Route::post(
+    '/meet/{uid}/recording/{recordingId}/chunk',
+    [MeetController::class, 'recordingChunk']
+)->name('meet.recording.chunk');
 
+// ── Media state update (public — no auth, guests update too) ─────────────────
+Route::post(
+    '/meet/{uid}/media-state',
+    [MeetController::class, 'updateMediaState']
+)->name('meet.media-state');
+
+
+Route::post('meet/{uid}/recording/start', [MeetController::class, 'startRecording'])->name('recording.start');
+Route::post('meet/{uid}/recording/{id}/stop', [MeetController::class, 'stopRecording'])->name('recording.stop');
+Route::get('meet/{uid}/recordings', [MeetController::class, 'listRecordings'])->name('recordings.list');
+Route::get('meet/recording/{id}/download', [MeetController::class, 'downloadRecording'])->name('meet.recording.download');
+
+
+//
+// Audio server is used for routing to play audio
+//
 Route::get('/audio/serve', [PythonController::class, 'serveAudio']);
 Route::get('/run-python', [PythonController::class, 'run']);
-Route::fallback(function () {
-    return Inertia::render('error');
-}
+Route::fallback(
+    function () {
+        return Inertia::render('error');
+    }
 );
 
-require __DIR__.'/settings.php';
+require __DIR__ . '/settings.php';

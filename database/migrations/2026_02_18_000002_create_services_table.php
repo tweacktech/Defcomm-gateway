@@ -54,6 +54,14 @@ return new class extends Migration {
                 'created_at' => now(),
                 'updated_at' => now(),
             ],
+            [
+                'key' => 'meet',
+                'name' => 'Meeting',
+                'description' => 'Online Meetings.',
+                'is_active' => true,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
         ]);
     }
 

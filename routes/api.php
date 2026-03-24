@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Api\DriveApiController;
+use App\Http\Controllers\Api\MeetApiController;
 use App\Http\Controllers\Api\PythonController;
 use App\Http\Controllers\Api\VaultApiController;
 use Illuminate\Http\Request;
@@ -89,3 +90,17 @@ Route::prefix('drive')
         // ── Download ──────────────────────────────────────────────────────────
         Route::get('/items/{item}/download', [DriveApiController::class, 'download'])->name('items.download');
     });
+
+
+
+    // ─────────────────────────────────────────────────────────────────────────────
+// SDK REST API — Sanctum token
+// ─────────────────────────────────────────────────────────────────────────────
+
+Route::middleware(['auth:sanctum'])->prefix('api/meet')->name('api.meet.')->group(function () {
+    Route::get('/rooms', [MeetApiController::class, 'listRooms'])->name('rooms.index');
+    Route::post('/rooms', [MeetApiController::class, 'createRoom'])->name('rooms.create');
+    Route::get('/rooms/{uid}', [MeetApiController::class, 'getRoom'])->name('rooms.show');
+    Route::delete('/rooms/{uid}', [MeetApiController::class, 'endRoom'])->name('rooms.end');
+    Route::post('/rooms/{uid}/token', [MeetApiController::class, 'issueToken'])->name('rooms.token');
+});

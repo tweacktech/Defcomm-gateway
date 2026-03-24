@@ -158,7 +158,7 @@ class ServiceController extends Controller
         return $this->serviceDetails('translator');
     }
 
-    public function serviceDetails(string $key): Response
+    public function serviceDetails(string $key)
     {
         $service = Service::where('key', $key)->firstOrFail();
 
@@ -182,7 +182,12 @@ class ServiceController extends Controller
             return Inertia::render('drive/drive', [
                 'service' => $this->serviceResource($service),
             ]);
-        }else {
+        } elseif ($service->key === 'meet') {
+            // return Inertia::render('meet/meet-index', [
+            //     'service' => $this->serviceResource($service),
+            // ]);
+            return redirect()->route('meet.index');
+        } else {
             return Inertia::render('service-details', [
                 'service' => $this->serviceResource($service),
             ]);

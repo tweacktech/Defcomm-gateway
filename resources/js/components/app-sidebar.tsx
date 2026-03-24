@@ -1,5 +1,5 @@
 import { Link } from '@inertiajs/react';
-import { BookOpen, Folder, Key, LayoutGrid, Mic, ScissorsSquareIcon, Settings, Vault } from 'lucide-react';
+import { BookOpen, Folder, Key, LayoutGrid, Mic, ScissorsSquareIcon, Settings, Vault, Video } from 'lucide-react';
 import { NavFooter } from '@/components/nav-footer';
 import { NavMain } from '@/components/nav-main';
 import { NavUser } from '@/components/nav-user';
@@ -41,6 +41,11 @@ const mainNavItems: NavItem[] = [
         title: 'Access Encryption',
         href: '/services/encryption',
         icon: ScissorsSquareIcon ,
+    },
+    {
+        title: 'Access Meeting',
+        href: '/meet',
+        icon: Video ,
     },
 
 ];

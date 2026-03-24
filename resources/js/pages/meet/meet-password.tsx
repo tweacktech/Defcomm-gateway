@@ -21,7 +21,7 @@ interface RoomInfo {
 
 type PageProps = {
     room: RoomInfo;
-    guest_name?: string;        // pre-filled if coming from guest page
+    guest_name?: string;        // pre-filled if coming from guest pagem
     errors?: { password?: string };
 } & Record<string, unknown>;
 
