@@ -3,65 +3,49 @@ import sys
 import tempfile
 import subprocess
 from typing import Optional
-from deep_translator import GoogleTranslator
 import argparse
-
 
 # ─────────────────────────────────────────────────────────────────────────────
 # LANGUAGE MAPS
 # ─────────────────────────────────────────────────────────────────────────────
 
-# gTTS only supports a subset of languages.
-# Yoruba (yo) and Igbo (ig) are NOT supported — we fall back to English TTS
-# while still translating the text correctly.
 GTTS_SUPPORTED = {
-    "en", "ha",                    # English, Hausa (supported)
-    "fr", "es", "de", "pt", "ar",  # other common languages
-    "sw", "zu", "af",              # some African languages gTTS supports
+    "en", "ha", "fr", "es", "de", "pt", "ar", "sw", "zu", "af"
 }
 
 NIGERIAN_LANGUAGE_MAP = {
-    # STT codes (Google Speech Recognition)
     "stt": {
-        "english":  "en-NG",
-        "hausa":    "ha-NG",
-        "yoruba":   "yo-NG",
-        "igbo":     "ig-NG",
-        "pidgin":   "en-NG",   # No native pidgin STT — falls back to English (NG)
+        "english": "en-NG",
+        "hausa": "ha-NG",
+        "yoruba": "yo-NG",
+        "igbo": "ig-NG",
+        "pidgin": "en-NG",
     },
-    # Preferred TTS codes — checked against GTTS_SUPPORTED at runtime
     "tts": {
-        "english":  "en",
-        "hausa":    "ha",
-        "yoruba":   "yo",   # ⚠️ not supported by gTTS — will fallback to "en"
-        "igbo":     "ig",   # ⚠️ not supported by gTTS — will fallback to "en"
-        "pidgin":   "en",
+        "english": "en",
+        "hausa": "ha",
+        "yoruba": "yo",  # ⚠ fallback to en
+        "igbo": "ig",    # ⚠ fallback to en
+        "pidgin": "en",
     },
-    # Translation codes (deep_translator / GoogleTranslator)
     "translate": {
-        "english":  "english",
-        "hausa":    "hausa",
-        "yoruba":   "yoruba",
-        "igbo":     "igbo",
-        "pidgin":   "english",
+        "english": "english",
+        "hausa": "hausa",
+        "yoruba": "yoruba",
+        "igbo": "igbo",
+        "pidgin": "english",
     }
 }
 
+# ─────────────────────────────────────────────────────────────────────────────
+# HELPER: TTS language resolution
+# ─────────────────────────────────────────────────────────────────────────────
 
 def resolve_tts_language(lang_code: str, engine: str = "gtts") -> str:
-    """
-    Return a TTS-safe language code.
-    If the preferred code isn't supported by the engine, fall back to 'en'
-    and warn the user.
-    """
     if engine.lower() == "gtts" and lang_code not in GTTS_SUPPORTED:
-        print(
-            f"gTTS does not support '{lang_code}' — speaking in English instead.",
-            file=sys.stderr,
-        )
+        print(f"gTTS does not support '{lang_code}', using English instead.", file=sys.stderr)
         return "en"
     return lang_code
-
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 1. TEXT-TO-SPEECH
@@ -76,24 +60,8 @@ def text_to_speech_advanced(
     save_path: Optional[str] = None,
     play: bool = True
 ) -> Optional[str]:
-    """
-    Convert text to speech using gTTS (online) or pyttsx3 (offline).
-
-    Args:
-        text:       Text to convert to speech.
-        language:   Language code (en, yo, ha, ig, fr, es …).
-        engine:     'gtts' for online or 'pyttsx3' for offline.
-        voice:      'male' or 'female' (pyttsx3 only).
-        speed:      Speaking speed 0.5–2.0 (gTTS only supports slow mode < 1.0).
-        save_path:  Optional file path to save the audio.
-        play:       Whether to play audio immediately.
-
-    Returns:
-        Path to the saved audio file, or None.
-    """
-
-    if engine.lower() == "gtts":
-        try:
+    try:
+        if engine.lower() == "gtts":
             from gtts import gTTS
 
             slow = 0.5 <= speed < 1.0
@@ -109,38 +77,28 @@ def text_to_speech_advanced(
                 tts.save(audio_file)
 
             if play:
-                if os.name == "nt":                              # Windows
+                if os.name == "nt":
                     os.system(f'start "" "{audio_file}"')
                 elif os.name == "posix":
                     sysname = os.uname().sysname.lower()
-                    if "darwin" in sysname:                      # macOS
+                    if "darwin" in sysname:
                         os.system(f'afplay "{audio_file}"')
-                    else:                                        # Linux
+                    else:
                         os.system(f'mpg123 "{audio_file}" 2>/dev/null || play "{audio_file}"')
 
             return audio_file
 
-        except ImportError:
-            print("gTTS not installed. Run: pip install gtts", file=sys.stderr)
-            return None
-        except Exception as e:
-            print(f"gTTS error: {e}", file=sys.stderr)
-            return None
-
-    elif engine.lower() == "pyttsx3":
-        try:
+        elif engine.lower() == "pyttsx3":
             import pyttsx3
 
             _engine = pyttsx3.init()
-
             voices = _engine.getProperty("voices")
             if voice.lower() == "female" and len(voices) > 1:
                 _engine.setProperty("voice", voices[1].id)
             else:
                 _engine.setProperty("voice", voices[0].id)
 
-            current_rate = _engine.getProperty("rate")
-            _engine.setProperty("rate", int(current_rate * speed))
+            _engine.setProperty("rate", int(_engine.getProperty("rate") * speed))
             _engine.setProperty("volume", 1.0)
 
             if save_path:
@@ -153,90 +111,55 @@ def text_to_speech_advanced(
             _engine.runAndWait()
             return None
 
-        except ImportError:
-            print("pyttsx3 not installed. Run: pip install pyttsx3", file=sys.stderr)
-            return None
-        except Exception as e:
-            print(f"pyttsx3 error: {e}", file=sys.stderr)
+        else:
+            print(f"Engine '{engine}' not supported. Use 'gtts' or 'pyttsx3'.", file=sys.stderr)
             return None
 
-    else:
-        print(f"Engine '{engine}' not supported. Use 'gtts' or 'pyttsx3'.", file=sys.stderr)
+    except ImportError as e:
+        print(f"Missing package: {e}. Install required packages.", file=sys.stderr)
+        return None
+    except Exception as e:
+        print(f"TTS error: {e}", file=sys.stderr)
         return None
 
-
 # ─────────────────────────────────────────────────────────────────────────────
-# 2a. AUDIO CONVERSION  (mp3 / mp4 / ogg / m4a → wav 16kHz mono)
-#     SpeechRecognition only reads WAV — ffmpeg handles everything else.
+# 2. AUDIO CONVERSION: any → WAV 16kHz mono
 # ─────────────────────────────────────────────────────────────────────────────
 
 def convert_to_wav(input_path: str) -> Optional[str]:
-    """
-    Convert any audio/video file to a 16kHz mono WAV suitable for
-    Google Speech Recognition.
-
-    - If the file is already .wav it is returned as-is (no re-encode).
-    - Requires ffmpeg to be installed on the system.
-
-    Args:
-        input_path: Absolute path to the source audio file.
-
-    Returns:
-        Path to the WAV file, or None on failure.
-    """
     if not os.path.exists(input_path):
-        print(f"convert_to_wav: file not found: {input_path}", file=sys.stderr)
+        print(f"File not found: {input_path}", file=sys.stderr)
         return None
 
-    # Already a wav — return immediately
     if input_path.lower().endswith(".wav"):
         return input_path
 
-    wav_path = os.path.join(
-        tempfile.gettempdir(),
-        f"stt_converted_{abs(hash(input_path))}.wav"
-    )
-
+    wav_path = os.path.join(tempfile.gettempdir(), f"stt_converted_{abs(hash(input_path))}.wav")
     try:
         result = subprocess.run(
             [
-                "ffmpeg",
-                "-y",              # overwrite output without asking
-                "-i", input_path,  # input file (any format ffmpeg supports)
-                "-ar", "16000",    # sample rate: 16kHz (optimal for Google STT)
-                "-ac", "1",        # channels: mono
-                "-f",  "wav",      # force wav container
-                wav_path,
+                "ffmpeg", "-y", "-i", input_path,
+                "-ar", "16000", "-ac", "1", "-f", "wav", wav_path
             ],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.PIPE,
         )
 
         if result.returncode != 0:
-            print(
-                f"ffmpeg error (code {result.returncode}): {result.stderr.decode().strip()}",
-                file=sys.stderr,
-            )
+            print(f"ffmpeg error: {result.stderr.decode().strip()}", file=sys.stderr)
             return None
 
         print(f"Converted to wav: {wav_path}", file=sys.stderr)
         return wav_path
-
     except FileNotFoundError:
-        print(
-            "ffmpeg not found. Install it:\n"
-            "  macOS : brew install ffmpeg\n"
-            "  Ubuntu: sudo apt install ffmpeg",
-            file=sys.stderr,
-        )
+        print("ffmpeg not found. Install ffmpeg to convert audio.", file=sys.stderr)
         return None
     except Exception as e:
         print(f"Unexpected conversion error: {e}", file=sys.stderr)
         return None
 
-
 # ─────────────────────────────────────────────────────────────────────────────
-# 2. SPEECH-TO-TEXT
+# 3. SPEECH-TO-TEXT
 # ─────────────────────────────────────────────────────────────────────────────
 
 def speech_to_text(
@@ -246,63 +169,37 @@ def speech_to_text(
     timeout: int = 5,
     phrase_time_limit: int = 10
 ) -> Optional[str]:
-    """
-    Convert speech to text using Google Speech Recognition.
-    Non-WAV files are automatically converted via ffmpeg before processing.
-
-    Args:
-        language:          BCP-47 language code (en-US, en-NG, yo-NG, ha-NG, ig-NG …).
-        source:            'mic' for microphone or 'file' for audio file.
-        audio_file:        Path to audio file when source='file'.
-        timeout:           Seconds to wait before giving up listening.
-        phrase_time_limit: Max recording duration in seconds.
-
-    Returns:
-        Recognised text string, or None on failure.
-    """
-
     try:
         import speech_recognition as sr
     except ImportError:
-        print("SpeechRecognition not installed. Run: pip install SpeechRecognition", file=sys.stderr)
+        print("SpeechRecognition package missing. Run: pip install SpeechRecognition", file=sys.stderr)
         return None
 
     recognizer = sr.Recognizer()
-    _temp_wav = None  # track any temp file we create so we can clean up
+    _temp_wav = None
 
     try:
         if source == "mic":
             try:
                 mic = sr.Microphone()
             except OSError:
-                print("No microphone found. Check your audio device.", file=sys.stderr)
+                print("No microphone found.", file=sys.stderr)
                 return None
 
             with mic:
-                print("Adjusting for ambient noise…", file=sys.stderr)
                 recognizer.adjust_for_ambient_noise(mic, duration=1)
-                print("Speak now…", file=sys.stderr)
-                audio = recognizer.listen(
-                    mic,
-                    timeout=timeout,
-                    phrase_time_limit=phrase_time_limit
-                )
+                print("Speak now...", file=sys.stderr)
+                audio = recognizer.listen(mic, timeout=timeout, phrase_time_limit=phrase_time_limit)
 
         elif source == "file":
-            if not audio_file:
-                print("Please provide an audio_file path when source='file'.", file=sys.stderr)
-                return None
-            if not os.path.exists(audio_file):
+            if not audio_file or not os.path.exists(audio_file):
                 print(f"Audio file not found: {audio_file}", file=sys.stderr)
                 return None
 
-            # ── Convert to WAV if needed ────────────────────────────────────
             wav_file = convert_to_wav(audio_file)
-            if wav_file is None:
-                print("Could not convert audio to WAV. Aborting STT.", file=sys.stderr)
+            if not wav_file:
+                print("Audio conversion failed.", file=sys.stderr)
                 return None
-
-            # Track temp file for cleanup (only if a new file was created)
             if wav_file != audio_file:
                 _temp_wav = wav_file
 
@@ -314,11 +211,11 @@ def speech_to_text(
             return None
 
         text = recognizer.recognize_google(audio, language=language)
-        print(f"Recognised: \"{text}\"", file=sys.stderr)
+        print(f"Recognized: \"{text}\"", file=sys.stderr)
         return text
 
     except sr.WaitTimeoutError:
-        print("Listening timed out — no speech detected.", file=sys.stderr)
+        print("Listening timed out.", file=sys.stderr)
     except sr.UnknownValueError:
         print("Could not understand audio.", file=sys.stderr)
     except sr.RequestError as e:
@@ -326,7 +223,6 @@ def speech_to_text(
     except Exception as e:
         print(f"Unexpected STT error: {e}", file=sys.stderr)
     finally:
-        # Clean up temp wav if we created one
         if _temp_wav and os.path.exists(_temp_wav):
             try:
                 os.unlink(_temp_wav)
@@ -336,73 +232,31 @@ def speech_to_text(
 
     return None
 
+# ─────────────────────────────────────────────────────────────────────────────
+# 4. TEXT TRANSLATION
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _translate_nigerian_text(source_lang: str, target_lang: str, text: str) -> str:
+    from deep_translator import GoogleTranslator
+    source_lang = source_lang.lower().strip()
+    target_lang = target_lang.lower().strip()
+    supported = NIGERIAN_LANGUAGE_MAP["translate"].keys()
+
+    if source_lang not in supported or target_lang not in supported:
+        raise ValueError(f"Unsupported translation: {source_lang} → {target_lang}")
+
+    translated = GoogleTranslator(
+        source=NIGERIAN_LANGUAGE_MAP["translate"][source_lang],
+        target=NIGERIAN_LANGUAGE_MAP["translate"][target_lang]
+    ).translate(text)
+
+    if not translated:
+        raise RuntimeError("Translation returned empty result.")
+
+    return translated
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 3. TEXT TRANSLATION  (standalone utility, also used internally)
-# ─────────────────────────────────────────────────────────────────────────────
-
-def translate_text(
-    source_lang: Optional[str] = None,
-    target_lang: Optional[str] = None,
-    text_to_translate: Optional[str] = None,
-    speech: bool = True
-) -> Optional[str]:
-    """
-    Translate text between any two languages supported by Google Translate.
-
-    Args:
-        source_lang:       Source language name or code.
-        target_lang:       Target language name or code.
-        text_to_translate: Text to translate.
-        speech:            If True, speak the translated result via gTTS.
-
-    Returns:
-        Translated text string, or an error message.
-    """
-
-    translator = GoogleTranslator(source="en", target="es")
-    list_of_sources = translator.get_supported_languages(as_dict=True)
-
-    if source_lang is None:
-        source_lang = input("Enter the source language: ").strip()
-    if target_lang is None:
-        target_lang = input("Enter the target language: ").strip()
-    if text_to_translate is None:
-        text_to_translate = input("Enter the text to be translated: ").strip()
-
-    source_lang = source_lang.lower()
-    target_lang = target_lang.lower()
-
-    source_ok = source_lang in list_of_sources or source_lang in list_of_sources.values()
-    target_ok = target_lang in list_of_sources or target_lang in list_of_sources.values()
-
-    if source_ok and target_ok:
-        try:
-            translated = GoogleTranslator(
-                source=source_lang,
-                target=target_lang
-            ).translate(text_to_translate)
-
-            print(f"Translated text: {translated}", file=sys.stderr)
-
-            if speech:
-                tts_lang = target_lang[:2]   # 'yoruba' → 'yo', 'english' → 'en'
-                text_to_speech_advanced(translated, language=tts_lang)
-
-            return translated
-
-        except Exception as e:
-            error_msg = f"Translation error: {e}"
-            print(error_msg, file=sys.stderr)
-            return error_msg
-    else:
-        error_msg = f"'{source_lang}' or '{target_lang}' is not supported."
-        print(error_msg, file=sys.stderr)
-        return error_msg
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# 4. SPEECH-TO-SPEECH  (full pipeline)
+# 5. FULL SPEECH-TO-SPEECH PIPELINE
 # ─────────────────────────────────────────────────────────────────────────────
 
 def speech_to_speech(
@@ -417,25 +271,14 @@ def speech_to_speech(
     play: bool = True,
     do_tts: bool = True,
 ) -> Optional[str]:
-    """
-    Full speech-to-speech translation pipeline.
-    Flow:  Microphone/File → (convert to WAV) → STT → Translate → TTS → Speaker/File
-    """
-
     source_lang = source_lang.lower().strip()
     target_lang = target_lang.lower().strip()
+    supported = NIGERIAN_LANGUAGE_MAP["stt"].keys()
 
-    supported = list(NIGERIAN_LANGUAGE_MAP["stt"].keys())
-
-    if source_lang not in supported:
-        print(f"Source language '{source_lang}' not supported. Choose from: {supported}", file=sys.stderr)
+    if source_lang not in supported or target_lang not in supported:
+        print(f"Unsupported language: {source_lang} → {target_lang}", file=sys.stderr)
         return None
 
-    if target_lang not in supported:
-        print(f"Target language '{target_lang}' not supported. Choose from: {supported}", file=sys.stderr)
-        return None
-
-    # ── Step 1 : Speech → Text (convert_to_wav happens inside speech_to_text) ──
     recognized_text = speech_to_text(
         language=NIGERIAN_LANGUAGE_MAP["stt"][source_lang],
         source=source,
@@ -445,34 +288,20 @@ def speech_to_speech(
     )
 
     if not recognized_text:
-        print("Speech recognition failed. Aborting.", file=sys.stderr)
+        print("Speech recognition failed.", file=sys.stderr)
         return None
 
-    # ── Step 2 : Text → Translated Text ─────────────────────────────────────
     if source_lang == target_lang:
         translated_text = recognized_text
     else:
         try:
-            translated_text = GoogleTranslator(
-                source=NIGERIAN_LANGUAGE_MAP["translate"][source_lang],
-                target=NIGERIAN_LANGUAGE_MAP["translate"][target_lang]
-            ).translate(recognized_text)
-
-            if not translated_text:
-                print("Translation returned empty result.", file=sys.stderr)
-                return None
-
+            translated_text = _translate_nigerian_text(source_lang, target_lang, recognized_text)
         except Exception as e:
             print(f"Translation error: {e}", file=sys.stderr)
             return None
 
-    # ── Step 3 : Translated Text → Speech ───────────────────────────────────
     if do_tts:
-        tts_lang = resolve_tts_language(
-            NIGERIAN_LANGUAGE_MAP["tts"][target_lang],
-            engine=engine
-        )
-
+        tts_lang = resolve_tts_language(NIGERIAN_LANGUAGE_MAP["tts"][target_lang], engine)
         text_to_speech_advanced(
             text=translated_text,
             language=tts_lang,
@@ -480,29 +309,23 @@ def speech_to_speech(
             play=play,
             save_path=save_output
         )
-
         if save_output:
             print(f"Output saved to: {save_output}", file=sys.stderr)
 
     return translated_text
 
-
 # ─────────────────────────────────────────────────────────────────────────────
-# 5. INTERACTIVE CLI WRAPPER
+# 6. INTERACTIVE CLI
 # ─────────────────────────────────────────────────────────────────────────────
 
 def speech_to_speech_interactive():
-    """Prompt-driven CLI mode — useful for quick manual testing."""
-
-    supported = list(NIGERIAN_LANGUAGE_MAP["stt"].keys())
-    print("\n🌍  Nigerian Speech-to-Speech Translator")
-    print(f"   Supported languages: {', '.join(supported)}\n")
+    supported = NIGERIAN_LANGUAGE_MAP["stt"].keys()
+    print(f"Supported languages: {', '.join(supported)}\n")
 
     source_lang = input("Source language [english]: ").strip().lower() or "english"
-    target_lang = input("Target language [yoruba]:  ").strip().lower() or "yoruba"
-    source      = input("Input source (mic/file) [mic]: ").strip().lower() or "mic"
-    audio_file  = None
-
+    target_lang = input("Target language [yoruba]: ").strip().lower() or "yoruba"
+    source = input("Input source (mic/file) [mic]: ").strip().lower() or "mic"
+    audio_file = None
     if source == "file":
         audio_file = input("Audio file path: ").strip()
 
@@ -515,80 +338,38 @@ def speech_to_speech_interactive():
         audio_file=audio_file,
         save_output=save_output,
         play=True,
-        do_tts=True,
+        do_tts=True
     )
 
-
 # ─────────────────────────────────────────────────────────────────────────────
-# 6. INTERNAL HELPER
-# ─────────────────────────────────────────────────────────────────────────────
-
-def _translate_nigerian_text(source_lang: str, target_lang: str, text: str) -> str:
-    source_lang = source_lang.lower().strip()
-    target_lang = target_lang.lower().strip()
-
-    supported = list(NIGERIAN_LANGUAGE_MAP["translate"].keys())
-    if source_lang not in supported:
-        raise ValueError(f"Unsupported source_lang '{source_lang}'. Choose from: {supported}")
-    if target_lang not in supported:
-        raise ValueError(f"Unsupported target_lang '{target_lang}'. Choose from: {supported}")
-
-    translated = GoogleTranslator(
-        source=NIGERIAN_LANGUAGE_MAP["translate"][source_lang],
-        target=NIGERIAN_LANGUAGE_MAP["translate"][target_lang],
-    ).translate(text)
-
-    if not translated:
-        raise RuntimeError("Translation returned empty result.")
-    return translated
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# 7. CLI ENTRY POINT  (called by Laravel via Process::run)
+# 7. CLI ENTRY POINT
 # ─────────────────────────────────────────────────────────────────────────────
 
 def main(argv) -> int:
     parser = argparse.ArgumentParser(description="Nigerian Speech/Text Translation Utility")
-    parser.add_argument("--source",      required=True, help="Source language (english|hausa|yoruba|igbo|pidgin)")
-    parser.add_argument("--target",      required=True, help="Target language (english|hausa|yoruba|igbo|pidgin)")
-    parser.add_argument("--text",        help="Text to translate (skips STT)")
-    parser.add_argument("--file",        dest="audio_file", help="Audio file path — mp3/mp4/ogg/wav (triggers STT)")
-    parser.add_argument("--engine",      default="gtts", choices=["gtts", "pyttsx3"])
-    parser.add_argument("--save-output", dest="save_output", help="Path to save output audio file")
-    parser.add_argument("--play",        action="store_true", help="Play audio on the server")
-    parser.add_argument("--tts",         action="store_true", help="Enable TTS output")
-
+    parser.add_argument("--source", required=True, help="Source language (english|hausa|yoruba|igbo|pidgin)")
+    parser.add_argument("--target", required=True, help="Target language")
+    parser.add_argument("--text", help="Text to translate (skips STT)")
+    parser.add_argument("--file", dest="audio_file", help="Audio file path (triggers STT)")
+    parser.add_argument("--engine", default="gtts", choices=["gtts", "pyttsx3"])
+    parser.add_argument("--save-output", dest="save_output", help="Path to save output audio")
+    parser.add_argument("--play", action="store_true", help="Play audio on server")
+    parser.add_argument("--tts", action="store_true", help="Enable TTS output")
     args = parser.parse_args(argv)
 
     try:
-        # Must provide exactly one of --text or --file
         if bool(args.text) == bool(args.audio_file):
             raise ValueError("Provide exactly one of --text or --file.")
 
-        # ── TEXT branch (translateText / textTranslateAudio) ─────────────────
-        if args.text is not None:
+        if args.text:
             translated = _translate_nigerian_text(args.source, args.target, args.text)
-
             if args.tts:
-                tts_lang = resolve_tts_language(
-                    NIGERIAN_LANGUAGE_MAP["tts"].get(args.target.lower().strip(), "en"),
-                    engine=args.engine
-                )
-                audio_path = text_to_speech_advanced(
-                    text=translated,
-                    language=tts_lang,
-                    engine=args.engine,
-                    play=args.play,
-                    save_path=args.save_output,
-                )
+                tts_lang = resolve_tts_language(NIGERIAN_LANGUAGE_MAP["tts"].get(args.target, "en"), args.engine)
+                audio_path = text_to_speech_advanced(translated, language=tts_lang, engine=args.engine, play=args.play, save_path=args.save_output)
                 print(f"AUDIO:{audio_path}", file=sys.stderr)
-
-            print(translated)   # ← Laravel reads this via $result->output()
+            print(translated)
             return 0
 
-        # ── FILE branch (translateAudio) ─────────────────────────────────────
-        # convert_to_wav() is called internally by speech_to_text()
-        # so mp3/mp4/ogg/m4a all work transparently here
         out = speech_to_speech(
             source_lang=args.source,
             target_lang=args.target,
@@ -597,19 +378,18 @@ def main(argv) -> int:
             engine=args.engine,
             save_output=args.save_output,
             play=args.play,
-            do_tts=args.tts,
+            do_tts=args.tts
         )
 
         if not out:
             raise RuntimeError("Speech pipeline failed.")
 
-        print(out)  # ← Laravel reads this via $result->output()
+        print(out)
         return 0
 
     except Exception as e:
-        print(str(e), file=sys.stderr)
+        print(f"Error: {e}", file=sys.stderr)
         return 2
-
 
 if __name__ == "__main__":
     raise SystemExit(main(sys.argv[1:]))
