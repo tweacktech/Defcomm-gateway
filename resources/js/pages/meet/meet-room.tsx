@@ -652,7 +652,7 @@ export default function MeetRoom() {
         if (rec.active) await stopRecording();
         cleanup();
         await fetch(`/meet/${room.uid}/end`, {
-            method: 'POST',
+            method: 'PATCH',
             headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': csrf() },
         });
         if (is_guest) setEndReason('left');

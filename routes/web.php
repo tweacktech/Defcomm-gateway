@@ -8,6 +8,7 @@ use App\Http\Controllers\ServiceController;
 use App\Http\Controllers\Settings\ProfileController;
 use App\Http\Controllers\UserController;
 use App\Http\Controllers\VaultController;
+use Illuminate\Support\Facades\Broadcast;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
 use Laravel\Fortify\Features;
@@ -119,8 +120,8 @@ Route::get('/meet/{uid}', [MeetController::class, 'room'])->name('meet.room');
 Route::post('/meet/{uid}/guest', [MeetController::class, 'guestJoin'])->name('meet.guest.join');
 
 // Participant JSON actions — auth optional, guests use peer_id from session
-Route::post('/meet/{uid}/join', [MeetController::class, 'join'])->name('meet.join')->middleware('auth');
-Route::post('/{uid}/end', [MeetController::class, 'end'])->name('end');
+Route::post('/meet/{uid}/join', [MeetController::class, 'join'])->name('meet.join');
+Route::patch('/meet/{uid}/end', [MeetController::class, 'end'])->name('end');
 Route::post('/meet/{uid}/leave', [MeetController::class, 'leave'])->name('meet.leave');
 Route::post('/meet/{uid}/signal', [MeetController::class, 'signal'])->name('meet.signal');
 
@@ -169,5 +170,9 @@ Route::fallback(
         return Inertia::render('error');
     }
 );
+
+Broadcast::routes([
+    'middleware' => ['web'], // allows session (IMPORTANT for your guest logic)
+]);
 
 require __DIR__ . '/settings.php';

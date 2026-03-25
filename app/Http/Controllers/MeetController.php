@@ -168,8 +168,9 @@ class MeetController extends Controller
     /**
      * PATCH /meet/{uid}/end — end room (host only).
      */
-    public function end(Request $request, MeetRoom $room): JsonResponse
+    public function end(Request $request, string $uid): JsonResponse
     {
+        $room = MeetRoom::where('uid', $uid)->firstOrFail();
         abort_unless($room->owner_id === $request->user()->id, 403);
 
         $room->end();
@@ -231,12 +232,13 @@ class MeetController extends Controller
             }
         }
 
+
         $request->session()->put("meet_guest_{$room->id}", [
             'name' => $validated['display_name'],
             'admitted' => true,
             'admitted_at' => now()->toIso8601String(),
         ]);
-
+        // \Log::alert('guest user');
         return redirect()->route('meet.room', $uid);
     }
 
@@ -280,15 +282,19 @@ class MeetController extends Controller
         //     'audio_on' => $validated['audio_on'] ?? false,
         //     'joined_at' => now(),
         // ]);
+
+
         $participant = MeetParticipant::updateOrCreate(
             [
                 'room_id' => $room->id,
-                'peer_id' => $validated['peer_id'],
+                'user_id' => $userId,
+                'display_name' => $validated['display_name'],
             ],
             [
                 'user_id' => $userId,
                 'display_name' => $validated['display_name'],
-                'role' => $isOwner ? 'host' : ($existingParticipant?->role ?? 'participant'),
+                'peer_id' => $validated['peer_id'],
+                'role' => $isOwner ? 'host' : 'participant',
                 'is_admitted' => $isOwner || !$room->waiting_room,
                 'video_on' => $validated['video_on'] ?? false,
                 'audio_on' => $validated['audio_on'] ?? false,
@@ -296,7 +302,17 @@ class MeetController extends Controller
             ]
         );
 
-        \Log::info('wow');
+        // ✅ ADD THIS BLOCK
+        if (!$userId) {
+            session([
+                "meet_guest_{$room->id}" => [
+                    'name' => $validated['display_name'],
+                    'admitted' => $participant->is_admitted,
+                ]
+            ]);
+        }
+
+
         broadcast(new ParticipantJoined($room, $participant))->toOthers();
 
         return response()->json([
@@ -310,6 +326,7 @@ class MeetController extends Controller
      */
     public function leave(Request $request, string $uid): JsonResponse
     {
+        \Log::error('Ending room');
         $participant = MeetParticipant::where('peer_id', $request->input('peer_id'))
             ->whereNull('left_at')
             ->firstOrFail();

@@ -4,12 +4,11 @@ use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
-return new class extends Migration
-{
+return new class extends Migration {
     /**
      * Run the migrations.
      */
-     public function up(): void
+    public function up(): void
     {
         Schema::create('meet_rooms', function (Blueprint $table) {
             $table->id();
@@ -21,8 +20,8 @@ return new class extends Migration
 
             // ── Ownership ─────────────────────────────────────────────────────
             $table->foreignId('owner_id')
-                  ->constrained('users')
-                  ->cascadeOnDelete();
+                ->constrained('users')
+                ->cascadeOnDelete();
 
             // ── SDK / multi-tenant ────────────────────────────────────────────
             // null = internal Defcomm room, string = SDK consumer's app key
@@ -63,14 +62,14 @@ return new class extends Migration
             $table->id();
 
             $table->foreignId('room_id')
-                  ->constrained('meet_rooms')
-                  ->cascadeOnDelete();
+                ->constrained('meet_rooms')
+                ->cascadeOnDelete();
 
             // null for unauthenticated SDK participants
             $table->foreignId('user_id')
-                  ->nullable()
-                  ->constrained('users')
-                  ->nullOnDelete();
+                ->nullable()
+                ->constrained('users')
+                ->nullOnDelete();
 
             // ── Identity (for guests / SDK) ───────────────────────────────────
             $table->string('display_name');
@@ -79,7 +78,7 @@ return new class extends Migration
 
             // ── Role ─────────────────────────────────────────────────────────
             $table->enum('role', ['host', 'co-host', 'participant', 'viewer'])
-                  ->default('participant');
+                ->default('participant');
 
             // ── State ─────────────────────────────────────────────────────────
             $table->boolean('is_admitted')->default(true);   // false = waiting room
@@ -107,19 +106,20 @@ return new class extends Migration
             $table->id();
 
             $table->foreignId('room_id')
-                  ->constrained('meet_rooms')
-                  ->cascadeOnDelete();
+                ->constrained('meet_rooms')
+                ->cascadeOnDelete();
 
             $table->foreignId('initiated_by')
-                  ->constrained('users')
-                  ->cascadeOnDelete();
+                ->constrained('users')
+                ->cascadeOnDelete();
 
             $table->string('disk')->default('local');
             $table->string('path')->nullable();
             $table->unsignedBigInteger('size')->default(0);
-            $table->unsignedInteger('duration_seconds')->nullable();
+            // $table->unsignedInteger('duration_seconds')->nullable();
+            $table->integer('duration_seconds')->unsigned()->nullable();
             $table->enum('status', ['recording', 'processing', 'ready', 'failed'])
-                  ->default('recording');
+                ->default('recording');
 
             $table->timestamp('started_at');
             $table->timestamp('ended_at')->nullable();
@@ -130,7 +130,7 @@ return new class extends Migration
     /**
      * Reverse the migrations.
      */
-      public function down(): void
+    public function down(): void
     {
         Schema::dropIfExists('meet_recordings');
         Schema::dropIfExists('meet_participants');
