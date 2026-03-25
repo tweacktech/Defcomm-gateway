@@ -43,7 +43,7 @@ return new class extends Migration {
             $table->timestamp('scheduled_at')->nullable();
             $table->timestamp('started_at')->nullable();
             $table->timestamp('ended_at')->nullable();
-            $table->unsignedInteger('duration_seconds')->nullable(); // filled on end
+            $table->decimal('duration_seconds', 8, 3)->nullable(); // filled on end
 
             // ── Webhooks (SDK feature) ─────────────────────────────────────────
             $table->string('webhook_url')->nullable();
@@ -91,7 +91,8 @@ return new class extends Migration {
             $table->string('socket_id')->nullable();     // Reverb socket_id
             $table->timestamp('joined_at');
             $table->timestamp('left_at')->nullable();
-            $table->unsignedInteger('duration_seconds')->nullable();
+            // $table->unsignedInteger('duration_seconds')->nullable();
+            $table->decimal('duration_seconds', 8, 3)->nullable();
 
             $table->timestamps();
 
@@ -117,7 +118,8 @@ return new class extends Migration {
             $table->string('path')->nullable();
             $table->unsignedBigInteger('size')->default(0);
             // $table->unsignedInteger('duration_seconds')->nullable();
-            $table->integer('duration_seconds')->unsigned()->nullable();
+            // $table->integer('duration_seconds')->unsigned()->nullable();
+            $table->decimal('duration_seconds', 8, 3)->nullable();
             $table->enum('status', ['recording', 'processing', 'ready', 'failed'])
                 ->default('recording');
 
