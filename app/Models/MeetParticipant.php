@@ -26,13 +26,13 @@ class MeetParticipant extends Model
     ];
 
     protected $casts = [
-        'is_admitted'    => 'boolean',
-        'video_on'       => 'boolean',
-        'audio_on'       => 'boolean',
+        'is_admitted' => 'boolean',
+        'video_on' => 'boolean',
+        'audio_on' => 'boolean',
         'screen_sharing' => 'boolean',
-        'hand_raised'    => 'boolean',
-        'joined_at'      => 'datetime',
-        'left_at'        => 'datetime',
+        'hand_raised' => 'boolean',
+        'joined_at' => 'datetime',
+        'left_at' => 'datetime',
     ];
 
     // ── Relationships ─────────────────────────────────────────────────────────
@@ -74,12 +74,15 @@ class MeetParticipant extends Model
      */
     public function leave(): void
     {
+        // absolute=true prevents negative when joined_at has clock skew.
+        // max(0, ...) guards against any remaining edge case.
+        // (int) floors the float — the column is unsignedInteger.
         $duration = $this->joined_at
-            ? now()->diffInSeconds($this->joined_at)
+            ? max(0, (int) now()->diffInSeconds($this->joined_at, true))
             : 0;
 
         $this->update([
-            'left_at'          => now(),
+            'left_at' => now(),
             'duration_seconds' => $duration,
         ]);
     }

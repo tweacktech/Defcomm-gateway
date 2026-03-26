@@ -112,33 +112,34 @@ Route::prefix('')->middleware(['auth'])->group(function () {
 
 });
 
-// Route::get('/services/meet', [MeetController::class, 'index'])->name('index')->middleware('auth');
-// Room page — controller decides view based on auth state + session
-Route::get('/meet/{uid}', [MeetController::class, 'room'])->name('meet.room');
 
-// Guest form submit (display_name + optional password)
-Route::post('/meet/{uid}/guest', [MeetController::class, 'guestJoin'])->name('meet.guest.join');
 
-// Participant JSON actions — auth optional, guests use peer_id from session
-Route::post('/meet/{uid}/join', [MeetController::class, 'join'])->name('meet.join');
-Route::patch('/meet/{uid}/end', [MeetController::class, 'end'])->name('end');
-Route::post('/meet/{uid}/leave', [MeetController::class, 'leave'])->name('meet.leave');
-Route::post('/meet/{uid}/signal', [MeetController::class, 'signal'])->name('meet.signal');
+// // Room page — controller decides view based on auth state + session
+// Route::get('/meet/{uid}', [MeetController::class, 'room'])->name('meet.room');
 
-// ─────────────────────────────────────────────────────────────────────────────
-// AUTH REQUIRED
-// ─────────────────────────────────────────────────────────────────────────────
+// // Guest form submit (display_name + optional password)
+// Route::post('/meet/{uid}/guest', [MeetController::class, 'guestJoin'])->name('meet.guest.join');
 
-Route::middleware(['auth'])->prefix('meet')->name('meet.')->group(function () {
-    Route::get('/', [MeetController::class, 'index'])->name('index');
-    Route::post('/rooms', [MeetController::class, 'create'])->name('create');
+// // Participant JSON actions — auth optional, guests use peer_id from session
+// Route::post('/meet/{uid}/join', [MeetController::class, 'join'])->name('meet.join');
+// Route::patch('/meet/{uid}/end', [MeetController::class, 'end'])->name('end');
+// Route::post('/meet/{uid}/leave', [MeetController::class, 'leave'])->name('meet.leave');
+// Route::post('/meet/{uid}/signal', [MeetController::class, 'signal'])->name('meet.signal');
 
-    Route::post('/{uid}/password', [MeetController::class, 'unlock'])->name('unlock');
-    // Route::patch('/{uid}/end', [MeetController::class, 'end'])->name('end');
-    Route::patch('/{uid}/admit/{peerId}', [MeetController::class, 'admit'])->name('admit');
-    Route::patch('/{uid}/kick/{peerId}', [MeetController::class, 'kick'])->name('kick');
+// // ─────────────────────────────────────────────────────────────────────────────
+// // AUTH REQUIRED
+// // ─────────────────────────────────────────────────────────────────────────────
 
-});
+// Route::middleware(['auth'])->prefix('meet')->name('meet.')->group(function () {
+//     Route::get('/', [MeetController::class, 'index'])->name('index');
+//     Route::post('/rooms', [MeetController::class, 'create'])->name('create');
+
+//     Route::post('/{uid}/password', [MeetController::class, 'unlock'])->name('unlock');
+//     // Route::patch('/{uid}/end', [MeetController::class, 'end'])->name('end');
+//     Route::patch('/{uid}/admit/{peerId}', [MeetController::class, 'admit'])->name('admit');
+//     Route::patch('/{uid}/kick/{peerId}', [MeetController::class, 'kick'])->name('kick');
+
+// });
 
 
 // ── Recording chunk upload (public — validated by recording ownership) ────────
@@ -153,11 +154,45 @@ Route::post(
     [MeetController::class, 'updateMediaState']
 )->name('meet.media-state');
 
-
 Route::post('meet/{uid}/recording/start', [MeetController::class, 'startRecording'])->name('recording.start');
 Route::post('meet/{uid}/recording/{id}/stop', [MeetController::class, 'stopRecording'])->name('recording.stop');
 Route::get('meet/{uid}/recordings', [MeetController::class, 'listRecordings'])->name('recordings.list');
 Route::get('meet/recording/{id}/download', [MeetController::class, 'downloadRecording'])->name('meet.recording.download');
+
+
+
+// ── PUBLIC — no auth required ─────────────────────────────────────────────────
+// Room page: controller decides view based on auth state + session
+Route::get('/meet/{uid}', [MeetController::class, 'room'])->name('meet.room');
+
+// Guest entry form POST
+Route::post('/meet/{uid}/guest', [MeetController::class, 'guestJoin'])->name('meet.guest.join');
+
+// Participant actions — auth OPTIONAL (guests call these too via peer_id)
+Route::post('/meet/{uid}/join', [MeetController::class, 'join'])->name('meet.join');
+Route::post('/meet/{uid}/leave', [MeetController::class, 'leave'])->name('meet.leave');
+Route::post('/meet/{uid}/signal', [MeetController::class, 'signal'])->name('meet.signal');
+Route::post('/meet/{uid}/media-state', [MeetController::class, 'updateMediaState'])->name('meet.media-state');
+Route::post('/meet/{uid}/recording/{recordingId}/chunk', [MeetController::class, 'recordingChunk'])->name('meet.recording.chunk');
+
+// Kick — validated by session/peer_id, not auth middleware
+// (host is identified by room ownership checked inside controller)
+Route::patch('/meet/{uid}/kick/{peerId}', [MeetController::class, 'kick'])->name('meet.kick');
+
+// ── AUTH REQUIRED ─────────────────────────────────────────────────────────────
+Route::middleware(['auth'])->prefix('meet')->name('meet.')->group(function () {
+    Route::get('/', [MeetController::class, 'index'])->name('index');
+    Route::post('/rooms', [MeetController::class, 'create'])->name('create');
+    Route::post('/{uid}/password', [MeetController::class, 'unlock'])->name('unlock');
+    Route::patch('/{uid}/end', [MeetController::class, 'end'])->name('end');
+    Route::patch('/{uid}/admit/{peerId}', [MeetController::class, 'admit'])->name('admit');
+    Route::post('/{uid}/recording/start', [MeetController::class, 'startRecording'])->name('recording.start');
+    Route::post('/{uid}/recording/{id}/stop', [MeetController::class, 'stopRecording'])->name('recording.stop');
+    Route::get('/{uid}/recordings', [MeetController::class, 'listRecordings'])->name('recordings.list');
+    Route::get('/recording/{id}/download', [MeetController::class, 'downloadRecording'])->name('recording.download');
+});
+
+
 
 
 //

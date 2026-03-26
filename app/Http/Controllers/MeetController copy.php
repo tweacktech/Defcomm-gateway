@@ -4,15 +4,20 @@ namespace App\Http\Controllers;
 
 use App\Events\Meet\ParticipantJoined;
 use App\Events\Meet\ParticipantLeft;
+use App\Events\Meet\ParticipantMediaUpdated;
+use App\Events\Meet\RecordingStarted;
+use App\Events\Meet\RecordingStopped;
 use App\Events\Meet\RoomEnded;
 use App\Events\Meet\SignalSent;
 use App\Models\MeetParticipant;
+use App\Models\MeetRecording;
 use App\Models\MeetRoom;
 use App\Traits\LogsActivity;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -26,7 +31,7 @@ class MeetController extends Controller
     // =========================================================================
 
     /**
-     * GET /meet — authenticated lobby
+     * GET /meet — authenticated lobby.
      */
     public function index(Request $request): Response
     {
@@ -45,7 +50,7 @@ class MeetController extends Controller
     }
 
     /**
-     * GET /meet/{uid} — public route (auth optional)
+     * GET /meet/{uid} — public route (auth optional).
      *
      * Flow decision tree:
      *   Guest (no auth) + not yet through guest form  → meet/guest
@@ -56,6 +61,7 @@ class MeetController extends Controller
      */
     public function room(Request $request, string $uid): Response|RedirectResponse
     {
+
         $room = MeetRoom::where('uid', $uid)
             ->with(['owner:id,name'])
             ->withCount('activeParticipants')
@@ -89,7 +95,6 @@ class MeetController extends Controller
                 'room' => $this->roomResource($room),
             ]);
         }
-
         return $this->renderRoom($request, $room, isGuest: false);
     }
 
@@ -125,46 +130,54 @@ class MeetController extends Controller
     // =========================================================================
 
     /**
-     * POST /meet/rooms — create room (auth required)
+     * POST /meet/rooms — create room (auth required).
      */
     public function create(Request $request): RedirectResponse
     {
-        $validated = $request->validate([
-            'name' => ['nullable', 'string', 'max:120'],
-            'password' => ['nullable', 'string', 'min:4', 'max:64'],
-            'max_participants' => ['nullable', 'integer', 'min:2', 'max:200'],
-            'video_enabled' => ['boolean'],
-            'audio_enabled' => ['boolean'],
-            'screen_share_enabled' => ['boolean'],
-            'recording_enabled' => ['boolean'],
-            'waiting_room' => ['boolean'],
-            'scheduled_at' => ['nullable', 'date', 'after:now'],
-        ]);
+        try {
+            $validated = $request->validate([
+                'name' => ['nullable', 'string', 'max:120'],
+                'password' => ['nullable', 'string', 'min:4', 'max:64'],
+                'max_participants' => ['nullable', 'integer', 'min:2', 'max:200'],
+                'video_enabled' => ['boolean'],
+                'audio_enabled' => ['boolean'],
+                'screen_share_enabled' => ['boolean'],
+                'recording_enabled' => ['boolean'],
+                'waiting_room' => ['boolean'],
+                'scheduled_at' => ['nullable', 'date', 'after:now'],
+            ]);
 
-        $room = MeetRoom::create([
-            ...$validated,
-            'owner_id' => $request->user()->id,
-            'password' => isset($validated['password'])
-                ? Hash::make($validated['password'])
-                : null,
-            'status' => isset($validated['scheduled_at']) ? 'scheduled' : 'active',
-            'started_at' => isset($validated['scheduled_at']) ? null : now(),
-        ]);
 
-        $this->log('created', "Created meet room {$room->uid}", 'meet', $room);
 
-        if (!isset($validated['scheduled_at'])) {
-            return redirect()->route('meet.room', $room->uid);
+            $room = MeetRoom::create([
+                ...$validated,
+                'owner_id' => $request->user()->id,
+                'password' => isset($validated['password'])
+                    ? Hash::make($validated['password'])
+                    : null,
+                'status' => isset($validated['scheduled_at']) ? 'scheduled' : 'active',
+                'started_at' => isset($validated['scheduled_at']) ? null : now(),
+            ]);
+
+            $this->log('created', "Created meet room {$room->uid}", 'meet', $room);
+
+            if (!isset($validated['scheduled_at'])) {
+                return redirect()->route('meet.room', $room->uid);
+            }
+
+            return redirect()->back()->with('success', 'Meeting scheduled.');
+        } catch (\Exception $e) {
+            return redirect()->back()->with('error', 'Meeting scheduled Failed.' . $e->getMessage());
         }
-
-        return redirect()->back()->with('success', 'Meeting scheduled.');
     }
 
     /**
-     * PATCH /meet/{uid}/end — end room (host only)
+     * PATCH /meet/{uid}/end — end room (host only).
      */
-    public function end(Request $request, MeetRoom $room): JsonResponse
+    public function end(Request $request, string $uid): JsonResponse
     {
+        \Log::error('ending');
+        $room = MeetRoom::where('uid', $uid)->firstOrFail();
         abort_unless($room->owner_id === $request->user()->id, 403);
 
         $room->end();
@@ -226,12 +239,13 @@ class MeetController extends Controller
             }
         }
 
+
         $request->session()->put("meet_guest_{$room->id}", [
             'name' => $validated['display_name'],
             'admitted' => true,
             'admitted_at' => now()->toIso8601String(),
         ]);
-
+        // \Log::alert('guest user');
         return redirect()->route('meet.room', $uid);
     }
 
@@ -245,6 +259,7 @@ class MeetController extends Controller
      */
     public function join(Request $request, string $uid): JsonResponse
     {
+        \Log::error('error');
         $room = MeetRoom::where('uid', $uid)->firstOrFail();
 
         abort_if($room->isEnded(), 410, 'Room has ended.');
@@ -264,9 +279,20 @@ class MeetController extends Controller
         $userId = $request->user()?->id;
         $isOwner = $userId && $room->owner_id === $userId;
 
-        $isAdmitted = $isOwner || !$room->waiting_room;
+        // $participant = MeetParticipant::create([
+        //     'room_id' => $room->id,
+        //     'user_id' => $userId,
+        //     'display_name' => $validated['display_name'],
+        //     'peer_id' => $validated['peer_id'],
+        //     'role' => $isOwner ? 'host' : 'participant',
+        //     'is_admitted' => $isOwner || !$room->waiting_room,
+        //     'video_on' => $validated['video_on'] ?? false,
+        //     'audio_on' => $validated['audio_on'] ?? false,
+        //     'joined_at' => now(),
+        // ]);
 
-          $participant = MeetParticipant::updateOrCreate(
+
+        $participant = MeetParticipant::updateOrCreate(
             [
                 'room_id' => $room->id,
                 'user_id' => $userId,
@@ -283,14 +309,19 @@ class MeetController extends Controller
                 'joined_at' => now(),
             ]
         );
-        
-        if ($isAdmitted) {
-            // Tell everyone else this participant joined
-            broadcast(new ParticipantJoined($room, $participant))->toOthers();
-        } else {
-            // Tell the host someone is waiting to be admitted
-            broadcast(new \App\Events\Meet\ParticipantWaiting($room, $participant))->toOthers();
+
+        // ✅ ADD THIS BLOCK
+        if (!$userId) {
+            session([
+                "meet_guest_{$room->id}" => [
+                    'name' => $validated['display_name'],
+                    'admitted' => $participant->is_admitted,
+                ]
+            ]);
         }
+
+
+        broadcast(new ParticipantJoined($room, $participant))->toOthers();
 
         return response()->json([
             'participant' => $this->participantResource($participant),
@@ -299,10 +330,12 @@ class MeetController extends Controller
     }
 
     /**
-     * POST /meet/{uid}/leave
+     * POST /meet/{uid}/leave.
      */
     public function leave(Request $request, string $uid): JsonResponse
     {
+        \Log::error('leaving room');
+
         $participant = MeetParticipant::where('peer_id', $request->input('peer_id'))
             ->whereNull('left_at')
             ->firstOrFail();
@@ -326,10 +359,11 @@ class MeetController extends Controller
     }
 
     /**
-     * POST /meet/{uid}/signal — relay WebRTC signal to a specific peer
+     * POST /meet/{uid}/signal — relay WebRTC signal to a specific peer.
      */
     public function signal(Request $request, string $uid): JsonResponse
     {
+        \Log::error('Signal ');
         $room = MeetRoom::where('uid', $uid)->firstOrFail();
 
         $validated = $request->validate([
@@ -351,7 +385,7 @@ class MeetController extends Controller
     }
 
     /**
-     * PATCH /meet/{uid}/admit/{peerId} — admit from waiting room (host only)
+     * PATCH /meet/{uid}/admit/{peerId} — admit from waiting room (host only).
      */
     public function admit(Request $request, string $uid, string $peerId): JsonResponse
     {
@@ -364,14 +398,13 @@ class MeetController extends Controller
 
         $participant->update(['is_admitted' => true]);
 
-        // Broadcast to ALL including the admitted participant (they're waiting for this)
-        broadcast(new ParticipantJoined($room, $participant));
+        broadcast(new ParticipantJoined($room, $participant))->toOthers();
 
         return response()->json(['status' => 'admitted']);
     }
 
     /**
-     * PATCH /meet/{uid}/kick/{peerId} — remove participant (host only)
+     * PATCH /meet/{uid}/kick/{peerId} — remove participant (host only).
      */
     public function kick(Request $request, string $uid, string $peerId): JsonResponse
     {
@@ -432,7 +465,6 @@ class MeetController extends Controller
             'joined_at' => $p->joined_at->toIso8601String(),
         ];
     }
-
 
 
     public function startRecording(Request $request, string $uid): JsonResponse
