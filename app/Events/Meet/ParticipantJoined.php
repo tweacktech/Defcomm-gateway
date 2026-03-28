@@ -16,9 +16,10 @@ class ParticipantJoined implements ShouldBroadcast
     use Dispatchable, InteractsWithSockets;
 
     public function __construct(
-        public readonly MeetRoom        $room,
+        public readonly MeetRoom $room,
         public readonly MeetParticipant $participant,
-    ) {}
+    ) {
+    }
 
     public function broadcastOn(): PresenceChannel
     {
@@ -33,15 +34,14 @@ class ParticipantJoined implements ShouldBroadcast
 
     public function broadcastWith(): array
     {
-        Log::info('ParticipantJoined event');
         return [
-            'peer_id'      => $this->participant->peer_id,
+            'peer_id' => $this->participant->peer_id,
             'display_name' => $this->participant->display_name,
-            'role'         => $this->participant->role,
-            'is_admitted'  => $this->participant->is_admitted,
-            'video_on'     => $this->participant->video_on,
-            'audio_on'     => $this->participant->audio_on,
-            'user_id'      => $this->participant->user_id,
+            'role' => $this->participant->role,
+            'is_admitted' => $this->participant->is_admitted,
+            'video_on' => $this->participant->video_on,
+            'audio_on' => $this->participant->audio_on,
+            'user_id' => $this->participant->user_id,
         ];
     }
 }

@@ -22,7 +22,10 @@ return Application::configure(basePath: dirname(__DIR__))
         [
             'middleware' => ['web'], // 🔥 THIS fixes your 403
         ]
+        //   ['prefix' => 'broadcasting']
+
     )
+
 
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->encryptCookies(except: ['appearance', 'sidebar_state']);

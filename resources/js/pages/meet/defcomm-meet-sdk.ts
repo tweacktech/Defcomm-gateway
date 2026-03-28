@@ -1,30 +1,4 @@
-/**
- * DefcommMeet SDK
- * ─────────────────────────────────────────────────────────────────────────────
- * Embed voice/video calls into any web app.
- *
- * Install (once published as npm package):
- *   npm install @defcomm/meet-sdk
- *
- * Usage (third-party app):
- *   import { DefcommMeet } from '@defcomm/meet-sdk';
- *
- *   const meet = new DefcommMeet({
- *     serverUrl: 'https://your-defcomm-instance.com',
- *     apiToken: 'your-sanctum-token',     // server-side only
- *   });
- *
- *   // Create a room from your backend
- *   const { room, token } = await meet.createRoom({ name: 'Support Call' });
- *
- *   // Embed the call in your frontend
- *   meet.embed('#call-container', { roomUid: room.uid, token });
- *
- *   // Or use the standalone React component
- *   import { MeetRoom } from '@defcomm/meet-sdk/react';
- *   <MeetRoom serverUrl="..." roomUid="..." joinToken="..." />
- * ─────────────────────────────────────────────────────────────────────────────
- */
+
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 

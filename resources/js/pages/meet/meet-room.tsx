@@ -1,17 +1,23 @@
 // resources/js/pages/meet/room.tsx
+// ─────────────────────────────────────────────────────────────────────────────
+// Architecture: all mutable cross-closure state lives in refs; React state is
+// only for UI rendering. This eliminates every stale-closure bug.
 //
-// Bug fixes in this version:
-//  1. No audio heard  — createPC now adds tracks with enabled=true clones so
-//     the remote peer always receives live audio/video regardless of local mute.
-//     Local mute only silences the LOCAL track.enabled flag, not the sent track.
-//  2. Chat double-message — whisper fires at the sender too in some Echo builds.
-//     We now skip adding a message locally when we receive our own peer_id back.
-//  3. Waiting room — ParticipantWaiting event now fires when a participant joins
-//     a waiting-room meeting; host sees admit panel; admitted participant's overlay
-//     drops when they receive their own peer_id in .meet.participant-joined.
-//  4. Default mute/cam off — all non-owners join with video+audio disabled.
-//  5. Axios (no window.axios) — imported directly, fixes 419.
-
+// WebRTC strategy (full-mesh, no SFU):
+//   – Every peer is the "offerer" to peers already present when they join.
+//   – Existing peers are "answerers" — they react to incoming offers.
+//   – ICE candidates are buffered until remoteDescription is set.
+//   – One RTCPeerConnection per remote peer_id; never reused after close.
+//
+// Waiting room strategy:
+//   – Unadmitted participant connects to Echo presence channel immediately
+//     so they receive their own .meet.participant-joined admission event.
+//   – They do NOT create PCs or send offers until admitted.
+//   – On admission: start media → then do the normal ch.here() offer loop.
+//
+// Scroll: grid container uses overflow-y-auto so 18+ participants scroll.
+// Screen lock: beforeunload + popstate + custom dialog for intentional nav.
+// ─────────────────────────────────────────────────────────────────────────────
 
 import { Head, usePage, router } from '@inertiajs/react';
 import axios from 'axios';
@@ -19,7 +25,7 @@ import {
     Mic, MicOff, Video, VideoOff, ScreenShare, ScreenShareOff,
     PhoneOff, Hand, MessageSquare, Users, Copy, Check, Shield,
     ChevronLeft, Clock, X, LogOut, StopCircle, Monitor,
-    Circle, Square, Download, UserX, UserCheck, Hourglass,
+    Circle, Square, Download, UserX, UserCheck, Hourglass, AlertTriangle,
 } from 'lucide-react';
 import { useState, useRef, useEffect, useCallback } from 'react';
 import Echo from 'laravel-echo';
@@ -35,11 +41,10 @@ interface RoomConfig {
     waiting_room: boolean; join_url: string;
 }
 
-interface Peer {
+interface PeerState {
     peer_id: string; display_name: string; role: string;
     video_on: boolean; audio_on: boolean; screen_sharing: boolean;
-    hand_raised: boolean; speaking?: boolean;
-    stream?: MediaStream; connection?: RTCPeerConnection;
+    hand_raised: boolean; speaking: boolean; stream?: MediaStream;
 }
 
 interface ChatMsg {
@@ -47,8 +52,7 @@ interface ChatMsg {
 }
 
 interface RecState {
-    id: number | null; active: boolean; duration: number;
-    size: number; downloadUrl: string | null;
+    id: number | null; active: boolean; duration: number; downloadUrl: string | null;
 }
 
 type PageProps = {
@@ -61,80 +65,103 @@ type PageProps = {
 
 type EndReason = 'left' | 'kicked' | 'room-ended';
 
-// ─── Axios helpers ────────────────────────────────────────────────────────────
-// Imported axios reads XSRF-TOKEN cookie automatically — no 419.
+// ─── HTTP helpers ─────────────────────────────────────────────────────────────
 
-const post  = (url: string, data?: object) => axios.post(url, data ?? {}).then(r => r.data);
-const patch = (url: string, data?: object) => axios.patch(url, data ?? {}).then(r => r.data);
-const postBin = (url: string, buf: ArrayBuffer) =>
-    axios.post(url, buf, { headers: { 'Content-Type': 'application/octet-stream' } }).then(r => r.data);
+const api = {
+    post: (url: string, data?: object) => axios.post(url, data ?? {}).then(r => r.data),
+    patch: (url: string, data?: object) => axios.patch(url, data ?? {}).then(r => r.data),
+    bin: (url: string, buf: ArrayBuffer) =>
+        axios.post(url, buf, { headers: { 'Content-Type': 'application/octet-stream' } }).then(r => r.data),
+};
 
-const fmtDur = (s: number) => `${Math.floor(s / 60)}:${(s % 60).toString().padStart(2, '0')}`;
+const fmtDur = (s: number) =>
+    `${Math.floor(s / 60)}:${(s % 60).toString().padStart(2, '0')}`;
 
-// ─── Audio level detector ─────────────────────────────────────────────────────
-// Polls the audio track every 100ms. Returns cleanup fn.
+// ─── Audio activity detector ──────────────────────────────────────────────────
 
-function watchAudio(stream: MediaStream, cb: (speaking: boolean) => void, threshold = 14): () => void {
+function createSpeakDetector(
+    stream: MediaStream,
+    onSpeak: (active: boolean) => void,
+    threshold = 12,
+): () => void {
     let ctx: AudioContext | null = null;
-    let t = 0;
+    let timer = 0;
     try {
         ctx = new AudioContext();
-        const src      = ctx.createMediaStreamSource(stream);
+        const src = ctx.createMediaStreamSource(stream);
         const analyser = ctx.createAnalyser();
         analyser.fftSize = 512;
         src.connect(analyser);
-        const buf  = new Uint8Array(analyser.frequencyBinCount);
-        let   last = false;
+        const buf = new Uint8Array(analyser.frequencyBinCount);
+        let prev = false;
         const tick = () => {
             analyser.getByteFrequencyData(buf);
             const avg = buf.reduce((a, b) => a + b, 0) / buf.length;
-            const v   = avg > threshold;
-            if (v !== last) { last = v; cb(v); }
-            t = window.setTimeout(tick, 100) as unknown as number;
+            const now = avg > threshold;
+            if (now !== prev) { prev = now; onSpeak(now); }
+            timer = window.setTimeout(tick, 100) as unknown as number;
         };
         tick();
-    } catch { /* blocked before user gesture */ }
-    return () => { clearTimeout(t); ctx?.close().catch(() => {}); };
+    } catch { /* AudioContext blocked */ }
+    return () => { clearTimeout(timer); ctx?.close().catch(() => {}); };
 }
 
-// ─── Video Tile ───────────────────────────────────────────────────────────────
+// ─── VideoTile ────────────────────────────────────────────────────────────────
 
 function VideoTile({ peer, local = false, pinned = false, onClick }: {
-    peer: Peer; local?: boolean; pinned?: boolean; onClick?: () => void;
+    peer: PeerState; local?: boolean; pinned?: boolean; onClick?: () => void;
 }) {
-    const ref = useRef<HTMLVideoElement>(null);
+    const videoRef = useRef<HTMLVideoElement>(null);
+
+    // Assign srcObject directly — this is more reliable than state-driven assignment
     useEffect(() => {
-        if (ref.current && peer.stream) ref.current.srcObject = peer.stream;
-    }, [peer.stream]);
+        const el = videoRef.current;
+        if (!el) return;
+        if (peer.stream && peer.video_on) {
+            if (el.srcObject !== peer.stream) el.srcObject = peer.stream;
+        } else {
+            el.srcObject = null;
+        }
+    }, [peer.stream, peer.video_on]);
+
+    const showVideo = peer.video_on && !!peer.stream;
+    const initial   = peer.display_name.charAt(0).toUpperCase();
 
     return (
-        <div onClick={onClick}
-            className={`relative flex h-full w-full items-center justify-center overflow-hidden rounded-xl bg-zinc-900 transition-shadow
-                ${peer.speaking ? 'ring-2 ring-green-400/80' : ''}
-                ${pinned && !peer.speaking ? 'ring-2 ring-primary' : ''}
-                ${onClick ? 'cursor-pointer' : ''}`}>
-            {peer.video_on && peer.stream
-                ? <video ref={ref} autoPlay muted={local} playsInline className="h-full w-full object-cover" />
-                : <div className="flex flex-col items-center gap-1.5 p-3">
-                    <div className={`flex h-12 w-12 items-center justify-center rounded-full text-lg font-bold text-white transition-colors
-                        ${peer.speaking ? 'bg-green-600' : 'bg-zinc-700'}`}>
-                        {peer.display_name.charAt(0).toUpperCase()}
+        <div
+            onClick={onClick}
+            className={[
+                'relative flex h-full w-full items-center justify-center overflow-hidden rounded-xl bg-zinc-900 transition-all duration-200',
+                peer.speaking  ? 'ring-2 ring-green-400/80 shadow-lg shadow-green-900/20' : '',
+                pinned && !peer.speaking ? 'ring-2 ring-primary/60' : '',
+                onClick ? 'cursor-pointer' : '',
+            ].join(' ')}
+        >
+            {showVideo
+                ? <video ref={videoRef} autoPlay muted={local} playsInline className="h-full w-full object-cover" />
+                : <div className="flex flex-col items-center gap-2">
+                    <div className={`flex h-14 w-14 items-center justify-center rounded-full text-xl font-bold text-white transition-colors duration-200 ${peer.speaking ? 'bg-green-600 shadow-lg shadow-green-900/40' : 'bg-zinc-700'}`}>
+                        {initial}
                     </div>
-                    <span className="max-w-[7rem] truncate text-xs text-zinc-400">{peer.display_name}</span>
-                  </div>}
-            <div className="absolute bottom-2 left-2 flex max-w-[82%] items-center gap-1 rounded-md bg-black/60 px-2 py-1 text-xs text-white">
+                    <span className="max-w-[8rem] truncate text-xs text-zinc-400">{peer.display_name}</span>
+                  </div>
+            }
+            {/* Name bar */}
+            <div className="absolute bottom-0 left-0 right-0 flex items-center gap-1.5 bg-gradient-to-t from-black/70 to-transparent px-2 pb-2 pt-4 text-xs text-white">
                 {peer.speaking && <span className="h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-green-400" />}
                 {!peer.audio_on && <MicOff className="h-3 w-3 shrink-0 text-red-400" />}
                 {peer.hand_raised && <Hand className="h-3 w-3 shrink-0 text-yellow-400" />}
                 {peer.screen_sharing && <Monitor className="h-3 w-3 shrink-0 text-blue-400" />}
-                <span className="truncate">{local ? `${peer.display_name} (You)` : peer.display_name}</span>
+                <span className="min-w-0 flex-1 truncate font-medium">
+                    {local ? `${peer.display_name} (You)` : peer.display_name}
+                </span>
                 {peer.role === 'host' && <Shield className="h-3 w-3 shrink-0 text-primary" />}
             </div>
         </div>
     );
 }
 
-// ─── Screen Preview ───────────────────────────────────────────────────────────
+// ─── ScreenPreview ────────────────────────────────────────────────────────────
 
 function ScreenPreview({ stream, owner, isLocal, onStop }: {
     stream: MediaStream; owner: string; isLocal: boolean; onStop?: () => void;
@@ -142,55 +169,62 @@ function ScreenPreview({ stream, owner, isLocal, onStop }: {
     const ref = useRef<HTMLVideoElement>(null);
     useEffect(() => { if (ref.current) ref.current.srcObject = stream; }, [stream]);
     return (
-        <div className="relative h-full w-full overflow-hidden rounded-xl bg-zinc-950 ring-2 ring-blue-500/40">
+        <div className="relative h-full w-full overflow-hidden rounded-xl bg-zinc-950 ring-2 ring-blue-500/30">
             <video ref={ref} autoPlay muted={isLocal} playsInline className="h-full w-full object-contain" />
-            <div className="absolute left-3 top-3 flex items-center gap-1.5 rounded-full bg-blue-600/90 px-3 py-1.5 text-xs font-medium text-white">
+            <div className="absolute left-3 top-3 flex items-center gap-1.5 rounded-full bg-blue-600/90 px-3 py-1.5 text-xs font-semibold text-white backdrop-blur">
                 <Monitor className="h-3.5 w-3.5" />
-                {isLocal ? 'You are sharing your screen' : `${owner}'s screen`}
+                {isLocal ? 'You are sharing' : `${owner}'s screen`}
             </div>
             {isLocal && onStop && (
                 <button onClick={onStop}
-                    className="absolute right-3 top-3 flex items-center gap-1.5 rounded-full bg-red-600/90 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-red-600">
-                    <StopCircle className="h-3.5 w-3.5" />Stop sharing
+                    className="absolute right-3 top-3 flex items-center gap-1.5 rounded-full bg-red-600/90 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-red-600">
+                    <StopCircle className="h-3.5 w-3.5" /> Stop sharing
                 </button>
             )}
         </div>
     );
 }
 
-// ─── Waiting overlay ──────────────────────────────────────────────────────────
+// ─── WaitingOverlay ───────────────────────────────────────────────────────────
 
 function WaitingOverlay({ roomName }: { roomName: string }) {
     return (
-        <div className="absolute inset-0 z-40 flex flex-col items-center justify-center gap-5 bg-zinc-950/95 backdrop-blur-sm">
-            <div className="flex h-16 w-16 items-center justify-center rounded-full bg-yellow-500/10">
-                <Hourglass className="h-7 w-7 animate-pulse text-yellow-400" />
+        <div className="absolute inset-0 z-40 flex flex-col items-center justify-center gap-6 bg-zinc-950/96 backdrop-blur-sm">
+            <div className="relative flex h-20 w-20 items-center justify-center">
+                <div className="absolute inset-0 animate-ping rounded-full bg-yellow-500/10" />
+                <div className="flex h-full w-full items-center justify-center rounded-full bg-yellow-500/15">
+                    <Hourglass className="h-8 w-8 animate-pulse text-yellow-400" />
+                </div>
             </div>
             <div className="text-center">
-                <p className="text-xl font-bold text-white">Waiting to be admitted</p>
-                <p className="mt-1 text-sm text-zinc-400">
-                    The host will let you into <span className="font-medium text-white">{roomName}</span> shortly
+                <p className="text-2xl font-bold text-white">Waiting to be admitted</p>
+                <p className="mt-2 text-sm text-zinc-400">
+                    The host will let you into{' '}
+                    <span className="font-semibold text-white">{roomName}</span> shortly
                 </p>
             </div>
-            <p className="text-xs text-zinc-600">Your camera and mic are off while you wait</p>
+            <p className="rounded-full border border-zinc-800 px-4 py-1.5 text-xs text-zinc-500">
+                Camera and microphone are off while you wait
+            </p>
         </div>
     );
 }
 
-// ─── Admit panel (host sees this when waiting_room=true) ──────────────────────
+// ─── AdmitPanel ──────────────────────────────────────────────────────────────
 
 function AdmitPanel({ waitingPeers, onAdmit, onDeny }: {
-    waitingPeers: Peer[];
-    onAdmit: (peerId: string) => void;
-    onDeny:  (peerId: string) => void;
+    waitingPeers: PeerState[];
+    onAdmit: (id: string) => void;
+    onDeny: (id: string) => void;
 }) {
     if (!waitingPeers.length) return null;
     return (
-        <div className="absolute top-4 left-1/2 z-30 w-80 -translate-x-1/2 rounded-2xl border border-yellow-500/30 bg-zinc-900 p-4 shadow-2xl">
-            <p className="mb-3 flex items-center gap-2 text-sm font-semibold text-yellow-400">
-                <Hourglass className="h-4 w-4" />{waitingPeers.length} waiting to join
+        <div className="absolute top-16 left-1/2 z-30 w-80 -translate-x-1/2 rounded-2xl border border-yellow-500/25 bg-zinc-900/95 p-4 shadow-2xl backdrop-blur">
+            <p className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-yellow-400">
+                <Hourglass className="h-3.5 w-3.5" />
+                {waitingPeers.length} waiting to join
             </p>
-            <div className="space-y-2">
+            <div className="space-y-2 max-h-64 overflow-y-auto">
                 {waitingPeers.map(p => (
                     <div key={p.peer_id} className="flex items-center gap-3 rounded-xl bg-zinc-800 px-3 py-2.5">
                         <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-zinc-700 text-xs font-bold text-white">
@@ -198,12 +232,12 @@ function AdmitPanel({ waitingPeers, onAdmit, onDeny }: {
                         </div>
                         <span className="min-w-0 flex-1 truncate text-sm text-zinc-200">{p.display_name}</span>
                         <div className="flex gap-1.5">
-                            <button onClick={() => onAdmit(p.peer_id)} title="Admit"
-                                className="flex h-7 w-7 items-center justify-center rounded-full bg-green-600/20 text-green-400 transition hover:bg-green-600/40">
+                            <button onClick={() => onAdmit(p.peer_id)}
+                                className="flex h-7 w-7 items-center justify-center rounded-full bg-green-600/20 text-green-400 transition hover:bg-green-600 hover:text-white">
                                 <UserCheck className="h-4 w-4" />
                             </button>
-                            <button onClick={() => onDeny(p.peer_id)} title="Deny"
-                                className="flex h-7 w-7 items-center justify-center rounded-full bg-red-600/20 text-red-400 transition hover:bg-red-600/40">
+                            <button onClick={() => onDeny(p.peer_id)}
+                                className="flex h-7 w-7 items-center justify-center rounded-full bg-red-600/20 text-red-400 transition hover:bg-red-600 hover:text-white">
                                 <X className="h-4 w-4" />
                             </button>
                         </div>
@@ -214,30 +248,30 @@ function AdmitPanel({ waitingPeers, onAdmit, onDeny }: {
     );
 }
 
-// ─── Host leave dialog ────────────────────────────────────────────────────────
+// ─── Dialogs ──────────────────────────────────────────────────────────────────
 
 function HostLeaveDialog({ onEndAll, onLeaveOnly, onCancel }: {
     onEndAll: () => void; onLeaveOnly: () => void; onCancel: () => void;
 }) {
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
-            <div className="w-full max-w-sm rounded-2xl border border-zinc-700 bg-zinc-900 p-6 text-center shadow-2xl">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4">
+            <div className="w-full max-w-sm rounded-2xl border border-zinc-700/60 bg-zinc-900 p-6 text-center shadow-2xl">
                 <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-red-500/10">
                     <PhoneOff className="h-6 w-6 text-red-400" />
                 </div>
                 <h2 className="mb-1 text-lg font-bold text-white">Leave Meeting?</h2>
                 <p className="mb-6 text-sm text-zinc-400">
-                    As the host you can end for everyone, or leave and let others continue.
+                    You can end the meeting for everyone, or leave while letting others continue.
                 </p>
                 <div className="space-y-2">
                     <Button onClick={onEndAll} className="w-full gap-2 bg-red-600 text-white hover:bg-red-500">
-                        <StopCircle className="h-4 w-4" />End for Everyone
+                        <StopCircle className="h-4 w-4" /> End for Everyone
                     </Button>
                     <Button onClick={onLeaveOnly} variant="outline"
                         className="w-full gap-2 border-zinc-600 text-zinc-200 hover:bg-zinc-800">
-                        <LogOut className="h-4 w-4" />Leave — Let Others Continue
+                        <LogOut className="h-4 w-4" /> Leave — Let Others Continue
                     </Button>
-                    <button onClick={onCancel} className="w-full py-2 text-sm text-zinc-500 transition hover:text-zinc-300">
+                    <button onClick={onCancel} className="w-full py-2 text-sm text-zinc-500 hover:text-zinc-300 transition">
                         Stay in Meeting
                     </button>
                 </div>
@@ -246,21 +280,45 @@ function HostLeaveDialog({ onEndAll, onLeaveOnly, onCancel }: {
     );
 }
 
-// ─── End screen ───────────────────────────────────────────────────────────────
+function RefreshGuardDialog({ onStay, onLeave }: { onStay: () => void; onLeave: () => void }) {
+    return (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+            <div className="w-full max-w-sm rounded-2xl border border-yellow-500/25 bg-zinc-900 p-6 text-center shadow-2xl">
+                <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-yellow-500/10">
+                    <AlertTriangle className="h-6 w-6 text-yellow-400" />
+                </div>
+                <h2 className="mb-1 text-lg font-bold text-white">Leave the Meeting?</h2>
+                <p className="mb-1 text-sm text-zinc-400">
+                    Navigating away will disconnect you from the call.
+                </p>
+                <p className="mb-6 text-xs text-zinc-600">
+                    Active recording and background services will stop.
+                </p>
+                <div className="space-y-2">
+                    <Button onClick={onStay} className="w-full bg-primary text-white hover:bg-primary/90">
+                        Stay in Meeting
+                    </Button>
+                    <button onClick={onLeave} className="w-full py-2 text-sm text-zinc-500 hover:text-red-400 transition">
+                        Leave Anyway
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+}
 
 function EndScreen({ name, reason }: { name: string; reason: EndReason }) {
-    const cfg: Record<EndReason, { icon: string; title: string; sub: string }> = {
-        left:         { icon: '👋', title: 'You left',           sub: 'The call has ended on your side.' },
-        kicked:       { icon: '🚫', title: 'You were removed',   sub: 'The host ended your session.' },
-        'room-ended': { icon: '📴', title: 'Meeting ended',       sub: 'The host ended the meeting for everyone.' },
-    };
-    const { icon, title, sub } = cfg[reason];
+    const cfg = {
+        left:         { icon: '👋', title: 'You left the meeting',     sub: 'The call has ended on your side.' },
+        kicked:       { icon: '🚫', title: 'You were removed',         sub: 'The host ended your session.' },
+        'room-ended': { icon: '📴', title: 'Meeting ended',            sub: 'The host ended the meeting for everyone.' },
+    }[reason];
     return (
         <div className="flex min-h-screen flex-col items-center justify-center gap-5 bg-zinc-950 text-white">
-            <span className="text-5xl">{icon}</span>
+            <span className="text-6xl">{cfg.icon}</span>
             <div className="text-center">
-                <p className="text-xl font-bold">{title}</p>
-                <p className="mt-1 text-sm text-zinc-400">{sub}</p>
+                <p className="text-xl font-bold">{cfg.title}</p>
+                <p className="mt-1 text-sm text-zinc-400">{cfg.sub}</p>
                 <p className="mt-0.5 text-xs text-zinc-600">{name}</p>
             </div>
             <a href="/" className="rounded-xl border border-zinc-700 px-5 py-2.5 text-sm text-zinc-300 transition hover:bg-zinc-800">
@@ -269,8 +327,6 @@ function EndScreen({ name, reason }: { name: string; reason: EndReason }) {
         </div>
     );
 }
-
-// ─── Recording badge ──────────────────────────────────────────────────────────
 
 function RecBadge({ duration }: { duration: number }) {
     return (
@@ -281,7 +337,27 @@ function RecBadge({ duration }: { duration: number }) {
     );
 }
 
-// ─── Main ─────────────────────────────────────────────────────────────────────
+// ─── ControlBtn ──────────────────────────────────────────────────────────────
+
+function ControlBtn({ active, danger, blue, yellow, onClick, title, children }: {
+    active?: boolean; danger?: boolean; blue?: boolean; yellow?: boolean;
+    onClick: () => void; title: string; children: React.ReactNode;
+}) {
+    const cls = danger
+        ? 'bg-red-600 hover:bg-red-500'
+        : blue   ? (active ? 'bg-blue-600 ring-2 ring-blue-400/30 hover:bg-blue-500' : 'bg-zinc-700 hover:bg-zinc-600')
+        : yellow  ? (active ? 'bg-yellow-500 ring-2 ring-yellow-400/30 hover:bg-yellow-400' : 'bg-zinc-700 hover:bg-zinc-600')
+        : active  ? 'bg-zinc-700 hover:bg-zinc-600'
+        : 'bg-red-600 hover:bg-red-500';
+    return (
+        <button onClick={onClick} title={title}
+            className={`flex h-11 w-11 items-center justify-center rounded-full transition-all duration-150 ${cls}`}>
+            {children}
+        </button>
+    );
+}
+
+// ─── Main Component ───────────────────────────────────────────────────────────
 
 export default function MeetRoom() {
     const {
@@ -289,240 +365,384 @@ export default function MeetRoom() {
         reverb_key, reverb_host, reverb_port, stun_servers, auth,
     } = usePage<PageProps>().props;
 
-    // Participants join muted + cam off by default; only the host keeps prefs
-    const defVideo = is_owner && room.video_enabled;
-    const defAudio = is_owner && room.audio_enabled;
+    // Default: everyone joins with mic/cam off EXCEPT the owner
+    const defaultVideo = is_owner && room.video_enabled;
+    const defaultAudio = is_owner && room.audio_enabled;
 
-    const [localStream,   setLocalStream]   = useState<MediaStream | null>(null);
-    const [screenStream,  setScreenStream]  = useState<MediaStream | null>(null);
-    const [peers,         setPeers]         = useState<Map<string, Peer>>(new Map());
-    const [waitingPeers,  setWaitingPeers]  = useState<Peer[]>([]);
-    // admitted = false while waiting for host to accept us (waiting_room=true)
-    const [admitted,      setAdmitted]      = useState(!room.waiting_room || is_owner);
-    const [videoOn,       setVideoOn]       = useState(defVideo);
-    const [audioOn,       setAudioOn]       = useState(defAudio);
-    const [handRaised,    setHandRaised]    = useState(false);
-    const [localSpeaking, setLocalSpeaking] = useState(false);
+    // ── UI State (drives re-render) ───────────────────────────────────────────
+    const [peers,        setPeers]        = useState<Map<string, PeerState>>(new Map());
+    const [waitingPeers, setWaitingPeers] = useState<PeerState[]>([]);
+    const [admitted,     setAdmitted]     = useState(!room.waiting_room || is_owner);
+    const [videoOn,      setVideoOn]      = useState(defaultVideo);
+    const [audioOn,      setAudioOn]      = useState(defaultAudio);
+    const [handRaised,   setHandRaised]   = useState(false);
+    const [localSpeak,   setLocalSpeak]   = useState(false);
+    const [screenStream, setScreenStream] = useState<MediaStream | null>(null);
+    const [chatOpen,     setChatOpen]     = useState(false);
+    const [panelOpen,    setPanelOpen]    = useState(false);
+    const [pinnedId,     setPinnedId]     = useState<string | null>(null);
+    const [urlCopied,    setUrlCopied]    = useState(false);
+    const [hostDialog,   setHostDialog]   = useState(false);
+    const [guardDialog,  setGuardDialog]  = useState(false);
+    const [endReason,    setEndReason]    = useState<EndReason | null>(null);
+    const [messages,     setMessages]     = useState<ChatMsg[]>([]);
+    const [chatInput,    setChatInput]    = useState('');
+    const [rec,          setRec]          = useState<RecState>({ id: null, active: false, duration: 0, downloadUrl: null });
 
-    const [chatOpen,    setChatOpen]    = useState(false);
-    const [panelOpen,   setPanelOpen]   = useState(false);
-    const [pinnedPeer,  setPinnedPeer]  = useState<string | null>(null);
-    const [urlCopied,   setUrlCopied]   = useState(false);
-    const [hostDialog,  setHostDialog]  = useState(false);
-    const [endReason,   setEndReason]   = useState<EndReason | null>(null);
+    // ── Stable Refs (no stale closures) ──────────────────────────────────────
+    // ALL mutable cross-closure values live here — never in useCallback deps.
+    const R = useRef({
+        // Media
+        localStream:    null as MediaStream | null,
+        screenStream:   null as MediaStream | null,
+        videoOn:        defaultVideo,
+        audioOn:        defaultAudio,
+        handRaised:     false,
+        // Connections
+        pcs:            new Map<string, RTCPeerConnection>(),
+        // ICE candidate buffer: candidates may arrive before remoteDescription is set
+        iceBuf:         new Map<string, RTCIceCandidate[]>(),
+        // Echo
+        echo:           null as Echo<any> | null,
+        channel:        null as any,
+        // Recording
+        mediaRec:       null as MediaRecorder | null,
+        recTimer:       null as ReturnType<typeof setInterval> | null,
+        recId:          null as number | null,
+        // Audio detectors
+        speakClean:     new Map<string, () => void>(),
+        // Chat dedup
+        seenMsgs:       new Set<string>(),
+        // Screen lock
+        inMeeting:      true,
+        pendingNav:     null as (() => void) | null,
+    });
 
-    const [messages,  setMessages]  = useState<ChatMsg[]>([]);
-    const [chatInput, setChatInput] = useState('');
-    const chatEndRef                = useRef<HTMLDivElement>(null);
-
-    const [rec, setRec] = useState<RecState>({ id: null, active: false, duration: 0, size: 0, downloadUrl: null });
-
-    const echoRef       = useRef<Echo<any> | null>(null);
-    const channelRef    = useRef<any>(null);
-    const pcMapRef      = useRef<Map<string, RTCPeerConnection>>(new Map());
-    const mediaRecRef   = useRef<MediaRecorder | null>(null);
-    const recTimerRef   = useRef<ReturnType<typeof setInterval> | null>(null);
-    const speakMap      = useRef<Map<string, () => void>>(new Map());
-    // Track which message IDs we've already shown (dedup whisper double-fire)
-    const seenMsgIds    = useRef<Set<string>>(new Set());
-
+    const chatEndRef = useRef<HTMLDivElement>(null);
     useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages]);
 
-    // ── Speaking detector ─────────────────────────────────────────────────────
+    // ── Sync videoOn/audioOn/handRaised/screenStream to ref ─────────────────
+    useEffect(() => { R.current.videoOn    = videoOn; },    [videoOn]);
+    useEffect(() => { R.current.audioOn    = audioOn; },    [audioOn]);
+    useEffect(() => { R.current.handRaised = handRaised; }, [handRaised]);
+    useEffect(() => { R.current.screenStream = screenStream; }, [screenStream]);
 
-    const attachSpeak = useCallback((pid: string, stream: MediaStream, isLocal: boolean) => {
-        speakMap.current.get(pid)?.();
-        const cleanup = watchAudio(stream, v => {
-            if (isLocal) setLocalSpeaking(v);
-            else setPeers(prev => {
+    // ── Screen Lock ───────────────────────────────────────────────────────────
+
+    useEffect(() => {
+        const onBeforeUnload = (e: BeforeUnloadEvent) => {
+            if (!R.current.inMeeting) return;
+            e.preventDefault();
+            e.returnValue = '';
+        };
+        const onPopState = () => {
+            if (!R.current.inMeeting) return;
+            window.history.pushState(null, '', window.location.href);
+            R.current.pendingNav = () => window.history.back();
+            setGuardDialog(true);
+        };
+        window.history.pushState(null, '', window.location.href);
+        window.addEventListener('beforeunload', onBeforeUnload);
+        window.addEventListener('popstate', onPopState);
+        return () => {
+            window.removeEventListener('beforeunload', onBeforeUnload);
+            window.removeEventListener('popstate', onPopState);
+        };
+    }, []);
+
+    // ── Media helpers ─────────────────────────────────────────────────────────
+
+    const startMedia = useCallback(async (): Promise<MediaStream | null> => {
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({
+                video: room.video_enabled,
+                audio: room.audio_enabled,
+            });
+            stream.getVideoTracks().forEach(t => { t.enabled = defaultVideo; });
+            stream.getAudioTracks().forEach(t => { t.enabled = defaultAudio; });
+            R.current.localStream = stream;
+            // Speak detector for local mic
+            if (room.audio_enabled) {
+                R.current.speakClean.get('__local')?.();
+                const stop = createSpeakDetector(stream, v => setLocalSpeak(v));
+                R.current.speakClean.set('__local', stop);
+            }
+            return stream;
+        } catch {
+            setVideoOn(false);
+            return null;
+        }
+    }, []); // eslint-disable-line
+
+    const stopAllMedia = useCallback(() => {
+        R.current.localStream?.getTracks().forEach(t => t.stop());
+        R.current.screenStream?.getTracks().forEach(t => t.stop());
+    }, []);
+
+    // ── Speak detector for a remote peer ─────────────────────────────────────
+
+    const attachRemoteSpeak = useCallback((pid: string, stream: MediaStream) => {
+        R.current.speakClean.get(pid)?.();
+        const stop = createSpeakDetector(stream, v => {
+            setPeers(prev => {
                 const m = new Map(prev);
                 const p = m.get(pid);
                 if (p) m.set(pid, { ...p, speaking: v });
                 return m;
             });
         });
-        speakMap.current.set(pid, cleanup);
+        R.current.speakClean.set(pid, stop);
     }, []);
 
-    // ── Remove peer from state ────────────────────────────────────────────────
+    // ── Flush buffered ICE candidates ─────────────────────────────────────────
+
+    const flushIce = useCallback(async (pid: string, pc: RTCPeerConnection) => {
+        const buf = R.current.iceBuf.get(pid) ?? [];
+        R.current.iceBuf.delete(pid);
+        for (const c of buf) {
+            await pc.addIceCandidate(c).catch(() => {});
+        }
+    }, []);
+
+    // ── Remove peer entirely ──────────────────────────────────────────────────
 
     const removePeer = useCallback((pid: string) => {
-        speakMap.current.get(pid)?.();
-        speakMap.current.delete(pid);
-        setPeers(prev => {
-            const m = new Map(prev);
-            pcMapRef.current.get(pid)?.close();
-            pcMapRef.current.delete(pid);
-            m.delete(pid);
-            return m;
-        });
+        R.current.speakClean.get(pid)?.();
+        R.current.speakClean.delete(pid);
+        R.current.iceBuf.delete(pid);
+        const pc = R.current.pcs.get(pid);
+        if (pc) { pc.close(); R.current.pcs.delete(pid); }
+        setPeers(prev => { const m = new Map(prev); m.delete(pid); return m; });
     }, []);
 
-    // ── Media ─────────────────────────────────────────────────────────────────
+    // ── Create RTCPeerConnection ───────────────────────────────────────────────
+    // The caller decides whether this end is the offerer or answerer.
+    // Tracks from localStream are always added immediately so the remote
+    // receives media from the moment the connection is established.
 
-    const startMedia = useCallback(async () => {
-        try {
-            const stream = await navigator.mediaDevices.getUserMedia({
-                video: room.video_enabled,
-                audio: room.audio_enabled,
-            });
-            // Disable tracks for non-owners (they join muted/cam-off)
-            // IMPORTANT: we disable the local playback/monitoring track,
-            // but we send the REAL track to peers with enabled=true always.
-            // This way the remote side hears audio; the user just can't hear themselves.
-            stream.getVideoTracks().forEach(t => { t.enabled = defVideo; });
-            stream.getAudioTracks().forEach(t => { t.enabled = defAudio; });
-            setLocalStream(stream);
-            if (room.audio_enabled) attachSpeak(peer_id, stream, true);
-            return stream;
-        } catch {
-            setVideoOn(false);
-            return null;
-        }
-    }, [room.video_enabled, room.audio_enabled, defVideo, defAudio, peer_id, attachSpeak]);
+    const buildPC = useCallback((remotePeerId: string): RTCPeerConnection => {
+        // Tear down any zombie connection first
+        const old = R.current.pcs.get(remotePeerId);
+        if (old) { old.close(); R.current.pcs.delete(remotePeerId); }
 
-    // ── WebRTC peer connection ────────────────────────────────────────────────
-    // KEY FIX for "can't hear audio":
-    // We add tracks to the PC with enabled=true so the remote always receives
-    // real audio/video. The local track.enabled flag only controls whether
-    // the LOCAL user hears/sees themselves (monitor), not what is sent.
-    // When the user mutes: we set track.enabled=false on the LOCAL stream
-    // so they don't hear themselves, AND we send a media-state update so
-    // others know to show the muted icon. The WebRTC sender still sends the
-    // (silenced) audio — which is the correct behaviour for muting.
-
-    const createPC = useCallback((remotePeerId: string, stream: MediaStream | null) => {
         const pc = new RTCPeerConnection({ iceServers: stun_servers });
 
+        // Add local tracks
+        const stream = R.current.localStream;
         if (stream) {
-            stream.getTracks().forEach(track => {
-                // Clone the track and force enable=true for the outgoing stream.
-                // This ensures the remote always receives media even if the local
-                // track was disabled for the user's own preview.
-                const sender = pc.addTrack(track, stream);
-                // Ensure the sender's track is live regardless of local mute state
-                if (!track.enabled) {
-                    // The track is muted locally; the RTCSender will still encode
-                    // but send silence/black frames — correct muting behaviour.
-                }
-            });
+            stream.getTracks().forEach(track => pc.addTrack(track, stream));
         }
 
+        // ICE trickle
         pc.onicecandidate = ({ candidate }) => {
             if (!candidate) return;
-            post(`/meet/${room.uid}/signal`, {
-                to: remotePeerId, type: 'ice-candidate', payload: candidate, from_peer_id: peer_id,
+            api.post(`/meet/${room.uid}/signal`, {
+                to: remotePeerId, type: 'ice-candidate',
+                payload: candidate, from_peer_id: peer_id,
             }).catch(() => {});
         };
 
-        pc.ontrack = ({ streams: [remote] }) => {
-            // Attach speaking detector to the remote stream's audio
-            attachSpeak(remotePeerId, remote, false);
+        // Remote stream arrived
+        pc.ontrack = ({ streams }) => {
+            const remote = streams[0];
+            if (!remote) return;
+            attachRemoteSpeak(remotePeerId, remote);
             setPeers(prev => {
                 const m = new Map(prev);
                 const p = m.get(remotePeerId);
+                // Only update stream — keep all other metadata intact
                 if (p) m.set(remotePeerId, { ...p, stream: remote });
                 return m;
             });
         };
 
-        pcMapRef.current.set(remotePeerId, pc);
+        // ICE failure: try restart once
+        pc.onconnectionstatechange = () => {
+            if (pc.connectionState === 'failed') pc.restartIce();
+        };
+
+        R.current.pcs.set(remotePeerId, pc);
         return pc;
-    }, [room.uid, peer_id, stun_servers, attachSpeak]);
+    }, [stun_servers, room.uid, peer_id, attachRemoteSpeak]);
 
-    // ── Stop tracks ───────────────────────────────────────────────────────────
+    // ── Send offer TO a peer (we are the offerer) ─────────────────────────────
 
-    const stopAllTracks = useCallback(() => {
-        localStream?.getTracks().forEach(t => t.stop());
-        screenStream?.getTracks().forEach(t => t.stop());
-    }, [localStream, screenStream]);
+    const sendOffer = useCallback(async (remotePeerId: string) => {
+        const pc = buildPC(remotePeerId);
+        try {
+            const offer = await pc.createOffer();
+            await pc.setLocalDescription(offer);
+            await api.post(`/meet/${room.uid}/signal`, {
+                to: remotePeerId, type: 'offer',
+                payload: pc.localDescription, from_peer_id: peer_id,
+            });
+        } catch (e) {
+            console.warn('[WebRTC] sendOffer failed for', remotePeerId, e);
+        }
+    }, [buildPC, room.uid, peer_id]);
 
-    // ── Full cleanup ──────────────────────────────────────────────────────────
+    // ── Handle incoming offer (we are the answerer) ───────────────────────────
 
-    const cleanup = useCallback(() => {
-        stopAllTracks();
-        mediaRecRef.current?.stop();
-        if (recTimerRef.current) clearInterval(recTimerRef.current);
-        speakMap.current.forEach(fn => fn());
-        pcMapRef.current.forEach(pc => pc.close());
-        echoRef.current?.leave(`meet.${room.uid}`);
-    }, [stopAllTracks, room.uid]);
+    const handleOffer = useCallback(async (from: string, payload: RTCSessionDescriptionInit) => {
+        const pc = buildPC(from);
+        try {
+            await pc.setRemoteDescription(new RTCSessionDescription(payload));
+            await flushIce(from, pc);
+            const answer = await pc.createAnswer();
+            await pc.setLocalDescription(answer);
+            await api.post(`/meet/${room.uid}/signal`, {
+                to: from, type: 'answer',
+                payload: pc.localDescription, from_peer_id: peer_id,
+            });
+        } catch (e) {
+            console.warn('[WebRTC] handleOffer failed from', from, e);
+        }
+    }, [buildPC, flushIce, room.uid, peer_id]);
 
-    // ── Join ──────────────────────────────────────────────────────────────────
+    // ── Handle incoming answer ────────────────────────────────────────────────
 
-    const joinRoom = useCallback(async () => {
-        const stream = await startMedia();
+    const handleAnswer = useCallback(async (from: string, payload: RTCSessionDescriptionInit) => {
+        const pc = R.current.pcs.get(from);
+        if (!pc) return;
+        if (pc.signalingState !== 'have-local-offer') return; // guard against stale
+        try {
+            await pc.setRemoteDescription(new RTCSessionDescription(payload));
+            await flushIce(from, pc);
+        } catch (e) {
+            console.warn('[WebRTC] handleAnswer failed from', from, e);
+        }
+    }, [flushIce]);
 
-        const joinResp = await post(`/meet/${room.uid}/join`, {
-            peer_id, display_name,
-            video_on: defVideo,
-            audio_on: defAudio,
-        }).catch(() => ({ admitted: true }));
+    // ── Handle incoming ICE candidate ─────────────────────────────────────────
 
-        // Waiting room — participant must wait for host to admit
-        if (joinResp?.admitted === false) setAdmitted(false);
+    const handleIce = useCallback(async (from: string, payload: RTCIceCandidateInit) => {
+        const pc  = R.current.pcs.get(from);
+        const cand = new RTCIceCandidate(payload);
+        if (!pc || !pc.remoteDescription) {
+            // Buffer until remoteDescription is set
+            const buf = R.current.iceBuf.get(from) ?? [];
+            buf.push(cand);
+            R.current.iceBuf.set(from, buf);
+            return;
+        }
+        await pc.addIceCandidate(cand).catch(() => {});
+    }, []);
+
+    // ── Broadcast media state ─────────────────────────────────────────────────
+
+    const broadcastMedia = useCallback((overrides: Partial<{
+        video_on: boolean; audio_on: boolean; screen_sharing: boolean; hand_raised: boolean;
+    }> = {}) => {
+        api.post(`/meet/${room.uid}/media-state`, {
+            peer_id,
+            video_on:      R.current.videoOn,
+            audio_on:      R.current.audioOn,
+            screen_sharing: !!R.current.screenStream,
+            hand_raised:   R.current.handRaised,
+            ...overrides,
+        }).catch(() => {});
+    }, [room.uid, peer_id]);
+
+    // ── Full teardown ─────────────────────────────────────────────────────────
+
+    const teardown = useCallback(() => {
+        R.current.inMeeting = false;
+        stopAllMedia();
+        R.current.mediaRec?.stop();
+        if (R.current.recTimer) clearInterval(R.current.recTimer);
+        R.current.speakClean.forEach(fn => fn());
+        R.current.pcs.forEach(pc => pc.close());
+        R.current.pcs.clear();
+        R.current.echo?.leave(`meet.${room.uid}`);
+    }, [stopAllMedia, room.uid]);
+
+    // ── Build Echo + wire all events ──────────────────────────────────────────
+    // This is called AFTER we know we're admitted and media is ready.
+    // It should run exactly once for the live call.
+
+    const buildEcho = useCallback(() => {
+        // Don't double-initialise
+        if (R.current.echo) return;
 
         (window as any).Pusher = Pusher;
         const echo = new Echo({
-            broadcaster: 'reverb', key: reverb_key,
-            wsHost: reverb_host, wsPort: reverb_port,
-            forceTLS: false, enabledTransports: ['ws', 'wss'],
+            broadcaster: 'reverb',
+            key: reverb_key,
+            wsHost: reverb_host,
+            wsPort: reverb_port,
+            forceTLS: false,
+            enabledTransports: ['ws', 'wss'],
             authorizer: (channel: any) => ({
-                authorize: (socketId: string, cb: Function) => {
+                authorize: (socketId: string, cb: Function) =>
                     axios.post('/broadcasting/auth', {
-                        socket_id: socketId, channel_name: channel.name, peer_id,
-                    }).then(r => cb(false, r.data)).catch(e => cb(true, e));
-                },
+                        socket_id: socketId,
+                        channel_name: channel.name,
+                        peer_id,
+                    }).then(r => cb(false, r.data)).catch(e => cb(true, e)),
             }),
         });
-        echoRef.current = echo;
-        const ch = echo.join(`meet.${room.uid}`);
-        channelRef.current = ch;
+        R.current.echo = echo;
 
-        // ── Presence: who is already here ────────────────────────────────────
+        const ch = echo.join(`meet.${room.uid}`);
+        R.current.channel = ch;
+
+        // ── Presence: peers already in the room ──────────────────────────────
+        // We are the new joiner → send offers to ALL existing members.
+        // They will answer via .meet.signal. This is the ONLY place offers
+        // originate from the joiner side; existing peers only answer, never offer
+        // to a new joiner (the new joiner does that work).
         ch.here((members: any[]) => {
             const myId = auth?.user?.id;
-            const map  = new Map<string, Peer>();
+            const initialPeers = new Map<string, PeerState>();
+
             members.forEach(m => {
-                const isSelf = m.peer_id === peer_id || (myId && String(m.id) === String(myId));
+                const isSelf = m.peer_id === peer_id
+                    || (myId && String(m.id) === String(myId));
                 if (isSelf) return;
-                map.set(m.peer_id, {
-                    peer_id: m.peer_id,
-                    display_name: m.display_name ?? m.name ?? 'Unknown',
-                    role: m.role ?? 'participant',
-                    video_on: false, audio_on: false, screen_sharing: false, hand_raised: false,
+
+                initialPeers.set(m.peer_id, {
+                    peer_id:       m.peer_id,
+                    display_name:  m.display_name ?? m.name ?? 'Unknown',
+                    role:          m.role ?? 'participant',
+                    video_on:      false,
+                    audio_on:      false,
+                    screen_sharing: false,
+                    hand_raised:   false,
+                    speaking:      false,
                 });
+
+                // Fire-and-forget; errors logged inside sendOffer
+                sendOffer(m.peer_id);
             });
-            setPeers(map);
+
+            setPeers(initialPeers);
         });
 
-        // ── Someone joins ─────────────────────────────────────────────────────
-        ch.joining(async (member: any) => {
-            const myId  = auth?.user?.id;
-            const isSelf = member.peer_id === peer_id || (myId && String(member.id) === String(myId));
+        // ── A new peer joined the presence channel ────────────────────────────
+        // We are an existing peer. We do NOT send an offer here — the new joiner
+        // will send us one via ch.here(). We just add them to UI state so their
+        // tile appears. The stream arrives later via pc.ontrack.
+        ch.joining((member: any) => {
+            const myId   = auth?.user?.id;
+            const isSelf = member.peer_id === peer_id
+                || (myId && String(member.id) === String(myId));
             if (isSelf) return;
 
-            const pc    = createPC(member.peer_id, stream);
-            const offer = await pc.createOffer();
-            await pc.setLocalDescription(offer);
-
             setPeers(prev => {
+                if (prev.has(member.peer_id)) return prev; // already tracked
                 const m = new Map(prev);
                 m.set(member.peer_id, {
-                    peer_id: member.peer_id,
-                    display_name: member.display_name ?? member.name ?? 'Unknown',
-                    role: 'participant', video_on: false, audio_on: false,
-                    screen_sharing: false, hand_raised: false, connection: pc,
+                    peer_id:       member.peer_id,
+                    display_name:  member.display_name ?? member.name ?? 'Unknown',
+                    role:          'participant',
+                    video_on:      false, audio_on: false,
+                    screen_sharing: false, hand_raised: false, speaking: false,
                 });
                 return m;
             });
-
-            post(`/meet/${room.uid}/signal`, {
-                to: member.peer_id, type: 'offer', payload: offer, from_peer_id: peer_id,
-            }).catch(() => {});
         });
 
-        // ── Someone leaves ────────────────────────────────────────────────────
+        // ── Peer left presence channel ────────────────────────────────────────
         ch.leaving((member: any) => removePeer(member.peer_id));
 
         // ── WebRTC signaling ──────────────────────────────────────────────────
@@ -530,141 +750,176 @@ export default function MeetRoom() {
             if (data.to !== peer_id) return;
             const { from, type, payload } = data;
 
-            if (type === 'offer') {
-                const pc = createPC(from, stream);
-                await pc.setRemoteDescription(new RTCSessionDescription(payload));
-                const answer = await pc.createAnswer();
-                await pc.setLocalDescription(answer);
-                setPeers(prev => {
-                    const m = new Map(prev); const ex = m.get(from);
-                    if (ex) m.set(from, { ...ex, connection: pc }); return m;
-                });
-                post(`/meet/${room.uid}/signal`, {
-                    to: from, type: 'answer', payload: answer, from_peer_id: peer_id,
-                }).catch(() => {});
-            }
-            if (type === 'answer') {
-                const pc = pcMapRef.current.get(from);
-                if (pc) await pc.setRemoteDescription(new RTCSessionDescription(payload));
-            }
-            if (type === 'ice-candidate') {
-                const pc = pcMapRef.current.get(from);
-                if (pc?.remoteDescription)
-                    await pc.addIceCandidate(new RTCIceCandidate(payload)).catch(() => {});
-            }
+            if (type === 'offer')         await handleOffer(from, payload);
+            else if (type === 'answer')   await handleAnswer(from, payload);
+            else if (type === 'ice-candidate') await handleIce(from, payload);
         });
 
-        // ── Participant admitted / joined ─────────────────────────────────────
+        // ── Participant formally joined (admission event) ─────────────────────
         ch.listen('.meet.participant-joined', (data: any) => {
-            // If it's us — we were just admitted from the waiting room
             if (data.peer_id === peer_id) {
-                setAdmitted(true);
+                // We were admitted from waiting room — overlay already dropped by
+                // the waiting-room listener below. Nothing else needed here.
                 return;
             }
-            // Remove from waiting list (host view)
             setWaitingPeers(wp => wp.filter(p => p.peer_id !== data.peer_id));
-            // Add/update in main peers map
             setPeers(prev => {
                 const m  = new Map(prev);
                 const ex = m.get(data.peer_id);
                 m.set(data.peer_id, {
-                    ...(ex ?? { stream: undefined, connection: undefined }),
-                    peer_id: data.peer_id, display_name: data.display_name,
-                    role: data.role,
-                    video_on: data.video_on ?? false, audio_on: data.audio_on ?? false,
+                    ...(ex ?? { stream: undefined, speaking: false }),
+                    peer_id:       data.peer_id,
+                    display_name:  data.display_name,
+                    role:          data.role ?? 'participant',
+                    video_on:      data.video_on ?? false,
+                    audio_on:      data.audio_on ?? false,
                     screen_sharing: ex?.screen_sharing ?? false,
-                    hand_raised: ex?.hand_raised ?? false,
+                    hand_raised:   ex?.hand_raised ?? false,
                 });
                 return m;
             });
         });
 
-        // ── Participant left ──────────────────────────────────────────────────
         ch.listen('.meet.participant-left', (data: any) => removePeer(data.peer_id));
 
-        // ── Waiting room — someone is knocking ───────────────────────────────
-        // Only the host receives this. Server broadcasts ParticipantWaiting
-        // when a participant joins a waiting-room meeting.
         ch.listen('.meet.participant-waiting', (data: any) => {
             if (!is_owner) return;
             setWaitingPeers(wp => {
-                if (wp.find(p => p.peer_id === data.peer_id)) return wp;
+                if (wp.some(p => p.peer_id === data.peer_id)) return wp;
                 return [...wp, {
                     peer_id: data.peer_id, display_name: data.display_name,
                     role: 'participant', video_on: false, audio_on: false,
-                    screen_sharing: false, hand_raised: false,
+                    screen_sharing: false, hand_raised: false, speaking: false,
                 }];
             });
         });
 
-        // ── Media state ───────────────────────────────────────────────────────
         ch.listen('.meet.media-updated', (data: any) => {
             if (data.peer_id === peer_id) return;
             setPeers(prev => {
-                const m = new Map(prev); const p = m.get(data.peer_id);
+                const m = new Map(prev);
+                const p = m.get(data.peer_id);
                 if (p) m.set(data.peer_id, {
                     ...p,
-                    video_on: data.video_on, audio_on: data.audio_on,
-                    screen_sharing: data.screen_sharing, hand_raised: data.hand_raised,
+                    video_on:      data.video_on,
+                    audio_on:      data.audio_on,
+                    screen_sharing: data.screen_sharing,
+                    hand_raised:   data.hand_raised,
                 });
                 return m;
             });
         });
 
-        // ── Room ended ────────────────────────────────────────────────────────
-        ch.listen('.meet.room-ended', () => { cleanup(); setEndReason('room-ended'); });
+        ch.listen('.meet.room-ended', () => { teardown(); setEndReason('room-ended'); });
 
-        // ── Kicked ────────────────────────────────────────────────────────────
         ch.listen('.meet.participant-kicked', (data: any) => {
-            if (data.peer_id === peer_id) { cleanup(); setEndReason('kicked'); }
+            if (data.peer_id === peer_id) { teardown(); setEndReason('kicked'); }
             else removePeer(data.peer_id);
         });
 
-        // ── Recording ─────────────────────────────────────────────────────────
         ch.listen('.meet.recording-started', (data: any) =>
             setRec(r => ({ ...r, active: true, id: data.recording_id, duration: 0 })));
         ch.listen('.meet.recording-stopped', () =>
             setRec(r => ({ ...r, active: false })));
 
-        // ── Chat — FIX double message ─────────────────────────────────────────
-        // listenForWhisper fires on the SENDER too in some Echo/Reverb builds.
-        // We dedup by tracking message IDs we added ourselves (seenMsgIds).
         ch.listenForWhisper('chat', (data: ChatMsg) => {
-            if (seenMsgIds.current.has(data.id)) return; // already added locally
-            seenMsgIds.current.add(data.id);
+            if (R.current.seenMsgs.has(data.id)) return;
+            R.current.seenMsgs.add(data.id);
             setMessages(ms => [...ms, data]);
         });
+    }, [
+        room.uid, peer_id, auth, is_owner, reverb_key, reverb_host, reverb_port,
+        sendOffer, handleOffer, handleAnswer, handleIce, removePeer, teardown,
+    ]);
 
-    }, [room.uid, peer_id, display_name, defVideo, defAudio, auth, is_owner,
-        startMedia, createPC, cleanup, removePeer, attachSpeak,
-        reverb_key, reverb_host, reverb_port]);
+    // ── Waiting room: lightweight Echo for admission only ─────────────────────
+    // Connects before media starts. Listens ONLY for own admission event.
+    // On admission: starts media, drops this channel, then calls buildEcho().
 
-    // ── Broadcast media state ─────────────────────────────────────────────────
+    const buildWaitingEcho = useCallback(() => {
+        (window as any).Pusher = Pusher;
+        const echo = new Echo({
+            broadcaster: 'reverb',
+            key: reverb_key,
+            wsHost: reverb_host,
+            wsPort: reverb_port,
+            forceTLS: false,
+            enabledTransports: ['ws', 'wss'],
+            authorizer: (channel: any) => ({
+                authorize: (socketId: string, cb: Function) =>
+                    axios.post('/broadcasting/auth', {
+                        socket_id: socketId,
+                        channel_name: channel.name,
+                        peer_id,
+                    }).then(r => cb(false, r.data)).catch(e => cb(true, e)),
+            }),
+        });
+        R.current.echo = echo;
 
-    const broadcastMedia = useCallback((overrides: Partial<{
-        video_on: boolean; audio_on: boolean; screen_sharing: boolean; hand_raised: boolean;
-    }> = {}) => {
-        post(`/meet/${room.uid}/media-state`, {
-            peer_id, video_on: videoOn, audio_on: audioOn,
-            screen_sharing: !!screenStream, hand_raised: handRaised,
-            ...overrides,
-        }).catch(() => {});
-    }, [room.uid, peer_id, videoOn, audioOn, screenStream, handRaised]);
+        const ch = echo.join(`meet.${room.uid}`);
+        R.current.channel = ch;
+
+        ch.listen('.meet.participant-joined', async (data: any) => {
+            if (data.peer_id !== peer_id) return;
+
+            // Tear down the waiting channel first
+            echo.leave(`meet.${room.uid}`);
+            R.current.echo    = null;
+            R.current.channel = null;
+
+            // Update UI
+            setAdmitted(true);
+
+            // Start media THEN join the full call channel
+            await startMedia();
+            buildEcho();
+        });
+
+        ch.listen('.meet.room-ended', () => {
+            teardown();
+            setEndReason('room-ended');
+        });
+    }, [room.uid, peer_id, reverb_key, reverb_host, reverb_port, startMedia, buildEcho, teardown]);
+
+    // ── Mount: the single entry point ────────────────────────────────────────
+
+    useEffect(() => {
+        (async () => {
+            const joinResp = await api.post(`/meet/${room.uid}/join`, {
+                peer_id, display_name,
+                video_on: defaultVideo,
+                audio_on: defaultAudio,
+            }).catch(() => ({ admitted: true }));
+
+            if (joinResp?.admitted === false) {
+                // Waiting room path: connect Echo for admission only, no media yet
+                setAdmitted(false);
+                buildWaitingEcho();
+            } else {
+                // Normal path: start media then join the full call channel
+                await startMedia();
+                buildEcho();
+            }
+        })();
+
+        return () => {
+            R.current.inMeeting = false;
+            teardown();
+        };
+    }, []); // eslint-disable-line
 
     // ── Controls ──────────────────────────────────────────────────────────────
 
     const toggleAudio = () => {
         const next = !audioOn;
-        // Muting locally: disable the track so the user doesn't hear themselves
-        // and the sender sends silence — correct mute behaviour.
-        localStream?.getAudioTracks().forEach(t => { t.enabled = next; });
+        R.current.localStream?.getAudioTracks().forEach(t => { t.enabled = next; });
         setAudioOn(next);
         broadcastMedia({ audio_on: next });
     };
 
     const toggleVideo = () => {
         const next = !videoOn;
-        localStream?.getVideoTracks().forEach(t => { t.enabled = next; });
+        R.current.localStream?.getVideoTracks().forEach(t => { t.enabled = next; });
         setVideoOn(next);
         broadcastMedia({ video_on: next });
     };
@@ -679,37 +934,37 @@ export default function MeetRoom() {
         try {
             const ss    = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
             const track = ss.getVideoTracks()[0];
+            R.current.screenStream = ss;
             setScreenStream(ss);
-            pcMapRef.current.forEach(pc => {
+            R.current.pcs.forEach(pc => {
                 const sender = pc.getSenders().find(s => s.track?.kind === 'video');
                 sender?.replaceTrack(track);
             });
-            track.onended = () => stopScreenShare();
+            track.onended = stopScreenShare;
             broadcastMedia({ screen_sharing: true });
-        } catch { /* user cancelled */ }
+        } catch { /* cancelled */ }
     };
 
     const stopScreenShare = useCallback(() => {
-        screenStream?.getTracks().forEach(t => t.stop());
+        R.current.screenStream?.getTracks().forEach(t => t.stop());
+        R.current.screenStream = null;
         setScreenStream(null);
-        const cam = localStream?.getVideoTracks()[0];
-        if (cam) pcMapRef.current.forEach(pc => {
+        const cam = R.current.localStream?.getVideoTracks()[0];
+        if (cam) R.current.pcs.forEach(pc => {
             const sender = pc.getSenders().find(s => s.track?.kind === 'video');
             sender?.replaceTrack(cam);
         });
         broadcastMedia({ screen_sharing: false });
-    }, [screenStream, localStream, broadcastMedia]);
+    }, [broadcastMedia]);
 
-    // ── Waiting room: admit / deny ────────────────────────────────────────────
-
-    const admitPeer = async (targetPeerId: string) => {
-        await patch(`/meet/${room.uid}/admit/${targetPeerId}`).catch(() => {});
-        setWaitingPeers(wp => wp.filter(p => p.peer_id !== targetPeerId));
+    const admitPeer = async (targetId: string) => {
+        await api.patch(`/meet/${room.uid}/admit/${targetId}`).catch(() => {});
+        setWaitingPeers(wp => wp.filter(p => p.peer_id !== targetId));
     };
 
-    const denyPeer = async (targetPeerId: string) => {
-        await patch(`/meet/${room.uid}/kick/${targetPeerId}`).catch(() => {});
-        setWaitingPeers(wp => wp.filter(p => p.peer_id !== targetPeerId));
+    const denyPeer = async (targetId: string) => {
+        await api.patch(`/meet/${room.uid}/kick/${targetId}`).catch(() => {});
+        setWaitingPeers(wp => wp.filter(p => p.peer_id !== targetId));
     };
 
     // ── Recording ─────────────────────────────────────────────────────────────
@@ -717,67 +972,73 @@ export default function MeetRoom() {
     const startRecording = async () => {
         if (!room.recording_enabled || !is_owner) return;
         try {
-            const data = await post(`/meet/${room.uid}/recording/start`);
-            if (!data.recording_id) return;
+            const data = await api.post(`/meet/${room.uid}/recording/start`);
+            if (!data?.recording_id) return;
+            R.current.recId = data.recording_id;
+
             const tracks: MediaStreamTrack[] = [];
-            localStream?.getTracks().forEach(t => tracks.push(t));
-            screenStream?.getTracks().forEach(t => tracks.push(t));
-            const mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp9,opus')
+            R.current.localStream?.getTracks().forEach(t => tracks.push(t));
+            R.current.screenStream?.getTracks().forEach(t => tracks.push(t));
+
+            const mime = MediaRecorder.isTypeSupported('video/webm;codecs=vp9,opus')
                 ? 'video/webm;codecs=vp9,opus' : 'video/webm';
-            const mr = new MediaRecorder(new MediaStream(tracks), { mimeType });
-            mediaRecRef.current = mr;
+            const mr = new MediaRecorder(new MediaStream(tracks), { mimeType: mime });
+            R.current.mediaRec = mr;
+
             mr.ondataavailable = async e => {
-                if (!e.data.size) return;
-                postBin(`/meet/${room.uid}/recording/${data.recording_id}/chunk`, await e.data.arrayBuffer()).catch(() => {});
+                if (!e.data.size || !R.current.recId) return;
+                api.bin(`/meet/${room.uid}/recording/${R.current.recId}/chunk`, await e.data.arrayBuffer()).catch(() => {});
             };
             mr.start(5000);
-            setRec({ id: data.recording_id, active: true, duration: 0, size: 0, downloadUrl: null });
-            recTimerRef.current = setInterval(() => setRec(r => ({ ...r, duration: r.duration + 1 })), 1000);
-        } catch (e) { console.error('Recording failed', e); }
+
+            setRec({ id: data.recording_id, active: true, duration: 0, downloadUrl: null });
+            R.current.recTimer = setInterval(() =>
+                setRec(r => ({ ...r, duration: r.duration + 1 })), 1000);
+        } catch (e) { console.error('Recording start failed', e); }
     };
 
     const stopRecording = async () => {
-        mediaRecRef.current?.stop();
-        if (recTimerRef.current) clearInterval(recTimerRef.current);
-        if (!rec.id) return;
+        R.current.mediaRec?.stop();
+        if (R.current.recTimer) { clearInterval(R.current.recTimer); R.current.recTimer = null; }
+        const id = R.current.recId;
+        if (!id) return;
         try {
-            const data = await post(`/meet/${room.uid}/recording/${rec.id}/stop`);
+            const data = await api.post(`/meet/${room.uid}/recording/${id}/stop`);
             setRec(r => ({ ...r, active: false, downloadUrl: data.download_url ?? null }));
-        } catch { setRec(r => ({ ...r, active: false })); }
+        } catch {
+            setRec(r => ({ ...r, active: false }));
+        }
+        R.current.recId = null;
     };
-
-    // ── Kick ──────────────────────────────────────────────────────────────────
-
-    const kickParticipant = (pid: string) =>
-        patch(`/meet/${room.uid}/kick/${pid}`).catch(() => {});
 
     // ── Leave / End ───────────────────────────────────────────────────────────
 
     const leaveRoom = async () => {
-        stopAllTracks();
-        await post(`/meet/${room.uid}/leave`, { peer_id }).catch(() => {});
-        cleanup();
+        R.current.inMeeting = false;
+        await api.post(`/meet/${room.uid}/leave`, { peer_id }).catch(() => {});
+        teardown();
         if (is_guest) setEndReason('left');
         else router.get('/meet');
     };
 
     const endForAll = async () => {
+        R.current.inMeeting = false;
         if (rec.active) await stopRecording();
-        stopAllTracks();
-        await patch(`/meet/${room.uid}/end`).catch(() => {});
-        cleanup();
+        await api.patch(`/meet/${room.uid}/end`).catch(() => {});
+        teardown();
         if (is_guest) setEndReason('left');
         else router.get('/meet');
     };
 
-    // ── Mount ─────────────────────────────────────────────────────────────────
+    const navigateAway = () => {
+        setGuardDialog(false);
+        R.current.inMeeting = false;
+        const nav = R.current.pendingNav;
+        R.current.pendingNav = null;
+        if (nav) nav(); else leaveRoom();
+    };
 
-    useEffect(() => {
-        joinRoom();
-        return () => { stopAllTracks(); cleanup(); };
-    }, []); // eslint-disable-line
-
-    // ─────────────────────────────────────────────────────────────────────────
+    // ── Render helpers ────────────────────────────────────────────────────────
 
     if (endReason) return <EndScreen name={display_name} reason={endReason} />;
 
@@ -786,30 +1047,46 @@ export default function MeetRoom() {
     const sharingPeer = allPeers.find(p => p.screen_sharing && p.stream);
     const anySharing  = !!screenStream || !!sharingPeer;
 
-    const gridCols = anySharing ? 'grid-cols-3 lg:grid-cols-5'
-        : total <= 1 ? 'grid-cols-1'
-        : total <= 4 ? 'grid-cols-2'
-        : total <= 9 ? 'grid-cols-3'
-        : 'grid-cols-4';
+    const gridClass = anySharing
+        ? 'grid-cols-3 sm:grid-cols-4 lg:grid-cols-5'
+        : total <= 1  ? 'grid-cols-1'
+        : total <= 4  ? 'grid-cols-2'
+        : total <= 9  ? 'grid-cols-3'
+        : total <= 16 ? 'grid-cols-4'
+        : 'grid-cols-5';
 
-    const localPeer: Peer = {
-        peer_id, display_name, role: is_owner ? 'host' : 'participant',
-        video_on: videoOn, audio_on: audioOn, screen_sharing: !!screenStream,
-        hand_raised: handRaised, speaking: localSpeaking, stream: localStream ?? undefined,
+    const localPeer: PeerState = {
+        peer_id, display_name,
+        role:          is_owner ? 'host' : 'participant',
+        video_on:      videoOn,
+        audio_on:      audioOn,
+        screen_sharing: !!screenStream,
+        hand_raised:   handRaised,
+        speaking:      localSpeak,
+        stream:        R.current.localStream ?? undefined,
     };
 
     return (
         <div className="relative flex h-screen flex-col bg-zinc-950 text-white overflow-hidden select-none">
             <Head title={room.name} />
 
+            {/* Screen lock guard */}
+            {guardDialog && (
+                <RefreshGuardDialog
+                    onStay={() => { setGuardDialog(false); R.current.pendingNav = null; }}
+                    onLeave={navigateAway}
+                />
+            )}
+
             {/* Waiting overlay */}
             {!admitted && <WaitingOverlay roomName={room.name} />}
 
-            {/* Admit panel (host only) */}
+            {/* Waiting room admit panel */}
             {is_owner && room.waiting_room && (
                 <AdmitPanel waitingPeers={waitingPeers} onAdmit={admitPeer} onDeny={denyPeer} />
             )}
 
+            {/* Host leave dialog */}
             {hostDialog && (
                 <HostLeaveDialog
                     onEndAll={() => { setHostDialog(false); endForAll(); }}
@@ -818,79 +1095,110 @@ export default function MeetRoom() {
                 />
             )}
 
-            {/* ── Header ──────────────────────────────────────────────── */}
-            <header className="flex shrink-0 items-center justify-between border-b border-zinc-800 px-4 py-2.5">
+            {/* ── Header ─────────────────────────────────────────────── */}
+            <header className="flex shrink-0 items-center justify-between border-b border-zinc-800/80 bg-zinc-950/90 px-4 py-2.5 backdrop-blur">
                 <div className="flex items-center gap-3">
                     {!is_guest && (
-                        <button onClick={() => router.get('/meet')}
-                            className="rounded-lg p-1.5 transition hover:bg-zinc-800">
-                            <ChevronLeft className="h-4 w-4 text-zinc-400" />
+                        <button
+                            onClick={() => {
+                                R.current.pendingNav = () => router.get('/meet');
+                                setGuardDialog(true);
+                            }}
+                            className="rounded-lg p-1.5 text-zinc-400 transition hover:bg-zinc-800 hover:text-white"
+                        >
+                            <ChevronLeft className="h-4 w-4" />
                         </button>
                     )}
                     <div>
-                        <p className="text-sm font-semibold">{room.name}</p>
-                        <div className="flex items-center gap-2 text-xs text-zinc-400">
-                            <Clock className="h-3 w-3" />{total} in call
+                        <p className="text-sm font-semibold leading-none">{room.name}</p>
+                        <div className="mt-1 flex items-center gap-2 text-xs text-zinc-500">
+                            <Clock className="h-3 w-3" />
+                            <span>{total} participant{total !== 1 ? 's' : ''}</span>
                             {waitingPeers.length > 0 && (
-                                <span className="rounded-full bg-yellow-500/20 px-1.5 py-0.5 text-[10px] text-yellow-400">
+                                <span className="rounded-full bg-yellow-500/20 px-1.5 py-0.5 text-[10px] font-medium text-yellow-400">
                                     {waitingPeers.length} waiting
                                 </span>
                             )}
-                            {is_guest && <span className="rounded-full bg-zinc-700 px-1.5 py-0.5 text-[10px]">Guest</span>}
+                            {is_guest && (
+                                <span className="rounded-full bg-zinc-800 px-1.5 py-0.5 text-[10px]">Guest</span>
+                            )}
                         </div>
                     </div>
                 </div>
+
                 <div className="flex items-center gap-2">
                     {rec.active && <RecBadge duration={rec.duration} />}
                     {!rec.active && rec.downloadUrl && is_owner && (
                         <a href={rec.downloadUrl}
                             className="flex items-center gap-1.5 rounded-lg border border-zinc-700 px-3 py-1.5 text-xs text-zinc-300 transition hover:bg-zinc-800">
-                            <Download className="h-3.5 w-3.5" />Download Rec
+                            <Download className="h-3.5 w-3.5" /> Recording
                         </a>
                     )}
-                    <button onClick={() => {
-                        navigator.clipboard.writeText(room.join_url);
-                        setUrlCopied(true);
-                        setTimeout(() => setUrlCopied(false), 2000);
-                    }} className="flex items-center gap-1.5 rounded-lg border border-zinc-700 px-3 py-1.5 text-xs transition hover:bg-zinc-800">
-                        {urlCopied ? <><Check className="h-3.5 w-3.5 text-green-400" />Copied!</> : <><Copy className="h-3.5 w-3.5" />Invite</>}
+                    <button
+                        onClick={() => {
+                            navigator.clipboard.writeText(room.join_url);
+                            setUrlCopied(true);
+                            setTimeout(() => setUrlCopied(false), 2000);
+                        }}
+                        className="flex items-center gap-1.5 rounded-lg border border-zinc-700 px-3 py-1.5 text-xs transition hover:bg-zinc-800"
+                    >
+                        {urlCopied
+                            ? <><Check className="h-3.5 w-3.5 text-green-400" /> Copied!</>
+                            : <><Copy className="h-3.5 w-3.5" /> Invite</>}
                     </button>
-                    <div className="flex items-center gap-1 rounded-lg bg-green-500/10 px-2.5 py-1.5 text-xs text-green-400">
-                        <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-green-400" />Live
+                    <div className="flex items-center gap-1.5 rounded-lg bg-green-500/10 px-2.5 py-1.5 text-xs text-green-400">
+                        <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-green-400" />
+                        Live
                     </div>
                 </div>
             </header>
 
-            {/* ── Body ────────────────────────────────────────────────── */}
-            <div className="flex flex-1 gap-2 overflow-hidden p-3">
-                <div className="flex flex-1 flex-col gap-2 overflow-hidden min-w-0">
+            {/* ── Body ───────────────────────────────────────────────── */}
+            <div className="flex min-h-0 flex-1 gap-2 p-2.5">
 
-                    {/* Screen share dominant view */}
+                {/* Main video area */}
+                <div className="flex min-w-0 flex-1 flex-col gap-2">
+
+                    {/* Screen share large view */}
                     {anySharing && (
-                        <div className="flex-1 overflow-hidden rounded-xl">
+                        <div className="min-h-0 flex-1 overflow-hidden rounded-xl">
                             {screenStream
                                 ? <ScreenPreview stream={screenStream} owner={display_name} isLocal onStop={stopScreenShare} />
                                 : sharingPeer?.stream
-                                ? <ScreenPreview stream={sharingPeer.stream} owner={sharingPeer.display_name} isLocal={false} />
-                                : null}
+                                    ? <ScreenPreview stream={sharingPeer.stream} owner={sharingPeer.display_name} isLocal={false} />
+                                    : null}
                         </div>
                     )}
 
-                    {/* Video grid */}
-                    <div className={`grid gap-2 ${anySharing ? `${gridCols} h-36 shrink-0` : `${gridCols} flex-1`}`}>
-                        <div className="aspect-video"><VideoTile peer={localPeer} local /></div>
-                        {allPeers.filter(p => p.peer_id !== pinnedPeer || anySharing).map(p => (
+                    {/* Participant grid — scrollable when many participants */}
+                    <div className={[
+                        'grid gap-2',
+                        gridClass,
+                        anySharing
+                            ? 'h-32 shrink-0 overflow-x-auto'
+                            : 'min-h-0 flex-1 overflow-y-auto',
+                    ].join(' ')}>
+                        {/* Local tile always first */}
+                        <div className="aspect-video">
+                            <VideoTile peer={localPeer} local />
+                        </div>
+                        {/* Remote tiles */}
+                        {allPeers.map(p => (
                             <div key={p.peer_id} className="aspect-video">
-                                <VideoTile peer={p}
-                                    pinned={!anySharing && p.peer_id === pinnedPeer}
-                                    onClick={() => !anySharing && setPinnedPeer(id => id === p.peer_id ? null : p.peer_id)}
+                                <VideoTile
+                                    peer={p}
+                                    pinned={!anySharing && p.peer_id === pinnedId}
+                                    onClick={() => {
+                                        if (!anySharing)
+                                            setPinnedId(id => id === p.peer_id ? null : p.peer_id);
+                                    }}
                                 />
                             </div>
                         ))}
                     </div>
                 </div>
 
-                {/* Chat */}
+                {/* ── Chat panel ──────────────────────────────────────── */}
                 {chatOpen && room.chat_enabled && (
                     <div className="flex w-64 shrink-0 flex-col rounded-xl border border-zinc-800 bg-zinc-900">
                         <div className="flex items-center justify-between border-b border-zinc-800 px-4 py-3">
@@ -899,16 +1207,16 @@ export default function MeetRoom() {
                                 <X className="h-4 w-4" />
                             </button>
                         </div>
-                        <div className="flex-1 overflow-y-auto p-3 space-y-2">
+                        <div className="flex-1 overflow-y-auto p-3 space-y-2.5">
                             {messages.length === 0 && (
-                                <p className="py-6 text-center text-xs text-zinc-600">No messages yet</p>
+                                <p className="py-8 text-center text-xs text-zinc-600">No messages yet</p>
                             )}
                             {messages.map(m => (
                                 <div key={m.id} className="text-xs">
-                                    <span className="font-medium text-zinc-300">
-                                        {m.peer_id === peer_id ? 'You' : m.display_name}:{' '}
+                                    <span className="font-semibold text-zinc-300">
+                                        {m.peer_id === peer_id ? 'You' : m.display_name}
                                     </span>
-                                    <span className="break-words text-zinc-400">{m.text}</span>
+                                    <span className="ml-1 break-words text-zinc-400">{m.text}</span>
                                 </div>
                             ))}
                             <div ref={chatEndRef} />
@@ -925,10 +1233,8 @@ export default function MeetRoom() {
                                         id: crypto.randomUUID(), peer_id, display_name,
                                         text: chatInput.trim(), sent_at: new Date().toISOString(),
                                     };
-                                    // Mark this ID as seen BEFORE whispering so the
-                                    // listenForWhisper callback skips it if it fires back.
-                                    seenMsgIds.current.add(msg.id);
-                                    channelRef.current?.whisper('chat', msg);
+                                    R.current.seenMsgs.add(msg.id);
+                                    R.current.channel?.whisper('chat', msg);
                                     setMessages(ms => [...ms, msg]);
                                     setChatInput('');
                                 }}
@@ -937,11 +1243,11 @@ export default function MeetRoom() {
                     </div>
                 )}
 
-                {/* Participants panel */}
+                {/* ── Participants panel ──────────────────────────────── */}
                 {panelOpen && (
                     <div className="flex w-56 shrink-0 flex-col rounded-xl border border-zinc-800 bg-zinc-900">
                         <div className="flex items-center justify-between border-b border-zinc-800 px-4 py-3">
-                            <p className="text-sm font-semibold">People ({total})</p>
+                            <p className="text-sm font-semibold">People <span className="text-zinc-500">({total})</span></p>
                             <button onClick={() => setPanelOpen(false)} className="text-zinc-500 transition hover:text-white">
                                 <X className="h-4 w-4" />
                             </button>
@@ -949,7 +1255,7 @@ export default function MeetRoom() {
                         <div className="flex-1 overflow-y-auto p-2 space-y-1">
                             {/* Self */}
                             <div className="flex items-center gap-2 rounded-lg bg-zinc-800/50 px-3 py-2 text-xs">
-                                <div className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[10px] font-bold text-white transition-colors ${localSpeaking ? 'bg-green-500' : 'bg-primary/30'}`}>
+                                <div className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[10px] font-bold text-white ${localSpeak ? 'bg-green-500' : 'bg-primary/40'}`}>
                                     {display_name.charAt(0).toUpperCase()}
                                 </div>
                                 <span className="min-w-0 flex-1 truncate font-medium text-zinc-200">{display_name} (You)</span>
@@ -960,8 +1266,9 @@ export default function MeetRoom() {
                             </div>
                             {/* Others */}
                             {allPeers.map(p => (
-                                <div key={p.peer_id} className="group flex items-center gap-2 rounded-lg px-3 py-2 text-xs transition hover:bg-zinc-800/50">
-                                    <div className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[10px] font-bold text-white transition-colors ${p.speaking ? 'bg-green-500' : 'bg-zinc-700'}`}>
+                                <div key={p.peer_id}
+                                    className="group flex items-center gap-2 rounded-lg px-3 py-2 text-xs transition hover:bg-zinc-800/50">
+                                    <div className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[10px] font-bold text-white ${p.speaking ? 'bg-green-500' : 'bg-zinc-700'}`}>
                                         {p.display_name.charAt(0).toUpperCase()}
                                     </div>
                                     <span className="min-w-0 flex-1 truncate text-zinc-300">{p.display_name}</span>
@@ -970,8 +1277,9 @@ export default function MeetRoom() {
                                         {p.hand_raised && <Hand className="h-3 w-3 text-yellow-400" />}
                                         {p.role === 'host' && <Shield className="h-3 w-3 text-primary" />}
                                         {is_owner && p.role !== 'host' && (
-                                            <button onClick={() => kickParticipant(p.peer_id)}
-                                                title="Remove from meeting"
+                                            <button
+                                                onClick={() => api.patch(`/meet/${room.uid}/kick/${p.peer_id}`).catch(() => {})}
+                                                title="Remove"
                                                 className="ml-0.5 hidden rounded p-0.5 text-zinc-500 transition hover:bg-red-600/20 hover:text-red-400 group-hover:block">
                                                 <UserX className="h-3.5 w-3.5" />
                                             </button>
@@ -984,52 +1292,61 @@ export default function MeetRoom() {
                 )}
             </div>
 
-            {/* ── Controls ────────────────────────────────────────────── */}
-            <footer className="flex shrink-0 items-center justify-center gap-2 border-t border-zinc-800 py-3">
-                <button onClick={toggleAudio} title={audioOn ? 'Mute' : 'Unmute'}
-                    className={`flex h-11 w-11 items-center justify-center rounded-full transition ${audioOn ? 'bg-zinc-700 hover:bg-zinc-600' : 'bg-red-600 hover:bg-red-500'}`}>
+            {/* ── Controls ───────────────────────────────────────────── */}
+            <footer className="flex shrink-0 items-center justify-center gap-2 border-t border-zinc-800/80 bg-zinc-950/90 py-3 backdrop-blur">
+                <ControlBtn active={audioOn} onClick={toggleAudio} title={audioOn ? 'Mute' : 'Unmute'}>
                     {audioOn ? <Mic className="h-5 w-5" /> : <MicOff className="h-5 w-5" />}
-                </button>
+                </ControlBtn>
 
                 {room.video_enabled && (
-                    <button onClick={toggleVideo} title={videoOn ? 'Turn off camera' : 'Turn on camera'}
-                        className={`flex h-11 w-11 items-center justify-center rounded-full transition ${videoOn ? 'bg-zinc-700 hover:bg-zinc-600' : 'bg-red-600 hover:bg-red-500'}`}>
+                    <ControlBtn active={videoOn} onClick={toggleVideo} title={videoOn ? 'Camera off' : 'Camera on'}>
                         {videoOn ? <Video className="h-5 w-5" /> : <VideoOff className="h-5 w-5" />}
-                    </button>
+                    </ControlBtn>
                 )}
 
                 {room.screen_share_enabled && (
-                    <button onClick={screenStream ? stopScreenShare : startScreenShare}
-                        className={`flex h-11 w-11 items-center justify-center rounded-full transition ${screenStream ? 'bg-blue-600 ring-2 ring-blue-400/40 hover:bg-blue-500' : 'bg-zinc-700 hover:bg-zinc-600'}`}>
+                    <ControlBtn
+                        blue active={!!screenStream}
+                        onClick={screenStream ? stopScreenShare : startScreenShare}
+                        title={screenStream ? 'Stop sharing' : 'Share screen'}>
                         {screenStream ? <ScreenShareOff className="h-5 w-5" /> : <ScreenShare className="h-5 w-5" />}
-                    </button>
+                    </ControlBtn>
                 )}
 
-                <button onClick={toggleHand}
-                    className={`flex h-11 w-11 items-center justify-center rounded-full transition ${handRaised ? 'bg-yellow-500 ring-2 ring-yellow-400/40 hover:bg-yellow-400' : 'bg-zinc-700 hover:bg-zinc-600'}`}>
+                <ControlBtn yellow active={handRaised} onClick={toggleHand} title={handRaised ? 'Lower hand' : 'Raise hand'}>
                     <Hand className="h-5 w-5" />
-                </button>
+                </ControlBtn>
 
                 {room.recording_enabled && is_owner && (
-                    <button onClick={rec.active ? stopRecording : startRecording}
-                        className={`flex h-11 w-11 items-center justify-center rounded-full transition ${rec.active ? 'bg-red-700 ring-2 ring-red-500/40 hover:bg-red-600' : 'bg-zinc-700 hover:bg-zinc-600'}`}>
-                        {rec.active ? <Square className="h-4 w-4 fill-white" /> : <Circle className="h-4 w-4" />}
-                    </button>
+                    <ControlBtn
+                        active={!rec.active}
+                        onClick={rec.active ? stopRecording : startRecording}
+                        title={rec.active ? 'Stop recording' : 'Start recording'}>
+                        {rec.active
+                            ? <Square className="h-4 w-4 fill-white" />
+                            : <Circle className="h-4 w-4" />}
+                    </ControlBtn>
                 )}
 
                 {room.chat_enabled && (
-                    <button onClick={() => { setChatOpen(c => !c); setPanelOpen(false); }}
-                        className={`flex h-11 w-11 items-center justify-center rounded-full transition ${chatOpen ? 'bg-primary ring-2 ring-primary/30' : 'bg-zinc-700 hover:bg-zinc-600'}`}>
+                    <ControlBtn
+                        blue active={chatOpen}
+                        onClick={() => { setChatOpen(c => !c); setPanelOpen(false); }}
+                        title="Chat">
                         <MessageSquare className="h-5 w-5" />
-                    </button>
+                    </ControlBtn>
                 )}
 
-                <button onClick={() => { setPanelOpen(p => !p); setChatOpen(false); }}
-                    className={`flex h-11 w-11 items-center justify-center rounded-full transition ${panelOpen ? 'bg-primary ring-2 ring-primary/30' : 'bg-zinc-700 hover:bg-zinc-600'}`}>
+                <ControlBtn
+                    blue active={panelOpen}
+                    onClick={() => { setPanelOpen(p => !p); setChatOpen(false); }}
+                    title="Participants">
                     <Users className="h-5 w-5" />
-                </button>
+                </ControlBtn>
 
-                <button onClick={() => is_owner ? setHostDialog(true) : leaveRoom()}
+                <button
+                    onClick={() => is_owner ? setHostDialog(true) : leaveRoom()}
+                    title="Leave"
                     className="flex h-11 w-14 items-center justify-center rounded-full bg-red-600 transition hover:bg-red-500">
                     <PhoneOff className="h-5 w-5" />
                 </button>

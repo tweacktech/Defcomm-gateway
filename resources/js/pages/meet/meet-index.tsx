@@ -77,12 +77,12 @@ function CreateModal({ onClose }: { onClose: () => void }) {
     const [mode, setMode]           = useState<'now' | 'later'>('now');
     const [name, setName]           = useState('');
     const [password, setPassword]   = useState('');
-    const [maxP, setMaxP]           = useState('50');
+    const [maxP, setMaxP]           = useState('20');
     const [schedDate, setSchedDate] = useState('');
     const [schedTime, setSchedTime] = useState('');
-    const [video, setVideo]         = useState(true);
+    const [video, setVideo]         = useState(false);
     const [screen, setScreen]       = useState(true);
-    const [waiting, setWaiting]     = useState(false);
+    const [waiting, setWaiting]     = useState(true);
     const [recording, setRecording] = useState(false);
     const [creating, setCreating]   = useState(false);
 

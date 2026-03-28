@@ -4,9 +4,13 @@ namespace App\Http\Controllers;
 
 use App\Events\Meet\ParticipantJoined;
 use App\Events\Meet\ParticipantLeft;
+use App\Events\Meet\ParticipantMediaUpdated;
+use App\Events\Meet\RecordingStarted;
+use App\Events\Meet\RecordingStopped;
 use App\Events\Meet\RoomEnded;
 use App\Events\Meet\SignalSent;
 use App\Models\MeetParticipant;
+use App\Models\MeetRecording;
 use App\Models\MeetRoom;
 use App\Traits\LogsActivity;
 use Illuminate\Http\JsonResponse;
@@ -16,6 +20,7 @@ use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
 use Inertia\Inertia;
 use Inertia\Response;
+use Storage;
 
 class MeetController extends Controller
 {
@@ -59,7 +64,11 @@ class MeetController extends Controller
         $room = MeetRoom::where('uid', $uid)
             ->with(['owner:id,name'])
             ->withCount('activeParticipants')
-            ->firstOrFail();
+            ->first();
+
+        if ($room == null) {
+            return redirect()->back()->with('error', 'Meeting code invalid. Please check and try again.');
+        }
 
         // ── Room ended ────────────────────────────────────────────────────────
         if ($room->isEnded()) {
@@ -163,17 +172,24 @@ class MeetController extends Controller
     /**
      * PATCH /meet/{uid}/end — end room (host only)
      */
-    public function end(Request $request, MeetRoom $room): JsonResponse
+    public function end(Request $request, string $uid): JsonResponse
     {
-        abort_unless($room->owner_id === $request->user()->id, 403);
+        try {
 
-        $room->end();
+            $room = MeetRoom::where('uid', $uid)->firstOrFail();
+            abort_unless($room->owner_id === $request->user()->id, 403);
 
-        broadcast(new RoomEnded($room))->toOthers();
+            $room->end();
 
-        $this->log('ended', "Ended meet room {$room->uid}", 'meet', $room);
+            broadcast(new RoomEnded($room))->toOthers();
 
-        return response()->json(['status' => 'ended']);
+            $this->log('ended', "Ended meet room {$room->uid}", 'meet', $room);
+
+            return response()->json(['status' => 'ended']);
+        } catch (\Exception $e) {
+            \Log::error('Error in end: ' . $e->getMessage());
+            return response()->json(['error' => 'Failed to end room'], 500);
+        }
     }
 
     // =========================================================================
@@ -266,13 +282,29 @@ class MeetController extends Controller
 
         $isAdmitted = $isOwner || !$room->waiting_room;
 
-          $participant = MeetParticipant::updateOrCreate(
+        // $participant = MeetParticipant::updateOrCreate(
+        //     [
+        //         'room_id' => $room->id,
+        //         'user_id' => $userId,
+        //         'display_name' => $validated['display_name'],
+        //         'peer_id' => $validated['peer_id'],
+        //     ],
+        //     [
+        //         'user_id' => $userId,
+        //         'display_name' => $validated['display_name'],
+        //         'peer_id' => $validated['peer_id'],
+        //         'role' => $isOwner ? 'host' : 'participant',
+        //         'is_admitted' => $isOwner || !$room->waiting_room,
+        //         'video_on' => $validated['video_on'] ?? false,
+        //         'audio_on' => $validated['audio_on'] ?? false,
+        //         'joined_at' => now(),
+        //     ]
+        // );
+
+        $participant = MeetParticipant::create(
+
             [
                 'room_id' => $room->id,
-                'user_id' => $userId,
-                'display_name' => $validated['display_name'],
-            ],
-            [
                 'user_id' => $userId,
                 'display_name' => $validated['display_name'],
                 'peer_id' => $validated['peer_id'],
@@ -283,12 +315,13 @@ class MeetController extends Controller
                 'joined_at' => now(),
             ]
         );
-        
+
         if ($isAdmitted) {
             // Tell everyone else this participant joined
             broadcast(new ParticipantJoined($room, $participant))->toOthers();
         } else {
             // Tell the host someone is waiting to be admitted
+            \Log::error('startes');
             broadcast(new \App\Events\Meet\ParticipantWaiting($room, $participant))->toOthers();
         }
 
@@ -303,26 +336,31 @@ class MeetController extends Controller
      */
     public function leave(Request $request, string $uid): JsonResponse
     {
-        $participant = MeetParticipant::where('peer_id', $request->input('peer_id'))
-            ->whereNull('left_at')
-            ->firstOrFail();
+        try {
+            $participant = MeetParticipant::where('peer_id', $request->input('peer_id'))
+                ->whereNull('left_at')
+                ->firstOrFail();
 
-        $participant->leave();
+            $participant->leave();
 
-        $room = MeetRoom::find($participant->room_id);
-        $userId = $request->user()?->id;
+            $room = MeetRoom::find($participant->room_id);
+            $userId = $request->user()?->id;
 
-        broadcast(new ParticipantLeft($room, $participant))->toOthers();
+            broadcast(new ParticipantLeft($room, $participant))->toOthers();
 
-        // Auto-end if owner left and room is now empty
-        if ($room && $userId && $room->owner_id === $userId) {
-            if ($room->activeParticipants()->count() === 0) {
-                $room->end();
-                broadcast(new RoomEnded($room))->toOthers();
+            // Auto-end if owner left and room is now empty
+            if ($room && $userId && $room->owner_id === $userId) {
+                if ($room->activeParticipants()->count() === 0) {
+                    // $room->end();
+                    // broadcast(new RoomEnded($room))->toOthers();
+                }
             }
-        }
 
-        return response()->json(['status' => 'left']);
+            return response()->json(['status' => 'left']);
+        } catch (\Exception $e) {
+            \Log::error('Error in leave: ' . $e->getMessage());
+            return response()->json(['error' => 'Failed to leave room'], 500);
+        }
     }
 
     /**
@@ -355,19 +393,24 @@ class MeetController extends Controller
      */
     public function admit(Request $request, string $uid, string $peerId): JsonResponse
     {
-        $room = MeetRoom::where('uid', $uid)->firstOrFail();
-        abort_unless($room->owner_id === $request->user()?->id, 403);
+        try {
+            $room = MeetRoom::where('uid', $uid)->firstOrFail();
+            abort_unless($room->owner_id === $request->user()?->id, 403);
 
-        $participant = MeetParticipant::where('room_id', $room->id)
-            ->where('peer_id', $peerId)
-            ->firstOrFail();
+            $participant = MeetParticipant::where('room_id', $room->id)
+                ->where('peer_id', $peerId)
+                ->firstOrFail();
 
-        $participant->update(['is_admitted' => true]);
+            $participant->update(['is_admitted' => true]);
 
-        // Broadcast to ALL including the admitted participant (they're waiting for this)
-        broadcast(new ParticipantJoined($room, $participant));
+            // Broadcast to ALL including the admitted participant (they're waiting for this)
+            broadcast(new ParticipantJoined($room, $participant));
 
-        return response()->json(['status' => 'admitted']);
+            return response()->json(['status' => 'admitted']);
+        } catch (\Exception $e) {
+            \Log::error('Error in admit: ' . $e->getMessage());
+            return response()->json(['error' => 'Failed to admit participant'], 500);
+        }
     }
 
     /**
@@ -478,33 +521,39 @@ class MeetController extends Controller
      */
     public function recordingChunk(Request $request, string $uid, int $recordingId): JsonResponse
     {
-        $recording = MeetRecording::where('id', $recordingId)
-            ->where('status', 'recording')
-            ->firstOrFail();
+        try {
+            $recording = MeetRecording::where('id', $recordingId)
+                ->where('status', 'recording')
+                ->firstOrFail();
 
-        $chunk = $request->getContent();
+            $chunk = $request->getContent();
 
-        if (empty($chunk)) {
-            return response()->json(['error' => 'Empty chunk'], 400);
+            if (empty($chunk)) {
+                return response()->json(['error' => 'Empty chunk'], 400);
+            }
+
+            $disk = $recording->disk ?? 'local';
+            $dir = "meet-recordings/{$recording->room_id}";
+            $base = $recording->path ?? "{$dir}/rec_{$recordingId}";
+
+            // Append chunk to the recording file
+            Storage::disk($disk)->append("{$base}.webm", $chunk);
+
+            // Update path + size on first chunk
+            if (!$recording->path) {
+                $recording->update(['path' => "{$base}.webm"]);
+            }
+
+            // Update size
+            $size = Storage::disk($disk)->size("{$base}.webm");
+            $recording->update(['size' => $size]);
+
+            return response()->json(['status' => 'ok', 'size' => $size]);
+
+        } catch (\Exception $e) {
+            \Log::error('Error in recordingChunk: ' . $e->getMessage());
+            return response()->json(['error' => 'Failed to process chunk'], 500);
         }
-
-        $disk = $recording->disk ?? 'local';
-        $dir = "meet-recordings/{$recording->room_id}";
-        $base = $recording->path ?? "{$dir}/rec_{$recordingId}";
-
-        // Append chunk to the recording file
-        Storage::disk($disk)->append("{$base}.webm", $chunk);
-
-        // Update path + size on first chunk
-        if (!$recording->path) {
-            $recording->update(['path' => "{$base}.webm"]);
-        }
-
-        // Update size
-        $size = Storage::disk($disk)->size("{$base}.webm");
-        $recording->update(['size' => $size]);
-
-        return response()->json(['status' => 'ok', 'size' => $size]);
     }
 
     /**
