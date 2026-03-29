@@ -242,11 +242,14 @@ class MeetController extends Controller
             }
         }
 
+
         $request->session()->put("meet_guest_{$room->id}", [
             'name' => $validated['display_name'],
             'admitted' => true,
             'admitted_at' => now()->toIso8601String(),
         ]);
+
+
 
         return redirect()->route('meet.room', $uid);
     }
@@ -282,29 +285,26 @@ class MeetController extends Controller
 
         $isAdmitted = $isOwner || !$room->waiting_room;
 
-        // $participant = MeetParticipant::updateOrCreate(
-        //     [
-        //         'room_id' => $room->id,
-        //         'user_id' => $userId,
-        //         'display_name' => $validated['display_name'],
-        //         'peer_id' => $validated['peer_id'],
-        //     ],
-        //     [
-        //         'user_id' => $userId,
-        //         'display_name' => $validated['display_name'],
-        //         'peer_id' => $validated['peer_id'],
-        //         'role' => $isOwner ? 'host' : 'participant',
-        //         'is_admitted' => $isOwner || !$room->waiting_room,
-        //         'video_on' => $validated['video_on'] ?? false,
-        //         'audio_on' => $validated['audio_on'] ?? false,
-        //         'joined_at' => now(),
-        //     ]
-        // );
 
-        $participant = MeetParticipant::create(
+        // $checker = MeetParticipant::where('room_id', $room->id)
+        //     ->where('user_id', $userId)
+        //     ->where('left_at', null)
+        //     ->first();
 
+        // \Log::info('ddd', [$checker]);
+
+        // if (!empty($checker)) {
+        //     return redirect()->back()->with('error', 'User already Joined');
+        // }
+
+        $participant = MeetParticipant::updateOrCreate(
             [
                 'room_id' => $room->id,
+                'user_id' => $userId,
+                'display_name' => $validated['display_name'],
+                'peer_id' => $validated['peer_id'],
+            ],
+            [
                 'user_id' => $userId,
                 'display_name' => $validated['display_name'],
                 'peer_id' => $validated['peer_id'],
@@ -316,12 +316,26 @@ class MeetController extends Controller
             ]
         );
 
+        // $participant = MeetParticipant::create(
+
+        //     [
+        //         'room_id' => $room->id,
+        //         'user_id' => $userId,
+        //         'display_name' => $validated['display_name'],
+        //         'peer_id' => $validated['peer_id'],
+        //         'role' => $isOwner ? 'host' : 'participant',
+        //         'is_admitted' => $isOwner || !$room->waiting_room,
+        //         'video_on' => $validated['video_on'] ?? false,
+        //         'audio_on' => $validated['audio_on'] ?? false,
+        //         'joined_at' => now(),
+        //     ]
+        // );
+
         if ($isAdmitted) {
             // Tell everyone else this participant joined
             broadcast(new ParticipantJoined($room, $participant))->toOthers();
         } else {
             // Tell the host someone is waiting to be admitted
-            \Log::error('startes');
             broadcast(new \App\Events\Meet\ParticipantWaiting($room, $participant))->toOthers();
         }
 
@@ -352,7 +366,7 @@ class MeetController extends Controller
             if ($room && $userId && $room->owner_id === $userId) {
                 if ($room->activeParticipants()->count() === 0) {
                     // $room->end();
-                    // broadcast(new RoomEnded($room))->toOthers();
+                    broadcast(new RoomEnded($room))->toOthers();
                 }
             }
 
