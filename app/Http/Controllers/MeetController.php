@@ -242,14 +242,11 @@ class MeetController extends Controller
             }
         }
 
-
         $request->session()->put("meet_guest_{$room->id}", [
             'name' => $validated['display_name'],
             'admitted' => true,
             'admitted_at' => now()->toIso8601String(),
         ]);
-
-
 
         return redirect()->route('meet.room', $uid);
     }
@@ -417,8 +414,14 @@ class MeetController extends Controller
 
             $participant->update(['is_admitted' => true]);
 
-            // Broadcast to ALL including the admitted participant (they're waiting for this)
-            broadcast(new ParticipantJoined($room, $participant));
+            // 1️⃣  Tell the admitted participant they're in (targeted by peer_id).
+            //     Broadcasting to ALL so the waiting participant (who is on the
+            //     wait-echo channel) receives it.
+            broadcast(new \App\Events\Meet\ParticipantAdmitted($room, $participant));
+
+            // 2️⃣  Tell everyone else (existing peers) a new participant joined
+            //     so they can build PeerConnections with them.
+            broadcast(new ParticipantJoined($room, $participant))->toOthers();
 
             return response()->json(['status' => 'admitted']);
         } catch (\Exception $e) {
@@ -426,6 +429,7 @@ class MeetController extends Controller
             return response()->json(['error' => 'Failed to admit participant'], 500);
         }
     }
+
 
     /**
      * PATCH /meet/{uid}/kick/{peerId} — remove participant (host only)

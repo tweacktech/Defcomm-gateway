@@ -1,42 +1,38 @@
 // resources/js/pages/meet/room.tsx
 // ─────────────────────────────────────────────────────────────────────────────
-// Complete rewrite v3 — PATCHED (all 6 WebRTC bugs fixed)
+// v4 — Admitted-event rewrite + 3 targeted bug fixes
 //
-// FIXES applied over v3:
+// CHANGES over v3-patched:
 //
-// FIX 1 — buildPC: force startMedia() when neither mediaReady nor localStream
-//          exists. Previously a joining peer could enter buildPC before media
-//          was ever initialised, producing a PeerConnection with zero tracks
-//          (= silence + black video on the remote side).
+// ADMIT-1 — buildWaitEcho now listens for `.meet.participant-admitted` instead
+//            of `.meet.participant-joined`. The admitted event carries
+//            `admitted_peer_id`, so the waiting participant can self-identify
+//            unambiguously. The old approach listened for participant-joined
+//            which could fire for OTHER people joining, causing a false
+//            transition out of the waiting overlay.
 //
-// FIX 2 — startScreen: if no video sender exists yet (camera was off when
-//          screen share started), fall back to addTrack() instead of silently
-//          skipping. onnegotiationneeded then fires the re-offer automatically.
+// ADMIT-2 — buildLiveEcho also listens for `.meet.participant-admitted` so
+//            existing peers add the newly admitted participant to their peers
+//            map and call sendOffer() for them — matching what participant-joined
+//            already did, but now without double-processing.
 //
-// FIX 3 — buildPC: register pc.onnegotiationneeded so that addTrack() calls
-//          (screen-share fallback, or any future track addition) automatically
-//          trigger a re-offer without manual intervention.
+// BUG-FIX-1 — buildPC track-adding block: replaces the broken double
+//              startMedia() call with a single clean await path:
+//                if (!localStream) await startMedia()  (guaranteed single call)
+//              then reads from R.current.localStream after the await resolves.
 //
-// FIX 4 — VideoTile: explicit useEffect forces el.muted = false for remote
-//          elements and calls el.play() after srcObject is set, defeating
-//          browsers that silently ignore autoPlay on dynamically-assigned
-//          streams.
+// BUG-FIX-2 — startScreen: when no video sender exists, addTrack() is called
+//              AND a manual re-offer is sent for that specific pc (instead of
+//              relying solely on onnegotiationneeded which may not fire when
+//              the pc already has a data channel or other quirks in Firefox).
 //
-// FIX 5 — WaitingOverlay: onResend prop is now wired to the real /join
-//          endpoint from the render site instead of being left unwired.
+// BUG-FIX-3 — buildPC: onnegotiationneeded is registered with a
+//              `negotiating` lock flag per-pc to prevent concurrent re-offers
+//              from racing each other (e.g. screen share + ICE restart overlap).
 //
-// FIX 6 — handleOffer / handleAnswer: add a 500ms deferred flushIce() after
-//          the immediate flush so ICE candidates that arrive during signaling
-//          lag (common over WebSocket round-trips) are not permanently lost.
-//
-// Architecture notes (unchanged from v3):
-// 1. GUEST SELF-DETECTION via peer_id only — never auth.user.id.
-// 2. WAITING ROOM uses a separate waitEcho instance.
-// 3. MEDIA BEFORE ECHO — startMedia() awaited before buildLiveEcho().
-// 4. OFFER STRATEGY — new joiner offers; existing peers pre-warm PC only.
-// 5. ICE BUFFERING — queue + flush after setRemoteDescription.
-// 6. SCROLL — flex-1 min-h-0 grid with overflow-y-auto.
-// 7. SCREEN LOCK — beforeunload + popstate guard.
+// Unchanged from v3-patched:
+//   FIX 4 (VideoTile unmute), FIX 5 (WaitingOverlay resend wired),
+//   FIX 6 (deferred flushIce), screen lock, ICE buffering, chat dedup.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { Head, usePage, router } from '@inertiajs/react';
@@ -100,9 +96,7 @@ const http = {
 const fmtDur = (s: number) =>
     `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 
-function makeEcho(
-    key: string, host: string, port: number, peer_id: string,
-): Echo<any> {
+function makeEcho(key: string, host: string, port: number, peer_id: string): Echo<any> {
     (window as any).Pusher = Pusher;
     return new Echo({
         broadcaster: 'reverb',
@@ -117,7 +111,6 @@ function makeEcho(
     });
 }
 
-/** Attach a voice-activity detector to a stream. Returns a cleanup fn. */
 function speakDetector(
     stream: MediaStream,
     onChange: (active: boolean) => void,
@@ -153,7 +146,6 @@ function VideoTile({
 }) {
     const vRef = useRef<HTMLVideoElement>(null);
 
-    // FIX 4a — assign srcObject
     useEffect(() => {
         const el = vRef.current;
         if (!el) return;
@@ -161,15 +153,14 @@ function VideoTile({
         if (el.srcObject !== src) el.srcObject = src;
     }, [peer.stream, peer.video_on]);
 
-    // FIX 4b — force remote elements unmuted and trigger play.
-    // Some browsers persist the muted attribute or silently suppress autoPlay
-    // when srcObject is assigned programmatically after mount.
+    // Force remote elements unmuted — browsers can silently persist muted
+    // state on programmatically-assigned srcObjects (autoplay policy).
     useEffect(() => {
         const el = vRef.current;
         if (!el || local) return;
         el.muted = false;
         if (peer.stream && peer.video_on) {
-            el.play().catch(() => {/* autoplay policy — user gesture needed */});
+            el.play().catch(() => {});
         }
     }, [peer.stream, peer.video_on, local]);
 
@@ -209,7 +200,17 @@ function ScreenView({
     stream, owner, isLocal, onStop,
 }: { stream: MediaStream; owner: string; isLocal: boolean; onStop?: () => void }) {
     const ref = useRef<HTMLVideoElement>(null);
-    useEffect(() => { if (ref.current) ref.current.srcObject = stream; }, [stream]);
+
+    useEffect(() => {
+        const el = ref.current;
+        if (!el) return;
+        el.srcObject = stream;
+        if (!isLocal) {
+            el.muted = false;
+            el.play().catch(() => {});
+        }
+    }, [stream, isLocal]);
+
     return (
         <div className="relative h-full w-full overflow-hidden rounded-xl bg-black ring-2 ring-blue-500/30">
             <video ref={ref} autoPlay muted={isLocal} playsInline className="h-full w-full object-contain" />
@@ -227,11 +228,7 @@ function ScreenView({
     );
 }
 
-// FIX 5 — onResend is required (not optional). The call site must wire it
-// to the real API — see the render section below.
-function WaitingOverlay({
-    name, onResend,
-}: { name: string; onResend: () => Promise<void> }) {
+function WaitingOverlay({ name, onResend }: { name: string; onResend: () => Promise<void> }) {
     const [status, setStatus] = useState<'idle' | 'sending' | 'sent'>('idle');
 
     const handleResend = async () => {
@@ -465,6 +462,8 @@ export default function MeetRoom() {
         videoOn:      defVideo,
         audioOn:      defAudio,
         handRaised:   false,
+        // BUG-FIX-3: per-pc negotiation lock to prevent concurrent re-offers
+        negotiating:  new Map<string, boolean>(),
         pcs:          new Map<string, RTCPeerConnection>(),
         iceBuf:       new Map<string, RTCIceCandidate[]>(),
         liveEcho:     null as Echo<any> | null,
@@ -478,8 +477,8 @@ export default function MeetRoom() {
         seenMsgs:     new Set<string>(),
         inMeeting:    true,
         pendingNav:   null as (() => void) | null,
-        mediaReady:   null as Promise<MediaStream> | null,
-        mediaResolve: null as ((s: MediaStream) => void) | null,
+        // Single promise that resolves when media is ready — prevents double-init
+        mediaReady:   null as Promise<MediaStream | null> | null,
     });
 
     const chatEndRef = useRef<HTMLDivElement>(null);
@@ -515,28 +514,39 @@ export default function MeetRoom() {
 
     // ── Media ─────────────────────────────────────────────────────────────────
 
+    /**
+     * Idempotent — safe to call multiple times. The second call just awaits
+     * the same promise that the first call created. This avoids the double
+     * getUserMedia race that caused BUG-FIX-1.
+     */
     const startMedia = useCallback(async (): Promise<MediaStream | null> => {
-        if (!R.current.mediaReady) {
-            R.current.mediaReady = new Promise(res => { R.current.mediaResolve = res; });
-        }
-        try {
-            const s = await navigator.mediaDevices.getUserMedia({
-                video: room.video_enabled,
-                audio: room.audio_enabled,
-            });
-            s.getVideoTracks().forEach(t => { t.enabled = defVideo; });
-            s.getAudioTracks().forEach(t => { t.enabled = defAudio; });
-            R.current.localStream = s;
-            R.current.mediaResolve?.(s);
-            if (room.audio_enabled) {
-                R.current.speak.get('__local')?.();
-                R.current.speak.set('__local', speakDetector(s, v => setLocalSpeak(v)));
+        // If already initialised, return immediately
+        if (R.current.localStream) return R.current.localStream;
+
+        // If already in flight, wait for the same promise
+        if (R.current.mediaReady) return R.current.mediaReady;
+
+        R.current.mediaReady = (async () => {
+            try {
+                const s = await navigator.mediaDevices.getUserMedia({
+                    video: true,   // always acquire; track.enabled controls mute
+                    audio: true,
+                });
+                s.getVideoTracks().forEach(t => { t.enabled = defVideo; });
+                s.getAudioTracks().forEach(t => { t.enabled = defAudio; });
+                R.current.localStream = s;
+                if (room.audio_enabled) {
+                    R.current.speak.get('__local')?.();
+                    R.current.speak.set('__local', speakDetector(s, v => setLocalSpeak(v)));
+                }
+                return s;
+            } catch {
+                setVideoOn(false);
+                return null;
             }
-            return s;
-        } catch {
-            setVideoOn(false);
-            return null;
-        }
+        })();
+
+        return R.current.mediaReady;
     }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
     const stopMedia = useCallback(() => {
@@ -566,27 +576,36 @@ export default function MeetRoom() {
     const removePeer = useCallback((pid: string) => {
         R.current.speak.get(pid)?.(); R.current.speak.delete(pid);
         R.current.iceBuf.delete(pid);
+        R.current.negotiating.delete(pid);
         R.current.pcs.get(pid)?.close(); R.current.pcs.delete(pid);
         setPeers(prev => { const m = new Map(prev); m.delete(pid); return m; });
     }, []);
 
+    /**
+     * BUG-FIX-1: clean single-path track-adding.
+     *
+     * Old code had two separate `if (!localStream)` blocks that could both
+     * call startMedia() and then both try to add tracks — or worse, the second
+     * block ran before the first await resolved. Now there is a single await
+     * at the top, and tracks are added once from R.current.localStream.
+     *
+     * BUG-FIX-3: onnegotiationneeded uses a per-pc `negotiating` lock so
+     * concurrent re-offers (screen share + ICE restart) can't race each other.
+     */
     const buildPC = useCallback(async (remotePeerId: string): Promise<RTCPeerConnection> => {
-        // Tear down zombie
+        // Tear down zombie connection if one exists
         const old = R.current.pcs.get(remotePeerId);
         if (old) { old.close(); R.current.pcs.delete(remotePeerId); }
 
-        const pc = new RTCPeerConnection({ iceServers: stun_servers });
-
-        // ── FIX 1 — guarantee tracks are added ────────────────────────────────
-        // If neither mediaReady nor localStream exists yet, force-start media
-        // before adding tracks. This covers the case where buildPC() is called
-        // (from ch.joining pre-warm, or from handleOffer) before the component's
-        // mount async block has called startMedia().
-        if (!R.current.localStream && !R.current.mediaReady) {
+        // BUG-FIX-1 — single guaranteed media-ready await
+        if (!R.current.localStream) {
             await startMedia();
         }
-        const stream = R.current.localStream
-            ?? (R.current.mediaReady ? await R.current.mediaReady : null);
+
+        const pc = new RTCPeerConnection({ iceServers: stun_servers });
+
+        // Add local tracks to the new connection
+        const stream = R.current.localStream;
         if (stream) {
             stream.getTracks().forEach(t => pc.addTrack(t, stream));
         }
@@ -616,12 +635,11 @@ export default function MeetRoom() {
             if (pc.connectionState === 'failed') pc.restartIce();
         };
 
-        // ── FIX 3 — renegotiation handler ─────────────────────────────────────
-        // Fires automatically when addTrack() is called after the initial
-        // negotiation (e.g. screen-share fallback path in startScreen).
-        // Guard with signalingState === 'stable' to avoid re-entrant offers.
+        // BUG-FIX-3 — negotiation lock prevents concurrent re-offers
         pc.onnegotiationneeded = async () => {
             if (pc.signalingState !== 'stable') return;
+            if (R.current.negotiating.get(remotePeerId)) return;
+            R.current.negotiating.set(remotePeerId, true);
             try {
                 const offer = await pc.createOffer();
                 await pc.setLocalDescription(offer);
@@ -631,6 +649,8 @@ export default function MeetRoom() {
                 });
             } catch (e) {
                 console.warn('[RTC] renegotiation failed', e);
+            } finally {
+                R.current.negotiating.set(remotePeerId, false);
             }
         };
 
@@ -659,9 +679,7 @@ export default function MeetRoom() {
         try {
             await pc.setRemoteDescription(new RTCSessionDescription(payload));
             await flushIce(from, pc);
-            // FIX 6a — deferred retry for ICE candidates that arrive during
-            // the WebSocket round-trip between setRemoteDescription and the
-            // remote peer's ICE gathering completing.
+            // Deferred flush for ICE candidates arriving during signaling lag
             setTimeout(() => flushIce(from, pc), 500);
             const answer = await pc.createAnswer();
             await pc.setLocalDescription(answer);
@@ -682,7 +700,7 @@ export default function MeetRoom() {
         try {
             await pc.setRemoteDescription(new RTCSessionDescription(payload));
             await flushIce(from, pc);
-            // FIX 6b — same deferred retry on the answer path.
+            // Deferred flush for ICE candidates arriving during signaling lag
             setTimeout(() => flushIce(from, pc), 500);
         } catch (e) {
             console.warn('[RTC] handleAnswer ←', from, e);
@@ -728,6 +746,7 @@ export default function MeetRoom() {
         R.current.speak.forEach(fn => fn());
         R.current.pcs.forEach(pc => pc.close());
         R.current.pcs.clear();
+        R.current.negotiating.clear();
         R.current.liveEcho?.leave(`meet.${room.uid}`);
         R.current.waitEcho?.leave(`meet.${room.uid}`);
     }, [stopMedia, room.uid]);
@@ -819,6 +838,33 @@ export default function MeetRoom() {
             });
         });
 
+        // ADMIT-2 — existing peers learn about newly admitted participants via
+        // the dedicated admitted event, and proactively send them an offer.
+        ch.listen('.meet.participant-admitted', (data: any) => {
+            if (data.admitted_peer_id === peer_id) return; // ignore self
+            // Remove from waiting list (host's view)
+            setWaiting(wp => wp.filter(p => p.peer_id !== data.admitted_peer_id));
+            // Add to peers map if not already present
+            setPeers(prev => {
+                const m = new Map(prev);
+                if (!m.has(data.admitted_peer_id)) {
+                    m.set(data.admitted_peer_id, {
+                        peer_id:        data.admitted_peer_id,
+                        display_name:   data.display_name,
+                        role:           data.role ?? 'participant',
+                        video_on:       data.video_on ?? false,
+                        audio_on:       data.audio_on ?? false,
+                        screen_sharing: false,
+                        hand_raised:    false,
+                        speaking:       false,
+                    });
+                }
+                return m;
+            });
+            // Send offer so the admitted participant gets our stream
+            sendOffer(data.admitted_peer_id);
+        });
+
         ch.listen('.meet.participant-left',    (data: any) => removePeer(data.peer_id));
 
         ch.listen('.meet.participant-waiting', (data: any) => {
@@ -873,6 +919,12 @@ export default function MeetRoom() {
 
     // ── Waiting-room channel ──────────────────────────────────────────────────
 
+    /**
+     * ADMIT-1 — listen for `.meet.participant-admitted` instead of
+     * `.meet.participant-joined`. The admitted event carries `admitted_peer_id`
+     * so we can check if it's specifically *us* being let in, rather than
+     * accidentally transitioning when someone else joins the room.
+     */
     const buildWaitEcho = useCallback(() => {
         if (R.current.waitEcho) return;
 
@@ -881,8 +933,9 @@ export default function MeetRoom() {
 
         const ch = echo.join(`meet.${room.uid}`);
 
-        ch.listen('.meet.participant-joined', async (data: any) => {
-            if (data.peer_id !== peer_id) return;
+        ch.listen('.meet.participant-admitted', async (data: any) => {
+            // Only react when WE are the admitted participant
+            if (data.admitted_peer_id !== peer_id) return;
 
             echo.leave(`meet.${room.uid}`);
             R.current.waitEcho = null;
@@ -941,10 +994,15 @@ export default function MeetRoom() {
         broadcastMedia({ hand_raised: next });
     };
 
-    // ── FIX 2 — screen share with sender fallback ─────────────────────────────
-    // If camera was off when screen share starts there will be no video sender.
-    // In that case we addTrack() instead, which triggers onnegotiationneeded
-    // (FIX 3) to re-offer automatically.
+    /**
+     * BUG-FIX-2: Screen share with per-pc manual renegotiation when addTrack
+     * is used (no existing video sender).
+     *
+     * replaceTrack() is codec-stable — onnegotiationneeded does NOT fire.
+     * addTrack() should fire onnegotiationneeded, but Firefox and some Safari
+     * versions skip it when there's already a data channel or the pc is in a
+     * quirky state. Explicit per-pc re-offer is the reliable fallback.
+     */
     const startScreen = async () => {
         try {
             const ss    = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
@@ -952,20 +1010,36 @@ export default function MeetRoom() {
             R.current.screenStream = ss;
             setScreenStream(ss);
 
-            R.current.pcs.forEach(pc => {
+            R.current.pcs.forEach(async (pc, remotePeerId) => {
                 const sender = pc.getSenders().find(s => s.track?.kind === 'video');
                 if (sender) {
                     // replaceTrack is codec-stable — no renegotiation needed
-                    sender.replaceTrack(track);
+                    await sender.replaceTrack(track);
                 } else {
-                    // No video sender yet — addTrack fires onnegotiationneeded
+                    // addTrack: onnegotiationneeded may not fire in all browsers
+                    // so we also send a manual re-offer for this specific pc.
                     pc.addTrack(track, ss);
+                    try {
+                        if (pc.signalingState === 'stable' && !R.current.negotiating.get(remotePeerId)) {
+                            R.current.negotiating.set(remotePeerId, true);
+                            const offer = await pc.createOffer();
+                            await pc.setLocalDescription(offer);
+                            await http.post(`/meet/${room.uid}/signal`, {
+                                to: remotePeerId, type: 'offer',
+                                payload: pc.localDescription, from_peer_id: peer_id,
+                            });
+                        }
+                    } catch (e) {
+                        console.warn('[RTC] screen renegotiation →', remotePeerId, e);
+                    } finally {
+                        R.current.negotiating.set(remotePeerId, false);
+                    }
                 }
             });
 
             track.onended = stopScreen;
             broadcastMedia({ screen_sharing: true });
-        } catch { /* user cancelled */ }
+        } catch { /* user cancelled or permission denied */ }
     };
 
     const stopScreen = useCallback(() => {
@@ -1054,7 +1128,6 @@ export default function MeetRoom() {
         if (f) f(); else leaveRoom();
     };
 
-    // ── FIX 5 — WaitingOverlay resend handler wired to real API ───────────────
     const handleResendAdmission = useCallback(async () => {
         await http.post(`/meet/${room.uid}/join`, {
             peer_id, display_name,
@@ -1095,10 +1168,12 @@ export default function MeetRoom() {
             <Head title={room.name} />
 
             {guardDialog && (
-                <GuardDialog onStay={() => { setGuardDialog(false); R.current.pendingNav = null; }} onLeave={doNav} />
+                <GuardDialog
+                    onStay={() => { setGuardDialog(false); R.current.pendingNav = null; }}
+                    onLeave={doNav}
+                />
             )}
 
-            {/* FIX 5 — onResend is now wired to the real join endpoint */}
             {!admitted && (
                 <WaitingOverlay
                     name={room.name}
@@ -1109,6 +1184,7 @@ export default function MeetRoom() {
             {is_owner && room.waiting_room && (
                 <AdmitPanel list={waiting} onAdmit={admitPeer} onDeny={denyPeer} />
             )}
+
             {hostDialog && (
                 <HostLeaveDialog
                     onEndAll={() => { setHostDialog(false); endForAll(); }}
