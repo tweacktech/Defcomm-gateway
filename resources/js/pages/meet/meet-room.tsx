@@ -37,16 +37,18 @@
 
 import { Head, usePage, router } from '@inertiajs/react';
 import axios from 'axios';
+import Echo from 'laravel-echo';
 import {
     Mic, MicOff, Video, VideoOff, ScreenShare, ScreenShareOff,
     PhoneOff, Hand, MessageSquare, Users, Copy, Check, Shield,
     ChevronLeft, Clock, X, LogOut, StopCircle, Monitor,
     Circle, Square, Download, UserX, UserCheck, Hourglass, AlertTriangle,
 } from 'lucide-react';
-import { useState, useRef, useEffect, useCallback } from 'react';
-import Echo from 'laravel-echo';
 import Pusher from 'pusher-js';
+import { useState, useRef, useEffect, useCallback } from 'react';
+import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
+import { Toaster } from '@/components/ui/sonner';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -519,6 +521,9 @@ export default function MeetRoom() {
         mediaReady:   null as Promise<MediaStream | null> | null,
         /** Prevents duplicate offer storms if both pusher `here` and hash bootstrap run. */
         initialMeshRan: false,
+        /** Fast lookup for toast notifications. */
+        peerNames: new Map<string, string>(),
+        chatOpen: false,
     });
 
     const chatEndRef = useRef<HTMLDivElement>(null);
@@ -528,6 +533,12 @@ export default function MeetRoom() {
     useEffect(() => { R.current.audioOn      = audioOn;      }, [audioOn]);
     useEffect(() => { R.current.handRaised   = handRaised;   }, [handRaised]);
     useEffect(() => { R.current.screenStream = screenStream; }, [screenStream]);
+    useEffect(() => { R.current.chatOpen    = chatOpen;     }, [chatOpen]);
+    useEffect(() => {
+        const m = new Map<string, string>();
+        for (const [id, p] of peers) m.set(id, p.display_name);
+        R.current.peerNames = m;
+    }, [peers]);
 
     // ── Screen lock ───────────────────────────────────────────────────────────
 
@@ -916,6 +927,7 @@ export default function MeetRoom() {
 
         ch.listen('.meet.participant-joined', (data: any) => {
             if (data.peer_id === peer_id) return;
+            toast.info(`${data.display_name ?? 'Participant'} joined`);
             setWaiting(wp => wp.filter(p => p.peer_id !== data.peer_id));
             setPeers(prev => {
                 const m = new Map(prev), ex = m.get(data.peer_id);
@@ -937,6 +949,7 @@ export default function MeetRoom() {
         // guest side often does not run again after a waiting-room promotion.
         ch.listen('.meet.participant-admitted', (data: any) => {
             if (data.admitted_peer_id === peer_id) return;
+            toast.info(`${data.display_name ?? 'Participant'} joined`);
             setWaiting(wp => wp.filter(p => p.peer_id !== data.admitted_peer_id));
             setPeers(prev => {
                 const m = new Map(prev);
@@ -958,7 +971,11 @@ export default function MeetRoom() {
             setTimeout(() => sendOffer(target), 120);
         });
 
-        ch.listen('.meet.participant-left',    (data: any) => removePeer(data.peer_id));
+        ch.listen('.meet.participant-left', (data: any) => {
+            const name = R.current.peerNames.get(data.peer_id) ?? 'Participant';
+            toast.message(`${name} left`);
+            removePeer(data.peer_id);
+        });
 
         ch.listen('.meet.participant-waiting', (data: any) => {
             if (!is_owner) return;
@@ -1004,6 +1021,9 @@ export default function MeetRoom() {
             if (R.current.seenMsgs.has(data.id)) return;
             R.current.seenMsgs.add(data.id);
             setMsgs(ms => [...ms, data]);
+            if (data.peer_id !== peer_id && (!R.current.chatOpen || document.hidden)) {
+                toast(`${data.display_name}: ${data.text}`);
+            }
         });
     }, [
         room.uid, peer_id, is_owner, reverb_key, reverb_host, reverb_port,
@@ -1256,6 +1276,7 @@ export default function MeetRoom() {
     return (
         <div className="relative flex h-screen flex-col bg-zinc-950 text-white">
             <Head title={room.name} />
+            <Toaster position="bottom-right" richColors closeButton />
 
             {guardDialog && (
                 <GuardDialog
