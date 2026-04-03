@@ -149,9 +149,9 @@ function VideoTile({
     useEffect(() => {
         const el = vRef.current;
         if (!el) return;
-        const src = (peer.video_on && peer.stream) ? peer.stream : null;
+        const src = peer.stream ? peer.stream : null;
         if (el.srcObject !== src) el.srcObject = src;
-    }, [peer.stream, peer.video_on]);
+    }, [peer.stream]);
 
     // Force remote elements unmuted — browsers can silently persist muted
     // state on programmatically-assigned srcObjects (autoplay policy).
@@ -159,10 +159,10 @@ function VideoTile({
         const el = vRef.current;
         if (!el || local) return;
         el.muted = false;
-        if (peer.stream && peer.video_on) {
+        if (peer.stream) {
             el.play().catch(() => {});
         }
-    }, [peer.stream, peer.video_on, local]);
+    }, [peer.stream, local]);
 
     const initial = peer.display_name[0]?.toUpperCase() ?? '?';
     const ring = peer.speaking
@@ -541,8 +541,24 @@ export default function MeetRoom() {
                 }
                 return s;
             } catch {
-                setVideoOn(false);
-                return null;
+                try {
+                    const fallback = await navigator.mediaDevices.getUserMedia({
+                        video: false,
+                        audio: true,
+                    });
+                    fallback.getAudioTracks().forEach(t => { t.enabled = defAudio; });
+                    R.current.localStream = fallback;
+                    if (room.audio_enabled) {
+                        R.current.speak.get('__local')?.();
+                        R.current.speak.set('__local', speakDetector(fallback, v => setLocalSpeak(v)));
+                    }
+                    setVideoOn(false);
+                    return fallback;
+                } catch {
+                    setVideoOn(false);
+                    setAudioOn(false);
+                    return null;
+                }
             }
         })();
 
@@ -795,7 +811,6 @@ export default function MeetRoom() {
 
         ch.joining((member: any) => {
             if (!member.peer_id || member.peer_id === peer_id) return;
-            buildPC(member.peer_id).catch(() => {});
             setPeers(prev => {
                 if (prev.has(member.peer_id)) return prev;
                 const m = new Map(prev);
@@ -839,7 +854,8 @@ export default function MeetRoom() {
         });
 
         // ADMIT-2 — existing peers learn about newly admitted participants via
-        // the dedicated admitted event, and proactively send them an offer.
+        // the dedicated admitted event, but DO NOT proactively send an offer to
+        // avoid glare, since the admitted peer will send an offer via ch.here.
         ch.listen('.meet.participant-admitted', (data: any) => {
             if (data.admitted_peer_id === peer_id) return; // ignore self
             // Remove from waiting list (host's view)
@@ -861,8 +877,6 @@ export default function MeetRoom() {
                 }
                 return m;
             });
-            // Send offer so the admitted participant gets our stream
-            sendOffer(data.admitted_peer_id);
         });
 
         ch.listen('.meet.participant-left',    (data: any) => removePeer(data.peer_id));
