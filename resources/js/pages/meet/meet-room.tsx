@@ -90,6 +90,7 @@ type EndReason = 'left' | 'kicked' | 'room-ended';
 const http = {
     post:  (url: string, data?: object) => axios.post(url, data ?? {}).then(r => r.data),
     patch: (url: string, data?: object) => axios.patch(url, data ?? {}).then(r => r.data),
+    get:   (url: string, params?: object) => axios.get(url, { params }).then(r => r.data),
     bin:   (url: string, buf: ArrayBuffer) =>
         axios.post(url, buf, { headers: { 'Content-Type': 'application/octet-stream' } })
              .then(r => r.data),
@@ -136,17 +137,6 @@ function normalizePresencePayload(raw: unknown): {
             : typeof m.name === 'string' ? m.name : 'Guest',
         role:           typeof m.role === 'string' ? m.role : 'participant',
     };
-}
-
-/** Read current presence hash from pusher-js (after subscription_succeeded). */
-function readPresenceUserInfoHash(echo: Echo<any>, roomUid: string): Record<string, Record<string, unknown>> {
-    const fullName = `presence-meet.${roomUid}`;
-    type PusherLike = {
-        channels?: { channels?: Record<string, { members?: { members?: Record<string, Record<string, unknown>> } }> };
-    };
-    const pusher = (echo.connector as { pusher?: PusherLike })?.pusher;
-    const hash = pusher?.channels?.channels?.[fullName]?.members?.members;
-    return hash && typeof hash === 'object' ? hash : {};
 }
 
 function speakDetector(
@@ -880,20 +870,40 @@ export default function MeetRoom() {
         if (!promoted) {
             ch.here((members: unknown[]) => commitInitialMesh(members));
         } else {
-            // `pusher:subscription_succeeded` already ran during wait — `here()` will not fire again.
-            let attempts = 0;
-            const tick = () => {
-                if (R.current.initialMeshRan) return;
-                const vals = Object.values(readPresenceUserInfoHash(echo, room.uid));
-                const initial = peersFromPresenceInfos(vals);
-                if (initial.size === 0 && attempts < 15) {
-                    attempts++;
-                    setTimeout(tick, 100);
-                    return;
+            // After waiting-room promotion, `here()` often doesn't fire again. Bootstrap
+            // via a server endpoint so guests reliably see existing participants.
+            // Existing peers will send offers to the admitted participant via the
+            // `.meet.participant-admitted` handler.
+            (async () => {
+                try {
+                    const resp = await http.get(`/meet/${room.uid}/participants`, { peer_id });
+                    const list = Array.isArray(resp?.participants) ? resp.participants : [];
+                    const initial = new Map<string, PeerState>();
+                    for (const raw of list) {
+                        if (!raw || typeof raw !== 'object') continue;
+                        const r = raw as Record<string, unknown>;
+                        const pid = r.peer_id;
+                        const name = r.display_name;
+                        if (typeof pid !== 'string' || pid === peer_id) continue;
+                        initial.set(pid, {
+                            peer_id: pid,
+                            display_name: typeof name === 'string' ? name : 'Guest',
+                            role: typeof r.role === 'string' ? r.role : 'participant',
+                            video_on: r.video_on === true,
+                            audio_on: r.audio_on === true,
+                            screen_sharing: r.screen_sharing === true,
+                            hand_raised: r.hand_raised === true,
+                            speaking: false,
+                        });
+                    }
+                    if (!R.current.initialMeshRan) {
+                        R.current.initialMeshRan = true;
+                        setPeers(initial);
+                    }
+                } catch {
+                    // If this fails, peers can still be discovered via join/admit events.
                 }
-                commitInitialMesh(vals);
-            };
-            setTimeout(tick, 0);
+            })();
         }
 
         ch.joining((member: unknown) => {

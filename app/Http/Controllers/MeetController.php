@@ -17,10 +17,11 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Inertia\Inertia;
 use Inertia\Response;
-use Storage;
 
 class MeetController extends Controller
 {
@@ -40,12 +41,39 @@ class MeetController extends Controller
         $rooms = MeetRoom::where('owner_id', $userId)
             ->withCount('activeParticipants')
             ->orderBy('created_at', 'desc')
-            ->take(10)
-            ->get()
-            ->map(fn($r) => $this->roomResource($r));
+            ->paginate(perPage: 10, pageName: 'page')
+            ->through(fn ($r) => $this->roomResource($r));
+
+        $roomCounts = [
+            'all' => MeetRoom::where('owner_id', $userId)->count(),
+            'active' => MeetRoom::where('owner_id', $userId)->where('status', 'active')->count(),
+            'scheduled' => MeetRoom::where('owner_id', $userId)->where('status', 'scheduled')->count(),
+            'ended' => MeetRoom::where('owner_id', $userId)->where('status', 'ended')->count(),
+        ];
+
+        $recordings = MeetRecording::query()
+            ->whereHas('room', fn ($q) => $q->where('owner_id', $userId))
+            ->with(['room:id,uid,name'])
+            ->orderByDesc('started_at')
+            ->paginate(perPage: 10, pageName: 'recordings_page')
+            ->through(function (MeetRecording $r): array {
+                return [
+                    'id' => $r->id,
+                    'room_uid' => $r->room?->uid,
+                    'room_name' => $r->room?->name,
+                    'status' => $r->status,
+                    'size' => $r->size,
+                    'duration_seconds' => $r->duration_seconds,
+                    'started_at' => $r->started_at?->toIso8601String(),
+                    'ended_at' => $r->ended_at?->toIso8601String(),
+                    'download_url' => $r->isReady() ? $r->downloadUrl() : null,
+                ];
+            });
 
         return Inertia::render('meet/meet-index', [
             'rooms' => $rooms,
+            'room_counts' => $roomCounts,
+            'recordings' => $recordings,
         ]);
     }
 
@@ -188,7 +216,7 @@ class MeetController extends Controller
 
             return response()->json(['status' => 'ended']);
         } catch (\Exception $e) {
-            \Log::error('Error in end: ' . $e->getMessage());
+            Log::error('Error in end: ' . $e->getMessage());
             return response()->json(['error' => 'Failed to end room'], 500);
         }
     }
@@ -255,6 +283,34 @@ class MeetController extends Controller
     // =========================================================================
     // PARTICIPANT ACTIONS  (JSON — called from the React room UI)
     // =========================================================================
+
+    /**
+     * GET /meet/{uid}/participants
+     * Used by the client to bootstrap the current participant list without relying on
+     * Reverb/Pusher internal presence state (especially after waiting-room promotion).
+     */
+    public function participants(Request $request, string $uid): JsonResponse
+    {
+        $room = MeetRoom::where('uid', $uid)->firstOrFail();
+
+        $peerId = (string) $request->query('peer_id', '');
+
+        $participants = $room->activeParticipants()
+            ->orderBy('joined_at')
+            ->get()
+            ->map(fn (MeetParticipant $p) => $this->participantResource($p))
+            ->values();
+
+        if ($peerId !== '') {
+            $participants = $participants->filter(fn (array $p) => ($p['peer_id'] ?? null) !== $peerId)->values();
+        }
+
+        return response()->json([
+            'room_uid' => $room->uid,
+            'participants' => $participants,
+            'count' => $participants->count(),
+        ]);
+    }
 
     /**
      * POST /meet/{uid}/join
@@ -370,7 +426,7 @@ class MeetController extends Controller
 
             return response()->json(['status' => 'left']);
         } catch (\Exception $e) {
-            \Log::error('Error in leave: ' . $e->getMessage());
+            Log::error('Error in leave: ' . $e->getMessage());
             return response()->json(['error' => 'Failed to leave room'], 500);
         }
     }
@@ -426,7 +482,7 @@ class MeetController extends Controller
 
             return response()->json(['status' => 'admitted']);
         } catch (\Exception $e) {
-            \Log::error('Error in admit: ' . $e->getMessage());
+            Log::error('Error in admit: ' . $e->getMessage());
             return response()->json(['error' => 'Failed to admit participant'], 500);
         }
     }
@@ -570,7 +626,7 @@ class MeetController extends Controller
             return response()->json(['status' => 'ok', 'size' => $size]);
 
         } catch (\Exception $e) {
-            \Log::error('Error in recordingChunk: ' . $e->getMessage());
+            Log::error('Error in recordingChunk: ' . $e->getMessage());
             return response()->json(['error' => 'Failed to process chunk'], 500);
         }
     }
@@ -651,7 +707,10 @@ class MeetController extends Controller
 
         abort_unless($recording->isReady() && $recording->path, 404);
 
-        return Storage::disk($recording->disk)->download(
+        /** @var \Illuminate\Filesystem\FilesystemAdapter $disk */
+        $disk = Storage::disk($recording->disk);
+
+        return $disk->download(
             $recording->path,
             "meeting-{$room->uid}-recording-{$recording->id}.webm"
         );

@@ -120,6 +120,7 @@ Route::get('/meet/{uid}', [MeetController::class, 'room'])->name('meet.room');
 Route::post('/meet/{uid}/guest', [MeetController::class, 'guestJoin'])->name('meet.guest.join');
 
 // Participant actions — auth OPTIONAL (guests call these too via peer_id)
+Route::get('/meet/{uid}/participants', [MeetController::class, 'participants'])->name('meet.participants');
 Route::post('/meet/{uid}/join', [MeetController::class, 'join'])->name('meet.join');
 Route::post('/meet/{uid}/leave', [MeetController::class, 'leave'])->name('meet.leave');
 Route::post('/meet/{uid}/signal', [MeetController::class, 'signal'])->name('meet.signal');

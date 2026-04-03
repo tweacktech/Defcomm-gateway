@@ -17,7 +17,33 @@ interface RoomSummary {
     active_participants: number; has_password: boolean;
     started_at: string | null; scheduled_at: string | null; join_url: string;
 }
-type PageProps = { rooms: RoomSummary[]; } & Record<string, unknown>;
+type Paginator<T> = {
+    data: T[];
+    current_page: number;
+    last_page: number;
+    per_page: number;
+    total: number;
+    from: number | null;
+    to: number | null;
+};
+
+type RecordingSummary = {
+    id: number;
+    room_uid: string | null;
+    room_name: string | null;
+    status: string;
+    size: number;
+    duration_seconds: number | null;
+    started_at: string | null;
+    ended_at: string | null;
+    download_url: string | null;
+};
+
+type PageProps = {
+    rooms: Paginator<RoomSummary>;
+    room_counts: { all: number; active: number; scheduled: number; ended: number };
+    recordings: Paginator<RecordingSummary>;
+} & Record<string, unknown>;
 
 const breadcrumbs: BreadcrumbItem[] = [{ title: 'Meet', href: '/meet' }];
 const fmtTime = (d: string) => new Date(d).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
@@ -216,13 +242,13 @@ function CreateModal({ onClose }: { onClose: () => void }) {
 }
 
 export default function MeetIndex() {
-    const { rooms } = usePage<PageProps>().props;
+    const { rooms, room_counts, recordings } = usePage<PageProps>().props;
     const [joinUid, setJoinUid]     = useState('');
     const [showCreate, setCreate]   = useState(false);
 
-    const active    = rooms.filter(r => r.status === 'active');
-    const scheduled = rooms.filter(r => r.status === 'scheduled');
-    const past      = rooms.filter(r => r.status === 'ended').slice(0, 5);
+    const active    = rooms.data.filter(r => r.status === 'active');
+    const scheduled = rooms.data.filter(r => r.status === 'scheduled');
+    const past      = rooms.data.filter(r => r.status === 'ended').slice(0, 5);
 
     return (
         <AppLayout breadcrumbs={breadcrumbs}>
@@ -272,7 +298,32 @@ export default function MeetIndex() {
                     </div>
                 )}
 
-                {rooms.length === 0 && (
+                <div className="mb-6 flex flex-wrap items-center justify-between gap-2">
+                    <p className="text-xs text-muted-foreground">
+                        {room_counts.all} total • {room_counts.active} active • {room_counts.scheduled} scheduled • {room_counts.ended} ended
+                    </p>
+                    <div className="flex items-center gap-2">
+                        <Button
+                            variant="outline"
+                            disabled={rooms.current_page <= 1}
+                            onClick={() => router.get('/meet', { page: rooms.current_page - 1, recordings_page: recordings.current_page })}
+                        >
+                            Prev
+                        </Button>
+                        <span className="text-xs text-muted-foreground">
+                            Page {rooms.current_page} / {rooms.last_page}
+                        </span>
+                        <Button
+                            variant="outline"
+                            disabled={rooms.current_page >= rooms.last_page}
+                            onClick={() => router.get('/meet', { page: rooms.current_page + 1, recordings_page: recordings.current_page })}
+                        >
+                            Next
+                        </Button>
+                    </div>
+                </div>
+
+                {rooms.data.length === 0 && (
                     <div className="flex flex-col items-center gap-4 rounded-2xl border border-dashed border-sidebar-border/50 py-16 text-center">
                         <Video className="h-12 w-12 text-muted-foreground/30" />
                         <div>
@@ -291,6 +342,62 @@ export default function MeetIndex() {
                         <div className="space-y-2 opacity-60">{past.map(r => <RoomCard key={r.uid} room={r} />)}</div>
                     </div>
                 )}
+
+                <div className="mt-10">
+                    <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                        <div>
+                            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Recordings</p>
+                            <p className="text-xs text-muted-foreground">{recordings.total} total</p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                            <Button
+                                variant="outline"
+                                disabled={recordings.current_page <= 1}
+                                onClick={() => router.get('/meet', { page: rooms.current_page, recordings_page: recordings.current_page - 1 })}
+                            >
+                                Prev
+                            </Button>
+                            <span className="text-xs text-muted-foreground">
+                                Page {recordings.current_page} / {recordings.last_page}
+                            </span>
+                            <Button
+                                variant="outline"
+                                disabled={recordings.current_page >= recordings.last_page}
+                                onClick={() => router.get('/meet', { page: rooms.current_page, recordings_page: recordings.current_page + 1 })}
+                            >
+                                Next
+                            </Button>
+                        </div>
+                    </div>
+
+                    <div className="space-y-2">
+                        {recordings.data.length === 0 && (
+                            <div className="rounded-xl border border-sidebar-border/70 bg-card p-4 text-sm text-muted-foreground">
+                                No recordings yet.
+                            </div>
+                        )}
+                        {recordings.data.map(r => (
+                            <div key={r.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-sidebar-border/70 bg-card p-4">
+                                <div className="min-w-0">
+                                    <p className="truncate text-sm font-semibold">
+                                        {r.room_name ?? r.room_uid ?? 'Meeting'} • Recording #{r.id}
+                                    </p>
+                                    <p className="mt-0.5 text-xs text-muted-foreground">Status: {r.status}</p>
+                                </div>
+                                {r.download_url ? (
+                                    <a
+                                        href={r.download_url}
+                                        className="shrink-0 rounded-lg border border-sidebar-border/50 px-3 py-2 text-xs hover:bg-accent transition"
+                                    >
+                                        Download
+                                    </a>
+                                ) : (
+                                    <span className="shrink-0 text-xs text-muted-foreground">Not ready</span>
+                                )}
+                            </div>
+                        ))}
+                    </div>
+                </div>
             </div>
         </AppLayout>
     );
