@@ -121,7 +121,8 @@ class MeetController extends Controller
             'is_guest' => $isGuest,
             'reverb_key' => config('broadcasting.connections.reverb.key'),
             'reverb_host' => config('broadcasting.connections.reverb.options.host'),
-            'reverb_port' => config('broadcasting.connections.reverb.options.port'),
+            'reverb_port' => (int) config('broadcasting.connections.reverb.options.port'),
+            'reverb_use_tls' => (bool) config('broadcasting.connections.reverb.options.useTLS', false),
             'stun_servers' => config('meet.stun_servers', [
                 ['urls' => 'stun:stun.l.google.com:19302'],
                 ['urls' => 'stun:stun1.l.google.com:19302'],
