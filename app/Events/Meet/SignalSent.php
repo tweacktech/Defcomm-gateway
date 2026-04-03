@@ -5,11 +5,11 @@ namespace App\Events\Meet;
 use Illuminate\Broadcasting\Channel;
 use Illuminate\Broadcasting\InteractsWithSockets;
 use Illuminate\Broadcasting\PresenceChannel;
-use Illuminate\Contracts\Broadcasting\ShouldBroadcast;
+use Illuminate\Contracts\Broadcasting\ShouldBroadcastNow;
 use Illuminate\Foundation\Events\Dispatchable;
 use Illuminate\Support\Facades\Log;
 
-class SignalSent implements ShouldBroadcast
+class SignalSent implements ShouldBroadcastNow
 {
     use Dispatchable, InteractsWithSockets;
 

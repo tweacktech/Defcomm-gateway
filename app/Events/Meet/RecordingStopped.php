@@ -3,10 +3,10 @@ namespace App\Events\Meet;
 use App\Models\MeetRoom;
 use Illuminate\Broadcasting\InteractsWithSockets;
 use Illuminate\Broadcasting\PresenceChannel;
-use Illuminate\Contracts\Broadcasting\ShouldBroadcast;
+use Illuminate\Contracts\Broadcasting\ShouldBroadcastNow;
 use Illuminate\Foundation\Events\Dispatchable;
 
-class RecordingStopped implements ShouldBroadcast
+class RecordingStopped implements ShouldBroadcastNow
 {
     use Dispatchable, InteractsWithSockets;
     public function __construct(

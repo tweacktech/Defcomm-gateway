@@ -112,55 +112,6 @@ Route::prefix('')->middleware(['auth'])->group(function () {
 
 });
 
-
-
-// // Room page — controller decides view based on auth state + session
-// Route::get('/meet/{uid}', [MeetController::class, 'room'])->name('meet.room');
-
-// // Guest form submit (display_name + optional password)
-// Route::post('/meet/{uid}/guest', [MeetController::class, 'guestJoin'])->name('meet.guest.join');
-
-// // Participant JSON actions — auth optional, guests use peer_id from session
-// Route::post('/meet/{uid}/join', [MeetController::class, 'join'])->name('meet.join');
-// Route::patch('/meet/{uid}/end', [MeetController::class, 'end'])->name('end');
-// Route::post('/meet/{uid}/leave', [MeetController::class, 'leave'])->name('meet.leave');
-// Route::post('/meet/{uid}/signal', [MeetController::class, 'signal'])->name('meet.signal');
-
-// // ─────────────────────────────────────────────────────────────────────────────
-// // AUTH REQUIRED
-// // ─────────────────────────────────────────────────────────────────────────────
-
-// Route::middleware(['auth'])->prefix('meet')->name('meet.')->group(function () {
-//     Route::get('/', [MeetController::class, 'index'])->name('index');
-//     Route::post('/rooms', [MeetController::class, 'create'])->name('create');
-
-//     Route::post('/{uid}/password', [MeetController::class, 'unlock'])->name('unlock');
-//     // Route::patch('/{uid}/end', [MeetController::class, 'end'])->name('end');
-//     Route::patch('/{uid}/admit/{peerId}', [MeetController::class, 'admit'])->name('admit');
-//     Route::patch('/{uid}/kick/{peerId}', [MeetController::class, 'kick'])->name('kick');
-
-// });
-
-
-// ── Recording chunk upload (public — validated by recording ownership) ────────
-Route::post(
-    '/meet/{uid}/recording/{recordingId}/chunk',
-    [MeetController::class, 'recordingChunk']
-)->name('meet.recording.chunk');
-
-// ── Media state update (public — no auth, guests update too) ─────────────────
-Route::post(
-    '/meet/{uid}/media-state',
-    [MeetController::class, 'updateMediaState']
-)->name('meet.media-state');
-
-Route::post('meet/{uid}/recording/start', [MeetController::class, 'startRecording'])->name('recording.start');
-Route::post('meet/{uid}/recording/{id}/stop', [MeetController::class, 'stopRecording'])->name('recording.stop');
-Route::get('meet/{uid}/recordings', [MeetController::class, 'listRecordings'])->name('recordings.list');
-Route::get('meet/recording/{id}/download', [MeetController::class, 'downloadRecording'])->name('meet.recording.download');
-
-
-
 // ── PUBLIC — no auth required ─────────────────────────────────────────────────
 // Room page: controller decides view based on auth state + session
 Route::get('/meet/{uid}', [MeetController::class, 'room'])->name('meet.room');
@@ -257,9 +208,5 @@ Route::fallback(
         return Inertia::render('error');
     }
 );
-
-Broadcast::routes([
-    'middleware' => ['web'], // allows session (IMPORTANT for your guest logic)
-]);
 
 require __DIR__ . '/settings.php';

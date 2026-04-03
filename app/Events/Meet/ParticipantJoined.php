@@ -7,11 +7,11 @@ use App\Models\MeetParticipant;
 use App\Models\MeetRoom;
 use Illuminate\Broadcasting\InteractsWithSockets;
 use Illuminate\Broadcasting\PresenceChannel;
-use Illuminate\Contracts\Broadcasting\ShouldBroadcast;
+use Illuminate\Contracts\Broadcasting\ShouldBroadcastNow;
 use Illuminate\Foundation\Events\Dispatchable;
 use Illuminate\Support\Facades\Log;
 
-class ParticipantJoined implements ShouldBroadcast
+class ParticipantJoined implements ShouldBroadcastNow
 {
     use Dispatchable, InteractsWithSockets;
 
