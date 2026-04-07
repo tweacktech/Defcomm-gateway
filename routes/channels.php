@@ -85,3 +85,40 @@ Broadcast::channel('meet.{uid}', function ($user, string $uid) {
         'role'         => 'participant',
     ];
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ADD to routes/channels.php:
+// ─────────────────────────────────────────────────────────────────────────────
+
+
+use App\Models\AudioCall;
+
+Broadcast::channel('call.{uid}', function ($user, string $uid) {
+    $call = AudioCall::where('uid', $uid)->first();
+    if (!$call) return false;
+
+    $peerId = request()->input('peer_id') ?: (string) \Illuminate\Support\Str::uuid();
+
+    if ($user) {
+        $isParticipant = $call->initiator_id === $user->id
+            || $call->callee_id === $user->id
+            || $call->participants()->where('user_id', $user->id)->exists();
+
+        if (!$isParticipant) return false;
+
+        return [
+            'id'           => $user->id,
+            'peer_id'      => $peerId,
+            'display_name' => $user->name,
+            'role'         => $call->initiator_id === $user->id ? 'host' : 'participant',
+        ];
+    }
+
+    return false; // audio calls are auth-only for now
+});
+
+// Personal notification channel — used to ring a user when called
+Broadcast::channel('user.{id}', function ($user, $id) {
+    return (int) $user->id === (int) $id;
+});
+

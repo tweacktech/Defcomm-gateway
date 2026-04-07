@@ -5,6 +5,8 @@ use App\Http\Controllers\Api\MeetApiController;
 use App\Http\Controllers\Api\PythonController;
 use App\Http\Controllers\Api\VaultApiController;
 use Illuminate\Http\Request;
+
+use App\Http\Controllers\Api\AudioCallApiController;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/user', function (Request $request) {
@@ -104,3 +106,21 @@ Route::middleware(['auth:sanctum'])->prefix('api/meet')->name('api.meet.')->grou
     Route::delete('/rooms/{uid}', [MeetApiController::class, 'endRoom'])->name('rooms.end');
     Route::post('/rooms/{uid}/token', [MeetApiController::class, 'issueToken'])->name('rooms.token');
 });
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SDK REST API — Sanctum token
+// ─────────────────────────────────────────────────────────────────────────────
+
+Route::middleware(['auth:sanctum'])->prefix('api/calls')->name('api.calls.')->group(function () {
+    Route::get('/',                               [AudioCallApiController::class, 'list'])->name('index');
+    Route::post('/',                              [AudioCallApiController::class, 'create'])->name('create');
+    Route::get('/{uid}',                          [AudioCallApiController::class, 'show'])->name('show');
+    Route::delete('/{uid}',                       [AudioCallApiController::class, 'end'])->name('end');
+    Route::post('/{uid}/token',                   [AudioCallApiController::class, 'issueToken'])->name('token');
+    Route::get('/{uid}/participants',             [AudioCallApiController::class, 'participants'])->name('participants');
+    Route::delete('/{uid}/participants/{peerId}', [AudioCallApiController::class, 'kick'])->name('participants.kick');
+    Route::post('/{uid}/participants/{peerId}/admit', [AudioCallApiController::class, 'admit'])->name('participants.admit');
+    Route::patch('/{uid}/priority',               [AudioCallApiController::class, 'changePriority'])->name('priority');
+});
+

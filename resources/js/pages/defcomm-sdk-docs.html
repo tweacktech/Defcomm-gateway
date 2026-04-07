@@ -1,0 +1,1377 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Defcomm SDK — Developer Documentation</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Syne:wght@400;600;700;800&family=Inter:wght@300;400;500&display=swap" rel="stylesheet" />
+<style>
+:root {
+  --bg:        #080c10;
+  --surface:   #0d1117;
+  --border:    rgba(255,255,255,.07);
+  --border-hi: rgba(255,255,255,.15);
+  --text:      #e2e8f0;
+  --muted:     #64748b;
+  --dim:       #334155;
+  --accent:    #22d3ee;
+  --accent2:   #818cf8;
+  --meet:      #34d399;
+  --calls:     #f472b6;
+  --warn:      #fb923c;
+  --danger:    #f87171;
+  --code-bg:   #0a0f14;
+  --radius:    12px;
+  --font-ui:   'Syne', sans-serif;
+  --font-body: 'Inter', sans-serif;
+  --font-code: 'JetBrains Mono', monospace;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html { scroll-behavior: smooth; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-body);
+  font-size: 14px;
+  line-height: 1.7;
+  min-height: 100vh;
+}
+
+/* ── Grain overlay ────────────────────────────────────────────── */
+body::before {
+  content: '';
+  position: fixed; inset: 0; z-index: 0;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.03'/%3E%3C/svg%3E");
+  pointer-events: none;
+}
+
+/* ── Layout ──────────────────────────────────────────────────── */
+.layout {
+  display: grid;
+  grid-template-columns: 260px 1fr;
+  min-height: 100vh;
+  position: relative; z-index: 1;
+}
+
+/* ── Sidebar ─────────────────────────────────────────────────── */
+nav {
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  overflow-y: auto;
+  border-right: 1px solid var(--border);
+  padding: 32px 0;
+  background: var(--surface);
+  scrollbar-width: thin;
+  scrollbar-color: var(--dim) transparent;
+}
+
+.nav-logo {
+  padding: 0 24px 28px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 24px;
+}
+
+.nav-logo-mark {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  text-decoration: none;
+}
+
+.logo-icon {
+  width: 32px; height: 32px;
+  background: linear-gradient(135deg, var(--accent), var(--accent2));
+  border-radius: 8px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 16px;
+}
+
+.logo-text {
+  font-family: var(--font-ui);
+  font-size: 18px;
+  font-weight: 800;
+  color: var(--text);
+  letter-spacing: -0.5px;
+}
+
+.logo-sub {
+  font-size: 10px;
+  color: var(--muted);
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  margin-top: 1px;
+}
+
+.nav-section {
+  padding: 0 16px;
+  margin-bottom: 8px;
+}
+
+.nav-section-label {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  color: var(--muted);
+  padding: 8px 8px 4px;
+}
+
+.nav-link {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  border-radius: 8px;
+  text-decoration: none;
+  color: var(--muted);
+  font-size: 13px;
+  font-family: var(--font-body);
+  transition: all .15s;
+}
+
+.nav-link:hover { color: var(--text); background: rgba(255,255,255,.04); }
+.nav-link.active { color: var(--accent); background: rgba(34,211,238,.07); }
+
+.nav-dot {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+/* ── Main content ────────────────────────────────────────────── */
+main {
+  padding: 0;
+  max-width: 900px;
+}
+
+/* ── Hero ────────────────────────────────────────────────────── */
+.hero {
+  padding: 72px 64px 56px;
+  border-bottom: 1px solid var(--border);
+  position: relative;
+  overflow: hidden;
+}
+
+.hero::after {
+  content: '';
+  position: absolute;
+  top: -60px; right: -60px;
+  width: 400px; height: 400px;
+  background: radial-gradient(circle, rgba(34,211,238,.06) 0%, transparent 70%);
+  pointer-events: none;
+}
+
+.hero-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(34,211,238,.08);
+  border: 1px solid rgba(34,211,238,.2);
+  border-radius: 20px;
+  padding: 4px 12px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin-bottom: 20px;
+}
+
+.hero-title {
+  font-family: var(--font-ui);
+  font-size: 48px;
+  font-weight: 800;
+  line-height: 1.1;
+  letter-spacing: -2px;
+  color: #fff;
+  margin-bottom: 16px;
+}
+
+.hero-title span {
+  background: linear-gradient(90deg, var(--accent), var(--accent2));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.hero-desc {
+  font-size: 16px;
+  color: var(--muted);
+  max-width: 560px;
+  line-height: 1.75;
+  margin-bottom: 32px;
+}
+
+.badge-row {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 500;
+  border: 1px solid;
+}
+
+.badge-meet  { background: rgba(52,211,153,.08); border-color: rgba(52,211,153,.25); color: var(--meet); }
+.badge-calls { background: rgba(244,114,182,.08); border-color: rgba(244,114,182,.25); color: var(--calls); }
+.badge-ts    { background: rgba(96,165,250,.08);  border-color: rgba(96,165,250,.25);  color: #60a5fa; }
+
+/* ── Section ─────────────────────────────────────────────────── */
+section {
+  padding: 56px 64px;
+  border-bottom: 1px solid var(--border);
+  scroll-margin-top: 24px;
+}
+
+section:last-child { border-bottom: none; }
+
+.section-tag {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin-bottom: 8px;
+}
+
+.section-title {
+  font-family: var(--font-ui);
+  font-size: 28px;
+  font-weight: 800;
+  letter-spacing: -1px;
+  color: #fff;
+  margin-bottom: 12px;
+}
+
+.section-desc {
+  color: var(--muted);
+  font-size: 14px;
+  max-width: 600px;
+  margin-bottom: 32px;
+}
+
+/* ── Code blocks ─────────────────────────────────────────────── */
+.code-block {
+  background: var(--code-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  margin: 20px 0;
+}
+
+.code-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border);
+  background: rgba(255,255,255,.02);
+}
+
+.code-title {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .5px;
+  color: var(--muted);
+  font-family: var(--font-code);
+}
+
+.code-lang {
+  font-size: 10px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: rgba(255,255,255,.06);
+  color: var(--muted);
+  font-family: var(--font-code);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+pre {
+  padding: 20px;
+  overflow-x: auto;
+  font-family: var(--font-code);
+  font-size: 12.5px;
+  line-height: 1.8;
+  scrollbar-width: thin;
+}
+
+/* Token colors */
+.k  { color: #c678dd; }   /* keyword */
+.s  { color: #98c379; }   /* string */
+.c  { color: #5c6370; font-style: italic; } /* comment */
+.n  { color: #61afef; }   /* name/function */
+.t  { color: #e5c07b; }   /* type */
+.p  { color: var(--muted); } /* punctuation */
+.v  { color: #e06c75; }   /* variable */
+.nb { color: var(--accent); } /* built-in */
+
+/* ── Tabs ────────────────────────────────────────────────────── */
+.tabs {
+  display: flex;
+  gap: 2px;
+  margin-bottom: 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.tab-btn {
+  padding: 9px 16px;
+  font-size: 12px;
+  font-weight: 600;
+  border: none;
+  background: none;
+  cursor: pointer;
+  color: var(--muted);
+  border-bottom: 2px solid transparent;
+  transition: all .15s;
+  font-family: var(--font-body);
+  letter-spacing: .3px;
+}
+
+.tab-btn:hover { color: var(--text); }
+.tab-btn.active { color: var(--accent); border-color: var(--accent); }
+
+.tab-panel { display: none; }
+.tab-panel.active { display: block; }
+
+/* ── Step list ───────────────────────────────────────────────── */
+.steps { display: flex; flex-direction: column; gap: 2px; margin: 24px 0; }
+
+.step {
+  display: grid;
+  grid-template-columns: 44px 1fr;
+  gap: 16px;
+  padding: 20px 0;
+  border-bottom: 1px solid var(--border);
+  align-items: start;
+}
+
+.step:last-child { border-bottom: none; }
+
+.step-num {
+  width: 32px; height: 32px;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(34,211,238,.08);
+  border: 1px solid rgba(34,211,238,.2);
+  border-radius: 50%;
+  font-family: var(--font-ui);
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--accent);
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.step-title {
+  font-family: var(--font-ui);
+  font-size: 15px;
+  font-weight: 700;
+  color: #fff;
+  margin-bottom: 4px;
+}
+
+.step-body { color: var(--muted); font-size: 13px; line-height: 1.7; }
+
+/* ── API table ───────────────────────────────────────────────── */
+.api-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 20px 0;
+  font-size: 13px;
+}
+
+.api-table th {
+  text-align: left;
+  padding: 9px 14px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  color: var(--muted);
+  border-bottom: 1px solid var(--border);
+}
+
+.api-table td {
+  padding: 11px 14px;
+  border-bottom: 1px solid rgba(255,255,255,.04);
+  vertical-align: top;
+}
+
+.api-table tr:last-child td { border-bottom: none; }
+.api-table tr:hover td { background: rgba(255,255,255,.02); }
+
+.method {
+  font-family: var(--font-code);
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 4px;
+  display: inline-block;
+}
+.m-get    { background: rgba(52,211,153,.12); color: #34d399; }
+.m-post   { background: rgba(96,165,250,.12); color: #60a5fa; }
+.m-patch  { background: rgba(251,146,60,.12); color: #fb923c; }
+.m-delete { background: rgba(248,113,113,.12); color: #f87171; }
+
+.path-cell {
+  font-family: var(--font-code);
+  font-size: 12px;
+  color: var(--text);
+}
+
+/* ── Event cards ─────────────────────────────────────────────── */
+.event-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin: 24px 0;
+}
+
+.event-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px;
+  transition: border-color .15s;
+}
+
+.event-card:hover { border-color: var(--border-hi); }
+
+.event-name {
+  font-family: var(--font-code);
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--accent);
+  margin-bottom: 4px;
+}
+
+.event-class {
+  font-size: 11px;
+  color: var(--muted);
+  font-family: var(--font-code);
+  margin-bottom: 6px;
+}
+
+.event-desc { font-size: 12px; color: var(--dim); line-height: 1.5; }
+
+/* ── Priority table ──────────────────────────────────────────── */
+.priority-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin: 24px 0;
+}
+
+.pcard {
+  border-radius: var(--radius);
+  padding: 18px;
+  border: 1px solid;
+}
+
+.pcard-routine   { background: rgba(100,116,139,.06); border-color: rgba(100,116,139,.2); }
+.pcard-important { background: rgba(96,165,250,.06);  border-color: rgba(96,165,250,.2);  }
+.pcard-urgent    { background: rgba(251,146,60,.06);  border-color: rgba(251,146,60,.2);  }
+.pcard-emergency { background: rgba(248,113,113,.06); border-color: rgba(248,113,113,.2); }
+
+.pcard-label {
+  font-family: var(--font-ui);
+  font-size: 15px;
+  font-weight: 800;
+  margin-bottom: 4px;
+}
+
+.pcard-routine   .pcard-label { color: var(--muted); }
+.pcard-important .pcard-label { color: #60a5fa; }
+.pcard-urgent    .pcard-label { color: var(--warn); }
+.pcard-emergency .pcard-label { color: var(--danger); }
+
+.pcard-detail { font-size: 12px; color: var(--muted); line-height: 1.6; }
+
+.pcard-badge {
+  display: inline-block;
+  margin-bottom: 10px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  padding: 3px 8px;
+  border-radius: 4px;
+}
+
+.pcard-routine   .pcard-badge { background: rgba(100,116,139,.15); color: var(--muted); }
+.pcard-important .pcard-badge { background: rgba(96,165,250,.12);  color: #60a5fa; }
+.pcard-urgent    .pcard-badge { background: rgba(251,146,60,.12);  color: var(--warn); }
+.pcard-emergency .pcard-badge { background: rgba(248,113,113,.12); color: var(--danger); }
+
+/* ── Callout ─────────────────────────────────────────────────── */
+.callout {
+  display: flex;
+  gap: 12px;
+  padding: 14px 16px;
+  border-radius: var(--radius);
+  margin: 20px 0;
+  font-size: 13px;
+  line-height: 1.65;
+}
+
+.callout-warn  { background: rgba(251,146,60,.07);  border: 1px solid rgba(251,146,60,.2);  color: #fdba74; }
+.callout-info  { background: rgba(34,211,238,.06);  border: 1px solid rgba(34,211,238,.2);  color: #67e8f9; }
+.callout-tip   { background: rgba(52,211,153,.06);  border: 1px solid rgba(52,211,153,.2);  color: #6ee7b7; }
+
+.callout-icon { flex-shrink: 0; font-size: 16px; margin-top: 1px; }
+
+/* ── Inline code ─────────────────────────────────────────────── */
+code {
+  font-family: var(--font-code);
+  font-size: 12px;
+  background: rgba(255,255,255,.07);
+  border: 1px solid rgba(255,255,255,.08);
+  padding: 1px 6px;
+  border-radius: 4px;
+  color: var(--accent);
+}
+
+/* ── Scrollbar ───────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--dim); border-radius: 3px; }
+
+/* ── SDK service cards ───────────────────────────────────────── */
+.service-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin: 24px 0;
+}
+
+.service-card {
+  border-radius: var(--radius);
+  padding: 24px;
+  border: 1px solid;
+  cursor: pointer;
+  transition: transform .15s, box-shadow .15s;
+}
+
+.service-card:hover { transform: translateY(-2px); box-shadow: 0 12px 32px rgba(0,0,0,.4); }
+
+.sc-meet  { background: rgba(52,211,153,.05);  border-color: rgba(52,211,153,.2);  }
+.sc-calls { background: rgba(244,114,182,.05); border-color: rgba(244,114,182,.2); }
+
+.sc-icon { font-size: 28px; margin-bottom: 12px; }
+.sc-title {
+  font-family: var(--font-ui);
+  font-size: 18px;
+  font-weight: 800;
+  letter-spacing: -0.5px;
+  margin-bottom: 6px;
+  color: #fff;
+}
+.sc-meet .sc-pkg  { color: var(--meet); }
+.sc-calls .sc-pkg { color: var(--calls); }
+.sc-pkg { font-family: var(--font-code); font-size: 11px; margin-bottom: 10px; }
+.sc-desc { font-size: 13px; color: var(--muted); line-height: 1.6; }
+
+/* Responsive */
+@media(max-width:900px) {
+  .layout { grid-template-columns: 1fr; }
+  nav { display: none; }
+  section, .hero { padding: 40px 24px; }
+  .event-grid, .priority-grid, .service-row { grid-template-columns: 1fr; }
+}
+</style>
+</head>
+<body>
+
+<div class="layout">
+
+<!-- ── Sidebar ───────────────────────────────────────────────── -->
+<nav>
+  <div class="nav-logo">
+    <a href="#top" class="nav-logo-mark">
+      <div class="logo-icon">🛡</div>
+      <div>
+        <div class="logo-text">Defcomm</div>
+        <div class="logo-sub">SDK Docs</div>
+      </div>
+    </a>
+  </div>
+
+  <div class="nav-section">
+    <div class="nav-section-label">Getting Started</div>
+    <a href="#overview"     class="nav-link active"><span class="nav-dot" style="background:#22d3ee"></span>Overview</a>
+    <a href="#installation" class="nav-link"><span class="nav-dot" style="background:#818cf8"></span>Installation</a>
+    <a href="#auth"         class="nav-link"><span class="nav-dot" style="background:#818cf8"></span>Authentication</a>
+  </div>
+
+  <div class="nav-section">
+    <div class="nav-section-label">Meet SDK</div>
+    <a href="#meet-quick"   class="nav-link"><span class="nav-dot" style="background:#34d399"></span>Quick Start</a>
+    <a href="#meet-api"     class="nav-link"><span class="nav-dot" style="background:#34d399"></span>API Reference</a>
+    <a href="#meet-embed"   class="nav-link"><span class="nav-dot" style="background:#34d399"></span>Embed</a>
+    <a href="#meet-events"  class="nav-link"><span class="nav-dot" style="background:#34d399"></span>Events</a>
+    <a href="#meet-webhooks" class="nav-link"><span class="nav-dot" style="background:#34d399"></span>Webhooks</a>
+  </div>
+
+  <div class="nav-section">
+    <div class="nav-section-label">Calls SDK</div>
+    <a href="#calls-quick"    class="nav-link"><span class="nav-dot" style="background:#f472b6"></span>Quick Start</a>
+    <a href="#calls-priority" class="nav-link"><span class="nav-dot" style="background:#f472b6"></span>Priority System</a>
+    <a href="#calls-api"      class="nav-link"><span class="nav-dot" style="background:#f472b6"></span>API Reference</a>
+    <a href="#calls-embed"    class="nav-link"><span class="nav-dot" style="background:#f472b6"></span>Embed</a>
+    <a href="#calls-events"   class="nav-link"><span class="nav-dot" style="background:#f472b6"></span>Events</a>
+  </div>
+
+  <div class="nav-section">
+    <div class="nav-section-label">Shared</div>
+    <a href="#webhooks"    class="nav-link"><span class="nav-dot" style="background:#94a3b8"></span>Webhook Verification</a>
+    <a href="#channels"    class="nav-link"><span class="nav-dot" style="background:#94a3b8"></span>Broadcast Channels</a>
+    <a href="#recipes"     class="nav-link"><span class="nav-dot" style="background:#94a3b8"></span>Recipes</a>
+  </div>
+</nav>
+
+<!-- ── Main ──────────────────────────────────────────────────── -->
+<main id="top">
+
+<!-- Hero -->
+<div class="hero">
+  <div class="hero-eyebrow">📡 v1.0 · REST + WebRTC</div>
+  <h1 class="hero-title">Defcomm<br/><span>SDK Reference</span></h1>
+  <p class="hero-desc">
+    Add secure, encrypted video meetings and priority audio calls to any web application.
+    Two SDKs. One token. Zero media infrastructure to manage.
+  </p>
+  <div class="badge-row">
+    <span class="badge badge-meet">📹 @defcomm/meet-sdk</span>
+    <span class="badge badge-calls">📞 @defcomm/calls-sdk</span>
+    <span class="badge badge-ts">TypeScript · Node.js · Browser</span>
+  </div>
+</div>
+
+<!-- ── Overview ───────────────────────────────────────────────── -->
+<section id="overview">
+  <div class="section-tag">Introduction</div>
+  <h2 class="section-title">Two services, one platform</h2>
+  <p class="section-desc">Defcomm provides two independent real-time communication services, each with its own SDK:</p>
+
+  <div class="service-row">
+    <div class="service-card sc-meet" onclick="location.hash='#meet-quick'">
+      <div class="sc-icon">📹</div>
+      <div class="sc-title">Defcomm Meet</div>
+      <div class="sc-pkg">@defcomm/meet-sdk</div>
+      <div class="sc-desc">Video &amp; audio conferencing with screen sharing, recording, waiting rooms, and chat. Up to 200 participants per room.</div>
+    </div>
+    <div class="service-card sc-calls" onclick="location.hash='#calls-quick'">
+      <div class="sc-icon">📞</div>
+      <div class="sc-title">Defcomm Calls</div>
+      <div class="sc-pkg">@defcomm/calls-sdk</div>
+      <div class="sc-desc">Audio-only calls with a four-tier priority system. Emergency calls bypass all restrictions and cannot be declined.</div>
+    </div>
+  </div>
+
+  <div class="callout callout-info">
+    <span class="callout-icon">🔒</span>
+    <span>All media (audio/video) travels peer-to-peer via WebRTC and never passes through Defcomm's servers. The server only handles signaling, presence, and metadata.</span>
+  </div>
+</section>
+
+<!-- ── Installation ───────────────────────────────────────────── -->
+<section id="installation">
+  <div class="section-tag">Setup</div>
+  <h2 class="section-title">Installation</h2>
+
+  <div class="code-block">
+    <div class="code-header"><span class="code-title">Terminal</span><span class="code-lang">bash</span></div>
+    <pre><span class="c"># Install one or both SDKs</span>
+<span class="n">npm</span> install @defcomm/meet-sdk
+<span class="n">npm</span> install @defcomm/calls-sdk</pre>
+  </div>
+
+  <div class="steps">
+    <div class="step">
+      <div class="step-num">1</div>
+      <div>
+        <div class="step-title">Generate an API token</div>
+        <div class="step-body">In your Defcomm dashboard: <strong>Settings → API Tokens → New Token</strong>. Copy the token — it's shown once. This token is used for all server-side operations.</div>
+      </div>
+    </div>
+    <div class="step">
+      <div class="step-num">2</div>
+      <div>
+        <div class="step-title">Set the environment variable</div>
+        <div class="step-body">Store the token securely on your server. Never include it in browser code or commit it to source control.</div>
+        <div class="code-block" style="margin-top:10px">
+          <div class="code-header"><span class="code-title">.env</span><span class="code-lang">env</span></div>
+          <pre><span class="v">DEFCOMM_URL</span>=https://meet.yourcompany.com
+<span class="v">DEFCOMM_API_TOKEN</span>=sk-1234abcd...
+<span class="v">DEFCOMM_APP_KEY</span>=your-laravel-app-key   <span class="c"># for webhook verification</span></pre>
+        </div>
+      </div>
+    </div>
+    <div class="step">
+      <div class="step-num">3</div>
+      <div>
+        <div class="step-title">Initialize the SDK on your server</div>
+        <div class="code-block" style="margin-top:10px">
+          <div class="code-header"><span class="code-title">server.ts</span><span class="code-lang">ts</span></div>
+          <pre><span class="k">import</span> DefcommMeet  <span class="k">from</span> <span class="s">'@defcomm/meet-sdk'</span>;
+<span class="k">import</span> DefcommCalls <span class="k">from</span> <span class="s">'@defcomm/calls-sdk'</span>;
+
+<span class="k">export const</span> <span class="n">meet</span> = <span class="k">new</span> <span class="t">DefcommMeet</span>({
+  serverUrl: <span class="n">process</span>.env.<span class="v">DEFCOMM_URL</span>,
+  apiToken:  <span class="n">process</span>.env.<span class="v">DEFCOMM_API_TOKEN</span>,
+});
+
+<span class="k">export const</span> <span class="n">calls</span> = <span class="k">new</span> <span class="t">DefcommCalls</span>({
+  serverUrl: <span class="n">process</span>.env.<span class="v">DEFCOMM_URL</span>,
+  apiToken:  <span class="n">process</span>.env.<span class="v">DEFCOMM_API_TOKEN</span>,
+});</pre>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── Auth ───────────────────────────────────────────────────── -->
+<section id="auth">
+  <div class="section-tag">Authentication</div>
+  <h2 class="section-title">Tokens &amp; security model</h2>
+  <p class="section-desc">Defcomm uses a two-token model: a long-lived API token for server operations, and short-lived join tokens for participants.</p>
+
+  <div class="callout callout-warn">
+    <span class="callout-icon">⚠️</span>
+    <span>The <strong>API token</strong> must only be used on your server. If exposed in browser code, anyone can create rooms, end calls, and access recordings under your account.</span>
+  </div>
+
+  <div class="code-block">
+    <div class="code-header"><span class="code-title">Token flow</span><span class="code-lang">ts</span></div>
+    <pre><span class="c">// ① Your server creates a room/call and issues a join token</span>
+<span class="k">const</span> { room, joinToken } = <span class="k">await</span> <span class="n">meet</span>.<span class="n">createRoom</span>({ name: <span class="s">'Q3 Planning'</span> });
+<span class="k">const</span> { token } = <span class="k">await</span> <span class="n">meet</span>.<span class="n">issueToken</span>(room.uid, {
+  displayName: user.name,
+  userId:      user.id,
+  role:        <span class="s">'participant'</span>,     <span class="c">// or 'host', 'co-host', 'viewer'</span>
+});
+
+<span class="c">// ② Send token + roomUid to your frontend (never the API token!)</span>
+res.json({ roomUid: room.uid, token });
+
+<span class="c">// ③ Frontend embeds the room — no API token required</span>
+<span class="k">const</span> sdk = <span class="k">new</span> <span class="t">DefcommMeet</span>({ serverUrl: <span class="v">DEFCOMM_URL</span> });
+sdk.embed(<span class="s">'#room'</span>, { roomUid, token });</pre>
+  </div>
+
+  <p style="color:var(--muted);font-size:13px">Join tokens expire after <strong>2 hours</strong>. The bearer API token does not expire — rotate it in Settings if compromised.</p>
+</section>
+
+
+<!-- ════════════════════════════ MEET ════════════════════════════ -->
+<section id="meet-quick">
+  <div class="section-tag" style="color:var(--meet)">Meet SDK</div>
+  <h2 class="section-title">Quick start</h2>
+
+  <div class="tabs" id="meet-tabs">
+    <button class="tab-btn active" data-tab="mt-server">Server (Node.js)</button>
+    <button class="tab-btn" data-tab="mt-react">Frontend (React)</button>
+    <button class="tab-btn" data-tab="mt-vanilla">Frontend (Vanilla JS)</button>
+  </div>
+
+  <div class="tab-panel active" id="mt-server">
+    <div class="code-block">
+      <div class="code-header"><span class="code-title">api/meeting.ts</span><span class="code-lang">ts</span></div>
+      <pre><span class="k">import</span> { meet } <span class="k">from</span> <span class="s">'./sdk'</span>;
+
+<span class="c">// Create a room + issue a host token in one call</span>
+<span class="n">app</span>.post(<span class="s">'/api/meeting/start'</span>, <span class="k">async</span> (req, res) => {
+  <span class="k">const</span> { room, joinToken } = <span class="k">await</span> <span class="n">meet</span>.<span class="n">createRoom</span>({
+    name:             <span class="s">'Customer Support — Ticket #'</span> + req.body.ticketId,
+    waitingRoom:      <span class="k">true</span>,      <span class="c">// host admits each participant</span>
+    recordingEnabled: <span class="k">true</span>,
+    webhookUrl:       <span class="s">'https://yourapp.com/webhooks/meet'</span>,
+    webhookEvents:    [<span class="s">'room.started'</span>, <span class="s">'room.ended'</span>, <span class="s">'recording.ready'</span>],
+  });
+
+  <span class="c">// Issue separate tokens for host and participant</span>
+  <span class="k">const</span> { token: participantToken } = <span class="k">await</span> <span class="n">meet</span>.<span class="n">issueToken</span>(room.uid, {
+    displayName: req.user.name,
+    userId:      req.user.id,
+    role:        <span class="s">'participant'</span>,
+  });
+
+  res.json({
+    roomUid:          room.uid,
+    hostToken:        joinToken,          <span class="c">// for the agent</span>
+    participantToken,                     <span class="c">// for the customer</span>
+    joinUrl:          room.joinUrl,
+  });
+});</pre>
+    </div>
+  </div>
+
+  <div class="tab-panel" id="mt-react">
+    <div class="code-block">
+      <div class="code-header"><span class="code-title">components/Meeting.tsx</span><span class="code-lang">tsx</span></div>
+      <pre><span class="k">import</span> { useEffect } <span class="k">from</span> <span class="s">'react'</span>;
+<span class="k">import</span> DefcommMeet <span class="k">from</span> <span class="s">'@defcomm/meet-sdk'</span>;
+
+<span class="k">export function</span> <span class="n">Meeting</span>({ roomUid, token }: { roomUid: string; token: string }) {
+  <span class="n">useEffect</span>(() => {
+    <span class="k">const</span> sdk = <span class="k">new</span> <span class="t">DefcommMeet</span>({ serverUrl: <span class="v">process.env.NEXT_PUBLIC_DEFCOMM_URL</span> });
+
+    <span class="k">return</span> sdk.<span class="n">embed</span>(<span class="s">'#meeting'</span>, {
+      roomUid,
+      token,
+      width:  <span class="s">'100%'</span>,
+      height: <span class="s">'600px'</span>,
+      <span class="n">onReady</span>:             () => <span class="n">console</span>.log(<span class="s">'Meeting is live'</span>),
+      <span class="n">onEnded</span>:             (reason) => <span class="n">router</span>.push(<span class="s">'/dashboard'</span>),
+      <span class="n">onParticipantJoined</span>: ({ displayName }) => <span class="n">toast</span>(`${displayName} joined`),
+      <span class="n">onParticipantLeft</span>:  (peerId) => <span class="n">console</span>.log(peerId, <span class="s">'left'</span>),
+    });
+  }, [roomUid, token]);
+
+  <span class="k">return</span> &lt;<span class="t">div</span> id=<span class="s">"meeting"</span> style={{ height: 600 }} /&gt;;
+}</pre>
+    </div>
+  </div>
+
+  <div class="tab-panel" id="mt-vanilla">
+    <div class="code-block">
+      <div class="code-header"><span class="code-title">meeting.js</span><span class="code-lang">js</span></div>
+      <pre><span class="k">import</span> DefcommMeet <span class="k">from</span> <span class="s">'@defcomm/meet-sdk'</span>;
+
+<span class="k">const</span> sdk = <span class="k">new</span> DefcommMeet({ serverUrl: <span class="s">'https://meet.yourcompany.com'</span> });
+
+<span class="k">const</span> cleanup = sdk.<span class="n">embed</span>(<span class="k">document</span>.<span class="n">getElementById</span>(<span class="s">'meeting-container'</span>), {
+  roomUid: <span class="v">ROOM_UID</span>,   <span class="c">// from your server</span>
+  token:   <span class="v">JOIN_TOKEN</span>,  <span class="c">// from your server</span>
+  <span class="n">onEnded</span>: (reason) => {
+    <span class="k">if</span> (reason === <span class="s">'room-ended'</span>) showSummaryScreen();
+    <span class="k">else</span> redirectHome();
+  },
+});
+
+<span class="c">// When navigating away:</span>
+<span class="n">cleanup</span>();</pre>
+    </div>
+  </div>
+</section>
+
+<section id="meet-api">
+  <div class="section-tag" style="color:var(--meet)">Meet SDK</div>
+  <h2 class="section-title">API reference</h2>
+
+  <table class="api-table">
+    <thead>
+      <tr><th>Method</th><th>HTTP</th><th>Endpoint</th><th>Description</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>createRoom(opts)</code></td><td><span class="method m-post">POST</span></td><td class="path-cell">/api/meet/rooms</td><td>Create a room. Returns room + host join token.</td></tr>
+      <tr><td><code>listRooms(status?)</code></td><td><span class="method m-get">GET</span></td><td class="path-cell">/api/meet/rooms</td><td>List all rooms. Optional status filter.</td></tr>
+      <tr><td><code>getRoom(uid)</code></td><td><span class="method m-get">GET</span></td><td class="path-cell">/api/meet/rooms/{uid}</td><td>Room details + active participants.</td></tr>
+      <tr><td><code>updateRoom(uid, updates)</code></td><td><span class="method m-patch">PATCH</span></td><td class="path-cell">/api/meet/rooms/{uid}</td><td>Update name, max participants, waiting room, webhook.</td></tr>
+      <tr><td><code>endRoom(uid)</code></td><td><span class="method m-delete">DELETE</span></td><td class="path-cell">/api/meet/rooms/{uid}</td><td>End room. Triggers room.ended webhook + broadcast.</td></tr>
+      <tr><td><code>issueToken(uid, opts)</code></td><td><span class="method m-post">POST</span></td><td class="path-cell">/api/meet/rooms/{uid}/token</td><td>Issue a 2-hour join token for a participant.</td></tr>
+      <tr><td><code>listParticipants(uid)</code></td><td><span class="method m-get">GET</span></td><td class="path-cell">/api/meet/rooms/{uid}/participants</td><td>Active or all participants.</td></tr>
+      <tr><td><code>kickParticipant(uid, peerId)</code></td><td><span class="method m-delete">DELETE</span></td><td class="path-cell">/api/meet/rooms/{uid}/participants/{peerId}</td><td>Remove a participant from the room.</td></tr>
+      <tr><td><code>admitParticipant(uid, peerId)</code></td><td><span class="method m-post">POST</span></td><td class="path-cell">/api/meet/rooms/{uid}/participants/{peerId}/admit</td><td>Admit from waiting room.</td></tr>
+      <tr><td><code>listRecordings(uid)</code></td><td><span class="method m-get">GET</span></td><td class="path-cell">/api/meet/rooms/{uid}/recordings</td><td>List recordings with download URLs.</td></tr>
+      <tr><td><code>deleteRecording(uid, id)</code></td><td><span class="method m-delete">DELETE</span></td><td class="path-cell">/api/meet/rooms/{uid}/recordings/{id}</td><td>Delete a recording file.</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section id="meet-embed">
+  <div class="section-tag" style="color:var(--meet)">Meet SDK</div>
+  <h2 class="section-title">meet.embed() options</h2>
+
+  <table class="api-table">
+    <thead><tr><th>Option</th><th>Type</th><th>Description</th></tr></thead>
+    <tbody>
+      <tr><td><code>roomUid</code></td><td><code>string</code></td><td>Room UID from <code>createRoom()</code>.</td></tr>
+      <tr><td><code>token</code></td><td><code>string?</code></td><td>Join token from <code>issueToken()</code>. Required for password-protected or waiting-room rooms.</td></tr>
+      <tr><td><code>displayName</code></td><td><code>string?</code></td><td>Fallback display name if no token is provided.</td></tr>
+      <tr><td><code>width / height</code></td><td><code>string?</code></td><td>iframe dimensions. Default: <code>'100%'</code> / <code>'600px'</code>.</td></tr>
+      <tr><td><code>onReady</code></td><td><code>() =&gt; void</code></td><td>Fires when the room is live and the participant is connected.</td></tr>
+      <tr><td><code>onEnded(reason)</code></td><td><code>(string) =&gt; void</code></td><td>Fires when the user leaves or the room ends. Reason: <code>'left'</code>, <code>'kicked'</code>, <code>'room-ended'</code>.</td></tr>
+      <tr><td><code>onParticipantJoined(p)</code></td><td><code>({peerId, displayName}) =&gt; void</code></td><td>A new participant joined.</td></tr>
+      <tr><td><code>onParticipantLeft(peerId)</code></td><td><code>(string) =&gt; void</code></td><td>A participant left.</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section id="meet-events">
+  <div class="section-tag" style="color:var(--meet)">Meet SDK</div>
+  <h2 class="section-title">Broadcast events</h2>
+  <p class="section-desc">These events are broadcast over the presence channel <code>meet.{uid}</code> via Laravel Reverb. The React room page listens for all of them automatically.</p>
+
+  <div class="event-grid">
+    <div class="event-card"><div class="event-name">.meet.participant-joined</div><div class="event-class">ParticipantJoined.php</div><div class="event-desc">Fires when a participant is admitted to the room. Also fires for the participant themselves when admitted from the waiting room.</div></div>
+    <div class="event-card"><div class="event-name">.meet.participant-left</div><div class="event-class">ParticipantLeft.php</div><div class="event-desc">Fires when any participant leaves, is kicked, or is auto-removed.</div></div>
+    <div class="event-card"><div class="event-name">.meet.participant-waiting</div><div class="event-class">ParticipantWaiting.php</div><div class="event-desc">Fires to the host when a participant is waiting for admission (waiting_room=true).</div></div>
+    <div class="event-card"><div class="event-name">.meet.signal</div><div class="event-class">SignalSent.php</div><div class="event-desc">WebRTC signaling envelope (offer / answer / ICE candidate). Routes by peer_id.</div></div>
+    <div class="event-card"><div class="event-name">.meet.room-ended</div><div class="event-class">RoomEnded.php</div><div class="event-desc">Fires to all participants when the host ends the room.</div></div>
+    <div class="event-card"><div class="event-name">.meet.participant-kicked</div><div class="event-class">ParticipantKicked.php</div><div class="event-desc">Fires to all when a participant is kicked. The kicked peer detects their own peer_id.</div></div>
+    <div class="event-card"><div class="event-name">.meet.media-updated</div><div class="event-class">ParticipantMediaUpdated.php</div><div class="event-desc">Camera, mic, screen share, and hand raise state changes from any participant.</div></div>
+    <div class="event-card"><div class="event-name">.meet.recording-started</div><div class="event-class">RecordingStarted.php</div><div class="event-desc">Host started recording. All participants see the REC badge.</div></div>
+    <div class="event-card"><div class="event-name">.meet.recording-stopped</div><div class="event-class">RecordingStopped.php</div><div class="event-desc">Host stopped recording.</div></div>
+  </div>
+</section>
+
+<section id="meet-webhooks">
+  <div class="section-tag" style="color:var(--meet)">Meet SDK</div>
+  <h2 class="section-title">Webhooks</h2>
+
+  <div class="code-block">
+    <div class="code-header"><span class="code-title">webhook handler (Express)</span><span class="code-lang">ts</span></div>
+    <pre><span class="k">import</span> DefcommMeet <span class="k">from</span> <span class="s">'@defcomm/meet-sdk'</span>;
+
+<span class="n">app</span>.post(<span class="s">'/webhooks/meet'</span>, <span class="n">express</span>.raw({ type: <span class="s">'*/*'</span> }), (req, res) => {
+  <span class="k">const</span> body = <span class="t">JSON</span>.parse(req.body.toString());
+  <span class="k">const</span> sig  = req.headers[<span class="s">'x-defcomm-signature'</span>];
+
+  <span class="c">// Verify HMAC-SHA256 signature</span>
+  <span class="k">if</span> (!DefcommMeet.<span class="n">verifyWebhook</span>(body, sig, <span class="v">process.env.DEFCOMM_APP_KEY</span>)) {
+    <span class="k">return</span> res.<span class="n">sendStatus</span>(401);
+  }
+
+  <span class="k">switch</span> (body.event) {
+    <span class="k">case</span> <span class="s">'room.started'</span>:
+      <span class="k">await</span> <span class="n">db</span>.meetings.<span class="n">update</span>(body.room_uid, { status: <span class="s">'active'</span> });
+      <span class="k">break</span>;
+    <span class="k">case</span> <span class="s">'room.ended'</span>:
+      <span class="k">await</span> <span class="n">db</span>.meetings.<span class="n">update</span>(body.room_uid, {
+        status:   <span class="s">'ended'</span>,
+        ended_at: body.payload.ended_at,
+      });
+      <span class="k">break</span>;
+    <span class="k">case</span> <span class="s">'recording.ready'</span>:
+      <span class="k">await</span> <span class="n">notifyHost</span>(body.payload.download_url);
+      <span class="k">break</span>;
+  }
+
+  res.<span class="n">sendStatus</span>(200);
+});</pre>
+  </div>
+
+  <p style="color:var(--muted);font-size:13px;margin-top:16px">Available webhook events: <code>room.started</code> · <code>room.ended</code> · <code>participant.joined</code> · <code>participant.left</code> · <code>participant.kicked</code> · <code>recording.started</code> · <code>recording.ready</code></p>
+</section>
+
+
+<!-- ════════════════════════════ CALLS ═══════════════════════════ -->
+<section id="calls-quick">
+  <div class="section-tag" style="color:var(--calls)">Calls SDK</div>
+  <h2 class="section-title">Quick start</h2>
+
+  <div class="tabs" id="calls-tabs">
+    <button class="tab-btn active" data-tab="ct-server">Server</button>
+    <button class="tab-btn" data-tab="ct-frontend">Frontend</button>
+    <button class="tab-btn" data-tab="ct-incoming">Incoming Ring</button>
+  </div>
+
+  <div class="tab-panel active" id="ct-server">
+    <div class="code-block">
+      <div class="code-header"><span class="code-title">api/calls.ts</span><span class="code-lang">ts</span></div>
+      <pre><span class="k">import</span> { calls } <span class="k">from</span> <span class="s">'./sdk'</span>;
+
+<span class="n">app</span>.post(<span class="s">'/api/call/start'</span>, <span class="k">async</span> (req, res) => {
+  <span class="k">const</span> { call, joinToken } = <span class="k">await</span> <span class="n">calls</span>.<span class="n">create</span>({
+    mode:         <span class="s">'one_to_one'</span>,
+    calleeId:     req.body.userId,        <span class="c">// Defcomm user ID</span>
+    priority:     <span class="s">'urgent'</span>,
+    priorityNote: <span class="s">'Production DB down — need you now'</span>,
+    muteOnJoin:   <span class="k">false</span>,
+    webhookUrl:   <span class="s">'https://yourapp.com/webhooks/calls'</span>,
+  });
+
+  <span class="c">// Issue a token for the callee (so they can also join via your app)</span>
+  <span class="k">const</span> { token: calleeToken } = <span class="k">await</span> <span class="n">calls</span>.<span class="n">issueToken</span>(call.uid, {
+    displayName: targetUser.name,
+    userId:      targetUser.id,
+    role:        <span class="s">'participant'</span>,
+  });
+
+  res.json({
+    callUid:    call.uid,
+    callerToken: joinToken,
+    calleeToken,
+  });
+});</pre>
+    </div>
+  </div>
+
+  <div class="tab-panel" id="ct-frontend">
+    <div class="code-block">
+      <div class="code-header"><span class="code-title">components/Call.tsx</span><span class="code-lang">tsx</span></div>
+      <pre><span class="k">import</span> DefcommCalls <span class="k">from</span> <span class="s">'@defcomm/calls-sdk'</span>;
+
+<span class="k">export function</span> <span class="n">CallEmbed</span>({ callUid, token }) {
+  <span class="n">useEffect</span>(() => {
+    <span class="k">const</span> sdk = <span class="k">new</span> <span class="t">DefcommCalls</span>({ serverUrl: <span class="v">DEFCOMM_URL</span> });
+
+    <span class="k">return</span> sdk.<span class="n">embed</span>(<span class="s">'#call'</span>, {
+      callUid,
+      token,
+      <span class="n">onReady</span>:            () => <span class="n">setStatus</span>(<span class="s">'live'</span>),
+      <span class="n">onEnded</span>:            (reason) => <span class="n">setView</span>(<span class="s">'done'</span>),
+      <span class="n">onPriorityChanged</span>:  (priority, note) => {
+        <span class="n">showBanner</span>(`Priority escalated: ${priority} — ${note}`);
+      },
+    });
+  }, [callUid, token]);
+
+  <span class="k">return</span> &lt;<span class="t">div</span> id=<span class="s">"call"</span> style={{ height: 480 }} /&gt;;
+}</pre>
+    </div>
+  </div>
+
+  <div class="tab-panel" id="ct-incoming">
+    <div class="code-block">
+      <div class="code-header"><span class="code-title">IncomingCallHandler.tsx</span><span class="code-lang">tsx</span></div>
+      <pre><span class="c">// Mount in your root layout to receive incoming calls globally.
+// Listens on the personal Reverb channel: private-user.{id}</span>
+
+<span class="k">import</span> { useEffect, useState } <span class="k">from</span> <span class="s">'react'</span>;
+<span class="k">import</span> Echo <span class="k">from</span> <span class="s">'laravel-echo'</span>;
+
+<span class="k">export function</span> <span class="n">IncomingCallHandler</span>({ userId }) {
+  <span class="k">const</span> [incoming, setIncoming] = <span class="n">useState</span>(<span class="k">null</span>);
+
+  <span class="n">useEffect</span>(() => {
+    <span class="k">const</span> echo = <span class="k">new</span> Echo({ broadcaster: <span class="s">'reverb'</span>, ... });
+
+    echo.<span class="n">private</span>(`user.${userId}`)
+      .listen(<span class="s">'.call.initiated'</span>, (data) => {
+        setIncoming(data);
+        <span class="c">// Emergency calls auto-answer in 5s</span>
+        <span class="k">if</span> (data.priority === <span class="s">'emergency'</span>)
+          <span class="n">setTimeout</span>(() => answerCall(data.uid), 5000);
+      });
+
+    <span class="k">return</span> () => echo.<span class="n">leave</span>(`user.${userId}`);
+  }, [userId]);
+
+  <span class="k">if</span> (!incoming) <span class="k">return null</span>;
+
+  <span class="k">return</span> (
+    &lt;<span class="t">IncomingCallToast</span>
+      call={incoming}
+      onAnswer={() => router.push(`/calls/${incoming.uid}`)}
+      onDecline={() => axios.post(`/calls/${incoming.uid}/decline`)}
+    /&gt;
+  );
+}</pre>
+    </div>
+  </div>
+</section>
+
+<section id="calls-priority">
+  <div class="section-tag" style="color:var(--calls)">Calls SDK</div>
+  <h2 class="section-title">Priority system</h2>
+  <p class="section-desc">Every call has a priority that controls how the callee experiences the incoming call. Priority can be escalated mid-call.</p>
+
+  <div class="priority-grid">
+    <div class="pcard pcard-routine">
+      <div class="pcard-badge">P0</div>
+      <div class="pcard-label">Routine</div>
+      <div class="pcard-detail">Normal ring. Callee can decline or ignore. Suitable for planned check-ins and non-urgent matters.</div>
+    </div>
+    <div class="pcard pcard-important">
+      <div class="pcard-badge">P1</div>
+      <div class="pcard-label">Important</div>
+      <div class="pcard-detail">Visual flag shown. Call is logged for audit. Callee can still decline. Use for escalations that need attention within the hour.</div>
+    </div>
+    <div class="pcard pcard-urgent">
+      <div class="pcard-badge">P2</div>
+      <div class="pcard-label">Urgent</div>
+      <div class="pcard-detail">Overrides Do Not Disturb. Auto-answers after 30 seconds if the callee doesn't respond. Cannot be snoozed.</div>
+    </div>
+    <div class="pcard pcard-emergency">
+      <div class="pcard-badge">P3</div>
+      <div class="pcard-label">Emergency</div>
+      <div class="pcard-detail">Cannot be declined. The decline button is hidden. Auto-answers in 5 seconds. Bypasses all restrictions. Reserved for critical security incidents and system failures.</div>
+    </div>
+  </div>
+
+  <div class="callout callout-warn">
+    <span class="callout-icon">⚠️</span>
+    <span>Use <strong>Emergency</strong> priority sparingly. Overuse desensitises recipients and undermines the trust model. It should be reserved for situations requiring an immediate human response regardless of context.</span>
+  </div>
+
+  <div class="code-block">
+    <div class="code-header"><span class="code-title">Escalate mid-call</span><span class="code-lang">ts</span></div>
+    <pre><span class="c">// A routine check-in escalates when an incident is detected</span>
+<span class="k">await</span> <span class="n">calls</span>.<span class="n">changePriority</span>(callUid, <span class="s">'emergency'</span>, <span class="s">'Active breach detected on prod-db-01'</span>);
+
+<span class="c">// All participants' UIs update instantly:
+// — Priority bar changes colour
+// — Note appears as a banner
+// — Participants who hadn't joined get the emergency overlay</span></pre>
+  </div>
+</section>
+
+<section id="calls-api">
+  <div class="section-tag" style="color:var(--calls)">Calls SDK</div>
+  <h2 class="section-title">API reference</h2>
+
+  <table class="api-table">
+    <thead><tr><th>Method</th><th>HTTP</th><th>Endpoint</th><th>Description</th></tr></thead>
+    <tbody>
+      <tr><td><code>create(opts)</code></td><td><span class="method m-post">POST</span></td><td class="path-cell">/api/calls</td><td>Initiate a call. Returns call + host join token.</td></tr>
+      <tr><td><code>list(opts?)</code></td><td><span class="method m-get">GET</span></td><td class="path-cell">/api/calls</td><td>List calls. Filter by status or priority.</td></tr>
+      <tr><td><code>get(uid)</code></td><td><span class="method m-get">GET</span></td><td class="path-cell">/api/calls/{uid}</td><td>Call details + active participants.</td></tr>
+      <tr><td><code>end(uid)</code></td><td><span class="method m-delete">DELETE</span></td><td class="path-cell">/api/calls/{uid}</td><td>End call for everyone.</td></tr>
+      <tr><td><code>issueToken(uid, opts)</code></td><td><span class="method m-post">POST</span></td><td class="path-cell">/api/calls/{uid}/token</td><td>Issue a 2-hour join token.</td></tr>
+      <tr><td><code>listParticipants(uid)</code></td><td><span class="method m-get">GET</span></td><td class="path-cell">/api/calls/{uid}/participants</td><td>Active or all participants.</td></tr>
+      <tr><td><code>kick(uid, peerId)</code></td><td><span class="method m-delete">DELETE</span></td><td class="path-cell">/api/calls/{uid}/participants/{peerId}</td><td>Remove a participant.</td></tr>
+      <tr><td><code>admit(uid, peerId)</code></td><td><span class="method m-post">POST</span></td><td class="path-cell">/api/calls/{uid}/participants/{peerId}/admit</td><td>Admit from waiting room.</td></tr>
+      <tr><td><code>changePriority(uid, p, note?)</code></td><td><span class="method m-patch">PATCH</span></td><td class="path-cell">/api/calls/{uid}/priority</td><td>Escalate or change priority. Broadcasts to all participants.</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section id="calls-embed">
+  <div class="section-tag" style="color:var(--calls)">Calls SDK</div>
+  <h2 class="section-title">calls.embed() options</h2>
+
+  <table class="api-table">
+    <thead><tr><th>Option</th><th>Type</th><th>Description</th></tr></thead>
+    <tbody>
+      <tr><td><code>callUid</code></td><td><code>string</code></td><td>Call UID from <code>create()</code>.</td></tr>
+      <tr><td><code>token</code></td><td><code>string?</code></td><td>Join token from <code>issueToken()</code>.</td></tr>
+      <tr><td><code>displayName</code></td><td><code>string?</code></td><td>Fallback display name if no token.</td></tr>
+      <tr><td><code>onReady</code></td><td><code>() =&gt; void</code></td><td>Fires when audio is connected.</td></tr>
+      <tr><td><code>onEnded(reason)</code></td><td><code>(string) =&gt; void</code></td><td>Reason: <code>'left'</code>, <code>'kicked'</code>, <code>'call-ended'</code>, <code>'declined'</code>.</td></tr>
+      <tr><td><code>onPriorityChanged(p, note)</code></td><td><code>(priority, note|null) =&gt; void</code></td><td>Priority was escalated or changed mid-call.</td></tr>
+      <tr><td><code>onParticipantJoined(p)</code></td><td><code>({peerId, displayName}) =&gt; void</code></td><td>New participant joined the call.</td></tr>
+      <tr><td><code>onParticipantLeft(peerId)</code></td><td><code>(string) =&gt; void</code></td><td>Participant left.</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section id="calls-events">
+  <div class="section-tag" style="color:var(--calls)">Calls SDK</div>
+  <h2 class="section-title">Broadcast events</h2>
+  <p class="section-desc">All events broadcast on presence channel <code>call.{uid}</code>. Incoming call notification fires on personal channel <code>user.{id}</code>.</p>
+
+  <div class="event-grid">
+    <div class="event-card"><div class="event-name">.call.initiated</div><div class="event-class">CallInitiated.php</div><div class="event-desc">Broadcast to the callee's personal channel when a 1:1 call starts. Triggers the ring notification.</div></div>
+    <div class="event-card"><div class="event-name">.call.answered</div><div class="event-class">CallAnswered.php</div><div class="event-desc">Callee answered the call. Fires to the caller's presence channel.</div></div>
+    <div class="event-card"><div class="event-name">.call.declined</div><div class="event-class">CallDeclined.php</div><div class="event-desc">Callee declined. Only fires for routine/important/urgent calls — emergency cannot be declined.</div></div>
+    <div class="event-card"><div class="event-name">.call.ended</div><div class="event-class">CallEnded.php</div><div class="event-desc">Call ended by host or by becoming empty. Includes duration.</div></div>
+    <div class="event-card"><div class="event-name">.call.priority-changed</div><div class="event-class">CallPriorityChanged.php</div><div class="event-desc">Priority was escalated or downgraded mid-call. All UIs update instantly.</div></div>
+    <div class="event-card"><div class="event-name">.call.signal</div><div class="event-class">CallSignalSent.php</div><div class="event-desc">WebRTC signaling (offer/answer/ICE). Routes by peer_id — only the target peer processes it.</div></div>
+    <div class="event-card"><div class="event-name">.call.participant-joined</div><div class="event-class">ParticipantJoinedCall.php</div><div class="event-desc">Fires to all when a participant is admitted. Fires to the participant themselves when admitted from waiting room.</div></div>
+    <div class="event-card"><div class="event-name">.call.participant-left</div><div class="event-class">ParticipantLeftCall.php</div><div class="event-desc">Participant left voluntarily.</div></div>
+    <div class="event-card"><div class="event-name">.call.participant-kicked</div><div class="event-class">ParticipantKickedFromCall.php</div><div class="event-desc">Host removed a participant.</div></div>
+    <div class="event-card"><div class="event-name">.call.participant-muted</div><div class="event-class">ParticipantMuted.php</div><div class="event-desc">Mic toggled — either self-muted or muted by host. Includes <code>by_host</code> flag.</div></div>
+    <div class="event-card"><div class="event-name">.call.participant-waiting</div><div class="event-class">CallWaiting.php</div><div class="event-desc">Participant is in the waiting room. Only the host receives this event.</div></div>
+  </div>
+</section>
+
+
+<!-- ── Shared ──────────────────────────────────────────────────── -->
+<section id="webhooks">
+  <div class="section-tag">Shared</div>
+  <h2 class="section-title">Webhook verification</h2>
+  <p class="section-desc">Every webhook request includes an <code>X-Defcomm-Signature</code> header. Verify it using your app key to prevent spoofing.</p>
+
+  <div class="code-block">
+    <div class="code-header"><span class="code-title">Verification (Node.js)</span><span class="code-lang">ts</span></div>
+    <pre><span class="k">import</span> crypto <span class="k">from</span> <span class="s">'crypto'</span>;
+
+<span class="k">function</span> <span class="n">verifyWebhook</span>(
+  body: { room_uid?: string; call_uid?: string; timestamp: number },
+  signature: string,
+  appKey: string,
+): boolean {
+  <span class="k">const</span> uid      = body.room_uid ?? body.call_uid ?? <span class="s">''</span>;
+  <span class="k">const</span> expected = crypto
+    .<span class="n">createHmac</span>(<span class="s">'sha256'</span>, appKey)
+    .<span class="n">update</span>(uid + String(body.timestamp))
+    .<span class="n">digest</span>(<span class="s">'hex'</span>);
+  <span class="k">return</span> <span class="n">crypto</span>.<span class="n">timingSafeEqual</span>(
+    Buffer.<span class="n">from</span>(expected),
+    Buffer.<span class="n">from</span>(signature),
+  );
+}</pre>
+  </div>
+
+  <div class="callout callout-tip">
+    <span class="callout-icon">💡</span>
+    <span>Both SDKs expose <code>DefcommMeet.verifyWebhook()</code> and <code>DefcommCalls.verifyWebhook()</code> as static methods that do this for you.</span>
+  </div>
+</section>
+
+<section id="channels">
+  <div class="section-tag">Shared</div>
+  <h2 class="section-title">Broadcast channels</h2>
+
+  <table class="api-table">
+    <thead><tr><th>Channel</th><th>Type</th><th>Used by</th></tr></thead>
+    <tbody>
+      <tr><td class="path-cell">meet.{uid}</td><td>Presence</td><td>All Meet room events. Auth via <code>/broadcasting/auth</code>.</td></tr>
+      <tr><td class="path-cell">call.{uid}</td><td>Presence</td><td>All Call events. Auth via <code>/broadcasting/auth</code>.</td></tr>
+      <tr><td class="path-cell">user.{id}</td><td>Private</td><td>Incoming call notifications to a specific user.</td></tr>
+    </tbody>
+  </table>
+
+  <div class="callout callout-info">
+    <span class="callout-icon">ℹ️</span>
+    <span>Presence channels require <code>BroadcastServiceProvider</code> to use <code>middleware=['web']</code> only (not <code>auth</code>) so guests can authorize. Guest identity is verified via session admission set by <code>MeetController::guestJoin()</code>.</span>
+  </div>
+</section>
+
+<section id="recipes">
+  <div class="section-tag">Recipes</div>
+  <h2 class="section-title">Complete integration recipes</h2>
+
+  <div class="tabs" id="recipe-tabs">
+    <button class="tab-btn active" data-tab="r-support">Customer support</button>
+    <button class="tab-btn" data-tab="r-incident">Incident response</button>
+    <button class="tab-btn" data-tab="r-ondemand">On-demand meetings</button>
+  </div>
+
+  <div class="tab-panel active" id="r-support">
+    <div class="code-block">
+      <div class="code-header"><span class="code-title">Customer support flow (Meet)</span><span class="code-lang">ts</span></div>
+      <pre><span class="c">// 1. Agent opens a ticket — your backend creates a room</span>
+<span class="k">const</span> { room, joinToken: agentToken } = <span class="k">await</span> <span class="n">meet</span>.<span class="n">createRoom</span>({
+  name:        `Ticket #${ticket.id} — ${ticket.subject}`,
+  waitingRoom: <span class="k">true</span>,    <span class="c">// agent admits customer manually</span>
+  recordingEnabled: <span class="k">true</span>,
+  webhookUrl:  <span class="s">'https://yourapp.com/webhooks/meet'</span>,
+  webhookEvents: [<span class="s">'room.ended'</span>, <span class="s">'recording.ready'</span>],
+});
+
+<span class="c">// 2. Issue a token for the customer</span>
+<span class="k">const</span> { token: customerToken, joinUrl } = <span class="k">await</span> <span class="n">meet</span>.<span class="n">issueToken</span>(room.uid, {
+  displayName: customer.name,
+  userId:      customer.id,
+  role:        <span class="s">'participant'</span>,
+});
+
+<span class="c">// 3. Email the customer their join link</span>
+<span class="k">await</span> <span class="n">email</span>.send(customer.email, `Your support call: ${joinUrl}?token=${customerToken}`);
+
+<span class="c">// 4. On webhook: room.ended → mark ticket as resolved</span>
+<span class="k">case</span> <span class="s">'room.ended'</span>:
+  <span class="k">await</span> <span class="n">db</span>.tickets.<span class="n">update</span>(ticket.id, {
+    resolved_at:    body.payload.ended_at,
+    call_duration:  body.payload.duration,
+  });</pre>
+    </div>
+  </div>
+
+  <div class="tab-panel" id="r-incident">
+    <div class="code-block">
+      <div class="code-header"><span class="code-title">Incident response flow (Calls)</span><span class="code-lang">ts</span></div>
+      <pre><span class="c">// Your monitoring system detects an incident</span>
+<span class="k">async function</span> <span class="n">onAlertFired</span>(incident: Incident) {
+  <span class="c">// Start as urgent — escalate to emergency if no response</span>
+  <span class="k">const</span> { call } = <span class="k">await</span> <span class="n">calls</span>.<span class="n">create</span>({
+    mode:         <span class="s">'one_to_one'</span>,
+    calleeId:     incident.oncall_user_id,
+    priority:     <span class="s">'urgent'</span>,
+    priorityNote: `[${incident.severity}] ${incident.title}`,
+    muteOnJoin:   <span class="k">false</span>,
+    webhookUrl:   <span class="s">'https://yourapp.com/webhooks/calls'</span>,
+  });
+
+  <span class="c">// If no answer in 60s, escalate to emergency</span>
+  <span class="n">setTimeout</span>(<span class="k">async</span> () => {
+    <span class="k">const</span> { call: current } = <span class="k">await</span> <span class="n">calls</span>.<span class="n">get</span>(call.uid);
+    <span class="k">if</span> (current.status === <span class="s">'pending'</span>) {
+      <span class="k">await</span> <span class="n">calls</span>.<span class="n">changePriority</span>(
+        call.uid, <span class="s">'emergency'</span>,
+        <span class="s">'No response — escalating. Auto-answer in 5s.'</span>
+      );
+    }
+  }, 60_000);
+}</pre>
+    </div>
+  </div>
+
+  <div class="tab-panel" id="r-ondemand">
+    <div class="code-block">
+      <div class="code-header"><span class="code-title">On-demand meeting link</span><span class="code-lang">ts</span></div>
+      <pre><span class="c">// Generate a permanent invite link for a scheduled meeting</span>
+<span class="k">const</span> { room } = <span class="k">await</span> <span class="n">meet</span>.<span class="n">createRoom</span>({
+  name:             <span class="s">'Weekly Standup'</span>,
+  maxParticipants:  20,
+  videoEnabled:     <span class="k">true</span>,
+  waitingRoom:      <span class="k">false</span>,    <span class="c">// open join</span>
+  recordingEnabled: <span class="k">false</span>,
+});
+
+<span class="c">// Anyone with a token can join — issue tokens per-user on demand</span>
+<span class="k">app</span>.get(<span class="s">'/standup-link'</span>, <span class="k">async</span> (req, res) => {
+  <span class="k">const</span> { token, joinUrl } = <span class="k">await</span> <span class="n">meet</span>.<span class="n">issueToken</span>(room.uid, {
+    displayName: req.user.name,
+    userId:      req.user.id,
+  });
+  res.<span class="n">redirect</span>(`${joinUrl}?token=${token}`);
+});</pre>
+    </div>
+  </div>
+</section>
+
+</main>
+</div>
+
+<script>
+// ── Tab switching ──────────────────────────────────────────────
+document.querySelectorAll('[data-tab]').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const tabId  = btn.dataset.tab;
+    const parent = btn.closest('[id$="-tabs"]') || btn.closest('.tabs');
+
+    // Deactivate all tabs in this group
+    if (parent) {
+      parent.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    }
+    btn.classList.add('active');
+
+    // Hide all panels that could belong to this group
+    // Find sibling panels by looking for tab-panels after the tabs container
+    const container = parent?.parentElement;
+    if (container) {
+      container.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+    } else {
+      document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+    }
+
+    const panel = document.getElementById(tabId);
+    if (panel) panel.classList.add('active');
+  });
+});
+
+// ── Active nav link on scroll ──────────────────────────────────
+const sections = document.querySelectorAll('section[id], .hero');
+const navLinks  = document.querySelectorAll('.nav-link');
+
+const io = new IntersectionObserver((entries) => {
+  entries.forEach(entry => {
+    if (entry.isIntersecting) {
+      const id = entry.target.id || 'top';
+      navLinks.forEach(a => {
+        a.classList.toggle('active', a.getAttribute('href') === '#' + id);
+      });
+    }
+  });
+}, { rootMargin: '-20% 0px -70% 0px' });
+
+sections.forEach(s => io.observe(s));
+</script>
+</body>
+</html>

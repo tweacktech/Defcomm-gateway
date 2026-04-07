@@ -12,6 +12,8 @@ use Illuminate\Support\Facades\Broadcast;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
 use Laravel\Fortify\Features;
+use App\Http\Controllers\AudioCallController;
+
 
 Route::get('/', function () {
     return Inertia::render('welcome', [
@@ -198,7 +200,44 @@ Route::post('/broadcasting/auth', function (Illuminate\Http\Request $request) {
     ]);
 })->middleware('web');   // session only — no 'auth' guard
 
- 
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PUBLIC (web middleware from web.php include)
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Participant answer / join (axios from call room — no auth needed for guests,
+// but for now all calls are between authenticated users; keep open for SDK ext)
+Route::post('/calls/{uid}/answer',       [AudioCallController::class, 'answer'])->name('calls.answer');
+Route::post('/calls/{uid}/leave',        [AudioCallController::class, 'leave'])->name('calls.leave');
+Route::post('/calls/{uid}/signal',       [AudioCallController::class, 'signal'])->name('calls.signal');
+Route::post('/calls/{uid}/audio-state',  [AudioCallController::class, 'audioState'])->name('calls.audio-state');
+Route::post('/calls/{uid}/decline',      [AudioCallController::class, 'decline'])->name('calls.decline');
+Route::patch('/calls/{uid}/kick/{peerId}', [AudioCallController::class, 'kick'])->name('calls.kick');
+
+// ─────────────────────────────────────────────────────────────────────────────
+// AUTH REQUIRED
+// ─────────────────────────────────────────────────────────────────────────────
+
+Route::middleware(['auth'])->group(function () {
+    // Pages
+    Route::get('/calls',        [AudioCallController::class, 'index'])->name('calls.index');
+    Route::get('/calls/{uid}',  [AudioCallController::class, 'room'])->name('calls.room');
+
+    // Call management
+    Route::post('/calls',                         [AudioCallController::class, 'create'])->name('calls.create');
+    Route::patch('/calls/{uid}/end',              [AudioCallController::class, 'end'])->name('calls.end');
+    Route::patch('/calls/{uid}/hold',             [AudioCallController::class, 'hold'])->name('calls.hold');
+    Route::patch('/calls/{uid}/resume',           [AudioCallController::class, 'resume'])->name('calls.resume');
+    Route::patch('/calls/{uid}/priority',         [AudioCallController::class, 'changePriority'])->name('calls.priority');
+    Route::patch('/calls/{uid}/admit/{peerId}',   [AudioCallController::class, 'admit'])->name('calls.admit');
+    Route::patch('/calls/{uid}/mute/{peerId}',    [AudioCallController::class, 'muteParticipant'])->name('calls.mute');
+});
+
+
+
+
+
+
 //
 // Audio server is used for routing to play audio
 //
@@ -211,3 +250,6 @@ Route::fallback(
 );
 
 require __DIR__ . '/settings.php';
+
+
+
