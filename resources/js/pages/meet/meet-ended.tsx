@@ -64,10 +64,15 @@ export default function MeetEnded() {
                             <Home className="h-4 w-4" />Back to Meet
                         </Button>
                     ) : (
-                        <a href="/"
-                            className="flex w-full items-center justify-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground hover:opacity-90 transition">
-                            <Home className="h-4 w-4" />Go to Homepage
-                        </a>
+                        // <a href="/"
+                        //     className="flex w-full items-center justify-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground hover:opacity-90 transition">
+                        //     <Home className="h-4 w-4" />Go to Homepage
+                        // </a>
+
+                         <Button onClick={() => router.get('/meets')} variant="outline"
+                                        className="gap-2 border-zinc-700 text-zinc-300 hover:bg-zinc-800">
+                                        <Video className="h-4 w-4" />Back to Calls
+                                    </Button>
                     )}
                 </div>
             </div>

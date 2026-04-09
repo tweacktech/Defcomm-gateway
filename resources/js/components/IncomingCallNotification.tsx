@@ -27,6 +27,8 @@ const PRIORITY_RING: Record<string, { bg: string; border: string; icon: any; pul
     emergency: { bg: 'bg-red-950',       border: 'border-red-500',    icon: Siren,         pulse: true  },
 };
 
+console.log('incoming call')
+
 interface IncomingCall {
     uid: string; title: string; initiator: string; priority: string;
     priority_note: string | null; mode: string;

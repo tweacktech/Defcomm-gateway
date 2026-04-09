@@ -13,6 +13,7 @@ use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
 use Laravel\Fortify\Features;
 use App\Http\Controllers\AudioCallController;
+use App\Http\Controllers\DocsController;
 
 
 Route::get('/', function () {
@@ -38,6 +39,8 @@ Route::prefix('')->middleware(['auth'])->group(function () {
     // route to generate access token for apiClients
     Route::get('access-token', [ProfileController::class, 'accessToken']);
     Route::post('generate-access-token', [ProfileController::class, 'genAccessToken']);
+
+    Route::get('/docs/sdk', [DocsController::class, 'sdk'])->name('docs.sdk');
 
     // route for the vault service
     Route::get('/services/vault', [VaultController::class, 'index']);

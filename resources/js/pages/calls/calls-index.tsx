@@ -6,6 +6,7 @@ import {
     Phone, PhoneCall, PhoneOff, Clock, Users, Shield,
     AlertTriangle, AlertCircle, Siren, Plus, ChevronRight,
     User, Mic, MicOff, X,
+    Video,
 } from 'lucide-react';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
@@ -243,10 +244,16 @@ export default function CallsIndex() {
     return (
         <AppLayout breadcrumbs={breadcrumbs}>
             <Head title="Calls" />
+             <Button onClick={() => router.get('/meet')} variant="outline"
+                 className="gap-4 border-zinc-700 text-black-300 hover:bg-blue-200 max-w-3xl min-w-2x">
+                <Video className="h-4 w-4" />Go to Meetings
+            </Button>
             {showNew && <NewCallModal onClose={() => setShowNew(false)} />}
 
             <div className="mx-auto max-w-2xl p-6">
+                
                 <div className="mb-6 flex items-center justify-between">
+
                     <div>
                         <h1 className="text-2xl font-bold">Calls</h1>
                         <p className="mt-0.5 text-sm text-muted-foreground">Secure audio calls with priority levels.</p>

@@ -4,6 +4,7 @@ import { Head, usePage, router } from '@inertiajs/react';
 import {
     Video, Plus, Clock, Users, Copy, Check, Calendar,
     Lock, PhoneCall, Link2, ScreenShare, Settings2, X,
+    Phone,
 } from 'lucide-react';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
@@ -253,6 +254,10 @@ export default function MeetIndex() {
     return (
         <AppLayout breadcrumbs={breadcrumbs}>
             <Head title="Meet" />
+             <Button onClick={() => router.get('/calls')} variant="outline"
+                className="gap-4 border-zinc-700 text-black-300 hover:bg-blue-200 max-w-3xl min-w-2x">
+                <Phone className="h-4 w-4" />Go to Calls
+            </Button>
             {showCreate && <CreateModal onClose={() => setCreate(false)} />}
 
             <div className="mx-auto max-w-3xl p-6">

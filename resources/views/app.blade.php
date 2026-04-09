@@ -23,6 +23,14 @@
             })();
         </script>
 
+        <script>
+            window.reverbConfig = {
+                key: "{{ config('reverb.apps.key') }}",
+                host: "{{ config('reverb.apps.host') }}",
+                port: {{ config('reverb.apps.port') }},
+            };
+        </script>
+
         {{-- Inline style to set the HTML background color based on our theme in app.css --}}
         <style>
             html {
