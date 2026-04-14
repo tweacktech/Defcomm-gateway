@@ -245,13 +245,13 @@ export default function CallsIndex() {
         <AppLayout breadcrumbs={breadcrumbs}>
             <Head title="Calls" />
              <Button onClick={() => router.get('/meet')} variant="outline"
-                 className="gap-4 border-zinc-700 text-black-300 hover:bg-blue-200 max-w-3xl min-w-2x">
+                 className="gap-4 border-zinc-700 text-black-300 hover:bg-green-700 max-w-3xl min-w-2x">
                 <Video className="h-4 w-4" />Go to Meetings
             </Button>
             {showNew && <NewCallModal onClose={() => setShowNew(false)} />}
 
             <div className="mx-auto max-w-2xl p-6">
-                
+
                 <div className="mb-6 flex items-center justify-between">
 
                     <div>

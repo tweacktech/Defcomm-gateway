@@ -255,7 +255,7 @@ export default function MeetIndex() {
         <AppLayout breadcrumbs={breadcrumbs}>
             <Head title="Meet" />
              <Button onClick={() => router.get('/calls')} variant="outline"
-                className="gap-4 border-zinc-700 text-black-300 hover:bg-blue-200 max-w-3xl min-w-2x">
+                className="gap-4 border-zinc-700 text-black-300 hover:bg-green-700 max-w-3xl min-w-1x btn-md">
                 <Phone className="h-4 w-4" />Go to Calls
             </Button>
             {showCreate && <CreateModal onClose={() => setCreate(false)} />}
