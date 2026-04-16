@@ -1,4 +1,4 @@
-version: '3.9'
+# version: '3.9'
 
 services:
   app:
@@ -21,8 +21,8 @@ services:
     container_name: defcomm_nginx
     restart: unless-stopped
     ports:
-      - "80:80"
-      - "443:443"
+       - "8080:80"
+       - "8443:443"
     volumes:
       - ./:/var/www
       - ./docker/nginx:/etc/nginx/conf.d
@@ -79,68 +79,4 @@ networks:
 
 volumes:
   dbdata:
----
-# ================= DOCKERFILE =================
 
-FROM php:8.3-fpm
-
-# Install system dependencies
-RUN apt-get update && apt-get install -y \
-    git \
-    curl \
-    libpng-dev \
-    libonig-dev \
-    libxml2-dev \
-    zip \
-    unzip \
-    nodejs \
-    npm \
-    python3 \
-    python3-pip
-
-# Install PHP extensions
-RUN docker-php-ext-install pdo_mysql mbstring exif pcntl bcmath gd
-
-# Install Composer
-COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
-
-WORKDIR /var/www
-
-# Copy project
-COPY . .
-
-# Install dependencies
-RUN composer install
-RUN npm install && npm run build
-
-# Permissions
-RUN chown -R www-data:www-data /var/www
-
-EXPOSE 9000
-
-CMD ["php-fpm"]
-
----
-# ================= NGINX CONFIG =================
-
-server {
-    listen 80;
-    server_name localhost;
-
-    root /var/www/public;
-    index index.php index.html;
-
-    location / {
-        try_files $uri $uri/ /index.php?$query_string;
-    }
-
-    location ~ \.php$ {
-        include fastcgi_params;
-        fastcgi_pass app:9000;
-        fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
-    }
-
-    location ~ /\.ht {
-        deny all;
-    }
-}
