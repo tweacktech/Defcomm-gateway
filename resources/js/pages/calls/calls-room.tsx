@@ -34,7 +34,10 @@ type EndReason = 'left' | 'kicked' | 'call-ended' | 'declined';
 
 type PageProps = {
     call: CallConfig; peer_id: string; display_name: string; is_host: boolean;
-    reverb_key: string; reverb_host: string; reverb_port: number; stun_servers: RTCIceServer[];
+    reverb_key: string; reverb_host: string; reverb_port: number;
+    /** Matches REVERB_SCHEME / useTLS */
+    reverb_use_tls?: boolean;
+    stun_servers: RTCIceServer[];
     auth: { user: { id: number } };
 };
 
@@ -267,7 +270,7 @@ function EndScreen({ name, reason }: { name: string; reason: EndReason }) {
 
 export default function CallRoom() {
     const { call, peer_id, display_name, is_host, auth,
-            reverb_key, reverb_host, reverb_port, stun_servers } = usePage<PageProps>().props;
+            reverb_key, reverb_host, reverb_port, reverb_use_tls, stun_servers } = usePage<PageProps>().props;
 
     // ── UI state ──────────────────────────────────────────────────────────────
     const [peers,        setPeers]       = useState<Map<string, Peer>>(new Map());
@@ -385,10 +388,14 @@ export default function CallRoom() {
 
         // ── Echo ──────────────────────────────────────────────────────────────
         (window as any).Pusher = Pusher;
+        const useTls = reverb_use_tls ?? false;
         const echo = new Echo({
             broadcaster: 'reverb', key: reverb_key,
             wsHost: reverb_host, wsPort: reverb_port,
-            forceTLS: false, enabledTransports: ['ws', 'wss'],
+            forceTLS: useTls,
+            enabledTransports: useTls
+                ? (['wss'] as ('ws' | 'wss')[])
+                : ['ws', 'wss'],
             authorizer: (channel: any) => ({
                 authorize: (socketId: string, cb: Function) => {
                     axios.post('/broadcasting/auth', {

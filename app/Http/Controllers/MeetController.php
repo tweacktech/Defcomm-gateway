@@ -147,24 +147,14 @@ class MeetController extends Controller
             'display_name' => $displayName,
             'is_owner' => !$isGuest && $room->owner_id === $request->user()?->id,
             'is_guest' => $isGuest,
-            'reverb_key' => env('REVERB_APP_KEY'),
+            'reverb_key' => config('broadcasting.connections.reverb.key'),
             'reverb_host' => env('VITE_REVERB_HOST', env('REVERB_HOST')),
-            'reverb_port' => env('VITE_REVERB_PORT', env('REVERB_PORT')),
-            'reverb_use_tls' => (bool) config('broadcasting.connections.reverb.options.useTLS', false),
-            'stun_servers' => [
-                ['urls' => 'stun:stun.l.google.com:19302'],
-                ['urls' => 'stun:stun1.l.google.com:19302'],
-                [
-                    'urls' => 'turn:' . env('TURN_HOST') . ':' . env('TURN_PORT'),
-                    'username' => env('TURN_USERNAME'),
-                    'credential' => env('TURN_SECRET'),
-                ],
-                [
-                    'urls' => 'turns:' . env('TURN_HOST') . ':5349',
-                    'username' => env('TURN_USERNAME'),
-                    'credential' => env('TURN_SECRET'),
-                ],
-            ],
+            'reverb_port' => (int) env('VITE_REVERB_PORT', env('REVERB_PORT', 8080)),
+            'reverb_use_tls' => (bool) config(
+                'broadcasting.connections.reverb.options.useTLS',
+                env('REVERB_SCHEME', 'http') === 'https',
+            ),
+            'stun_servers' => config('meet.stun_servers'),
         ]);
     }
 
