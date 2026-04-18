@@ -42,7 +42,7 @@ class MeetController extends Controller
             ->withCount('activeParticipants')
             ->orderBy('created_at', 'desc')
             ->paginate(perPage: 10, pageName: 'page')
-            ->through(fn ($r) => $this->roomResource($r));
+            ->through(fn($r) => $this->roomResource($r));
 
         $roomCounts = [
             'all' => MeetRoom::where('owner_id', $userId)->count(),
@@ -52,7 +52,7 @@ class MeetController extends Controller
         ];
 
         $recordings = MeetRecording::query()
-            ->whereHas('room', fn ($q) => $q->where('owner_id', $userId))
+            ->whereHas('room', fn($q) => $q->where('owner_id', $userId))
             ->with(['room:id,uid,name'])
             ->orderByDesc('started_at')
             ->paginate(perPage: 10, pageName: 'recordings_page')
@@ -147,24 +147,24 @@ class MeetController extends Controller
             'display_name' => $displayName,
             'is_owner' => !$isGuest && $room->owner_id === $request->user()?->id,
             'is_guest' => $isGuest,
-            'reverb_key'  => env('REVERB_APP_KEY'),
-'reverb_host' => env('VITE_REVERB_HOST', env('REVERB_HOST')),
-'reverb_port' => env('VITE_REVERB_PORT', env('REVERB_PORT')),
+            'reverb_key' => env('REVERB_APP_KEY'),
+            'reverb_host' => env('VITE_REVERB_HOST', env('REVERB_HOST')),
+            'reverb_port' => env('VITE_REVERB_PORT', env('REVERB_PORT')),
             'reverb_use_tls' => (bool) config('broadcasting.connections.reverb.options.useTLS', false),
-           'stun_servers' => [
-    ['urls' => 'stun:stun.l.google.com:19302'],
-    ['urls' => 'stun:stun1.l.google.com:19302'],
-    [
-        'urls'       => 'turn:' . env('TURN_HOST') . ':' . env('TURN_PORT'),
-        'username'   => env('TURN_USERNAME'),
-        'credential' => env('TURN_SECRET'),
-    ],
-    [
-        'urls'       => 'turns:' . env('TURN_HOST') . ':5349',
-        'username'   => env('TURN_USERNAME'),
-        'credential' => env('TURN_SECRET'),
-    ],
-],
+            'stun_servers' => [
+                ['urls' => 'stun:stun.l.google.com:19302'],
+                ['urls' => 'stun:stun1.l.google.com:19302'],
+                [
+                    'urls' => 'turn:' . env('TURN_HOST') . ':' . env('TURN_PORT'),
+                    'username' => env('TURN_USERNAME'),
+                    'credential' => env('TURN_SECRET'),
+                ],
+                [
+                    'urls' => 'turns:' . env('TURN_HOST') . ':5349',
+                    'username' => env('TURN_USERNAME'),
+                    'credential' => env('TURN_SECRET'),
+                ],
+            ],
         ]);
     }
 
@@ -308,11 +308,11 @@ class MeetController extends Controller
         $participants = $room->activeParticipants()
             ->orderBy('joined_at')
             ->get()
-            ->map(fn (MeetParticipant $p) => $this->participantResource($p))
+            ->map(fn(MeetParticipant $p) => $this->participantResource($p))
             ->values();
 
         if ($peerId !== '') {
-            $participants = $participants->filter(fn (array $p) => ($p['peer_id'] ?? null) !== $peerId)->values();
+            $participants = $participants->filter(fn(array $p) => ($p['peer_id'] ?? null) !== $peerId)->values();
         }
 
         return response()->json([

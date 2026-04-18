@@ -21,8 +21,8 @@ services:
     container_name: defcomm_nginx
     restart: unless-stopped
     ports:
-       - "8080:80"
-       - "8443:443"
+      - "8080:80"
+      - "8443:443"
     volumes:
       - ./:/var/www
       - ./docker/nginx:/etc/nginx/conf.d
@@ -36,16 +36,27 @@ services:
     container_name: defcomm_db
     restart: unless-stopped
     environment:
-      MYSQL_DATABASE: defcomm
+      MYSQL_DATABASE: defcome-gateway
       MYSQL_ROOT_PASSWORD: root
       MYSQL_USER: defcomm
       MYSQL_PASSWORD: secret
+      MYSQL_ROOT_HOST: "%"
     volumes:
       - dbdata:/var/lib/mysql
     ports:
       - "3306:3306"
     networks:
       - defcomm
+
+  # reverb:
+  #   image: php:8.3-cli
+  #   container_name: defcomm_reverb
+  #   working_dir: /var/www
+  #   volumes:
+  #     - ./:/var/www
+  #   command: php artisan reverb:start --host=0.0.0.0 --port=8080
+  #   ports:
+  #     -"8080:8080"
 
   redis:
     image: redis:alpine
@@ -55,13 +66,17 @@ services:
     networks:
       - defcomm
 
+
   coturn:
     image: coturn/coturn
     container_name: defcomm_turn
     restart: unless-stopped
     ports:
       - "3478:3478"
+      - "3478:3478/tcp"
       - "3478:3478/udp"
+      - "5349:5349/udp"
+      - "49160-49200:49160-49200/udp"
       - "49160-49200:49160-49200/udp"
     command: >
       -n
