@@ -20,6 +20,8 @@ RUN apt-get update && apt-get install -y \
     flac \
     espeak-ng \
     libespeak1 \
+    libasound2 \
+    portaudio19-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # Python venv lives outside /var/www so bind mounts do not erase packages (docker-compose dev)
