@@ -17,10 +17,12 @@ class CallEnded implements ShouldBroadcast
     public function __construct(
         public readonly AudioCall $call,
         public readonly string $reason = 'ended'
-    ) {}
+    ) {
+    }
 
     public function broadcastOn(): PresenceChannel
     {
+        \Log::info('CallEnded event');
         return new PresenceChannel("call.{$this->call->uid}");
     }
 
@@ -31,6 +33,6 @@ class CallEnded implements ShouldBroadcast
 
     public function broadcastWith(): array
     {
-        return ['uid'=>$this->call->uid,'reason'=>$this->reason,'duration_seconds'=>$this->call->duration_seconds,'ended_at'=>$this->call->ended_at?->toIso8601String()];
+        return ['uid' => $this->call->uid, 'reason' => $this->reason, 'duration_seconds' => $this->call->duration_seconds, 'ended_at' => $this->call->ended_at?->toIso8601String()];
     }
 }

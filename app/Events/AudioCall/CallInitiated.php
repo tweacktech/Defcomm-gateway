@@ -16,10 +16,12 @@ class CallInitiated implements ShouldBroadcast
 
     public function __construct(
         public readonly AudioCall $call
-    ) {}
+    ) {
+    }
 
     public function broadcastOn(): PresenceChannel
     {
+        \Log::info('CallInitiated event');
         return new PresenceChannel("call.{$this->call->uid}");
     }
 
@@ -30,9 +32,17 @@ class CallInitiated implements ShouldBroadcast
 
     public function broadcastWith(): array
     {
-        return ['uid'=>$this->call->uid,'title'=>$this->call->title,'initiator'=>$this->call->initiator->name,
-        'initiator_id'=>$this->call->initiator_id,'priority'=>$this->call->priority,'priority_label'=>$this->call->priorityLabel(),
-        'priority_color'=>$this->call->priorityColor(),
-        'priority_note'=>$this->call->priority_note,'mode'=>$this->call->mode,'callee_id'=>$this->call->callee_id];
+        return [
+            'uid' => $this->call->uid,
+            'title' => $this->call->title,
+            'initiator' => $this->call->initiator->name,
+            'initiator_id' => $this->call->initiator_id,
+            'priority' => $this->call->priority,
+            'priority_label' => $this->call->priorityLabel(),
+            'priority_color' => $this->call->priorityColor(),
+            'priority_note' => $this->call->priority_note,
+            'mode' => $this->call->mode,
+            'callee_id' => $this->call->callee_id
+        ];
     }
 }

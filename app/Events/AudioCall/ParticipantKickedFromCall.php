@@ -15,10 +15,12 @@ class ParticipantKickedFromCall implements ShouldBroadcast
     public function __construct(
         public readonly string $callUid,
         public readonly string $peerId
-    ) {}
+    ) {
+    }
 
     public function broadcastOn(): PresenceChannel
     {
+        \Log::info('ParticipantKickedFromCall event');
         return new PresenceChannel("call.{$this->callUid}");
     }
 
@@ -29,6 +31,6 @@ class ParticipantKickedFromCall implements ShouldBroadcast
 
     public function broadcastWith(): array
     {
-        return ['peer_id'=>$this->peerId];
+        return ['peer_id' => $this->peerId];
     }
 }

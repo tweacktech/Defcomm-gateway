@@ -18,10 +18,12 @@ class ParticipantLeftCall implements ShouldBroadcast
     public function __construct(
         public readonly AudioCall $call,
         public readonly AudioCallParticipant $participant
-    ) {}
+    ) {
+    }
 
     public function broadcastOn(): PresenceChannel
     {
+        \Log::info('ParticipantLeftCall event');
         return new PresenceChannel("call.{$this->call->uid}");
     }
 
@@ -32,6 +34,6 @@ class ParticipantLeftCall implements ShouldBroadcast
 
     public function broadcastWith(): array
     {
-        return ['peer_id'=>$this->participant->peer_id,'display_name'=>$this->participant->display_name,'duration_seconds'=>$this->participant->duration_seconds];
+        return ['peer_id' => $this->participant->peer_id, 'display_name' => $this->participant->display_name, 'duration_seconds' => $this->participant->duration_seconds];
     }
 }

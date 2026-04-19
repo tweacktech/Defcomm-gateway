@@ -22,6 +22,7 @@ class CallSignalSent implements ShouldBroadcast
 
     public function broadcastOn(): PresenceChannel
     {
+        \Log::info('CallSignalSent event');
         return new PresenceChannel("call.{$this->callUid}");
     }
 

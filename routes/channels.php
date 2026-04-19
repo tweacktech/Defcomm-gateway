@@ -62,27 +62,29 @@ use Illuminate\Support\Str;
 
 Broadcast::channel('meet.{uid}', function ($user, string $uid) {
     $room = App\Models\MeetRoom::where('uid', $uid)->first();
-    if (!$room || $room->isEnded()) return false;
+    if (!$room || $room->isEnded())
+        return false;
 
     if ($user) {
         return [
-            'id'           => $user->id,
-            'peer_id'      => request()->input('peer_id', ''),
+            'id' => $user->id,
+            'peer_id' => request()->input('peer_id', ''),
             'display_name' => $user->name,
-            'role'         => $room->owner_id === $user->id ? 'host' : 'participant',
+            'role' => $room->owner_id === $user->id ? 'host' : 'participant',
         ];
     }
 
     // Guest path — session was already validated by the route above.
     $guestSession = request()->session()->get("meet_guest_{$room->id}");
-    if (empty($guestSession['admitted'])) return false;
+    if (empty($guestSession['admitted']))
+        return false;
 
     $peerId = request()->input('peer_id', '');
     return [
-        'id'           => $peerId,
-        'peer_id'      => $peerId,
+        'id' => $peerId,
+        'peer_id' => $peerId,
         'display_name' => $guestSession['name'] ?? 'Guest',
-        'role'         => 'participant',
+        'role' => 'participant',
     ];
 });
 
@@ -95,7 +97,8 @@ use App\Models\AudioCall;
 
 Broadcast::channel('call.{uid}', function ($user, string $uid) {
     $call = AudioCall::where('uid', $uid)->first();
-    if (!$call) return false;
+    if (!$call)
+        return false;
 
     $peerId = request()->input('peer_id') ?: (string) \Illuminate\Support\Str::uuid();
 
@@ -104,13 +107,14 @@ Broadcast::channel('call.{uid}', function ($user, string $uid) {
             || $call->callee_id === $user->id
             || $call->participants()->where('user_id', $user->id)->exists();
 
-        if (!$isParticipant) return false;
+        if (!$isParticipant)
+            return false;
 
         return [
-            'id'           => $user->id,
-            'peer_id'      => $peerId,
+            'id' => $user->id,
+            'peer_id' => $peerId,
             'display_name' => $user->name,
-            'role'         => $call->initiator_id === $user->id ? 'host' : 'participant',
+            'role' => $call->initiator_id === $user->id ? 'host' : 'participant',
         ];
     }
 

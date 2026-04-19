@@ -18,10 +18,12 @@ class ParticipantJoinedCall implements ShouldBroadcast
     public function __construct(
         public readonly AudioCall $call,
         public readonly AudioCallParticipant $participant
-    ) {}
+    ) {
+    }
 
     public function broadcastOn(): PresenceChannel
     {
+        \Log::info('ParticipantJoinedCall event');
         return new PresenceChannel("call.{$this->call->uid}");
     }
 
@@ -32,6 +34,6 @@ class ParticipantJoinedCall implements ShouldBroadcast
 
     public function broadcastWith(): array
     {
-        return ['peer_id'=>$this->participant->peer_id,'display_name'=>$this->participant->display_name,'role'=>$this->participant->role,'is_admitted'=>$this->participant->is_admitted,'audio_on'=>$this->participant->audio_on,'joined_at'=>$this->participant->joined_at?->toIso8601String()];
+        return ['peer_id' => $this->participant->peer_id, 'display_name' => $this->participant->display_name, 'role' => $this->participant->role, 'is_admitted' => $this->participant->is_admitted, 'audio_on' => $this->participant->audio_on, 'joined_at' => $this->participant->joined_at?->toIso8601String()];
     }
 }

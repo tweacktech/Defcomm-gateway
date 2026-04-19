@@ -17,10 +17,12 @@ class CallPriorityChanged implements ShouldBroadcast
     public function __construct(
         public readonly AudioCall $call,
         public readonly string $oldPriority
-    ) {}
+    ) {
+    }
 
     public function broadcastOn(): PresenceChannel
     {
+        \Log::info('CallPriorityChanged event');
         return new PresenceChannel("call.{$this->call->uid}");
     }
 
@@ -31,6 +33,6 @@ class CallPriorityChanged implements ShouldBroadcast
 
     public function broadcastWith(): array
     {
-        return ['uid'=>$this->call->uid,'priority'=>$this->call->priority,'priority_label'=>$this->call->priorityLabel(),'priority_color'=>$this->call->priorityColor(),'old_priority'=>$this->oldPriority,'priority_note'=>$this->call->priority_note];
+        return ['uid' => $this->call->uid, 'priority' => $this->call->priority, 'priority_label' => $this->call->priorityLabel(), 'priority_color' => $this->call->priorityColor(), 'old_priority' => $this->oldPriority, 'priority_note' => $this->call->priority_note];
     }
 }

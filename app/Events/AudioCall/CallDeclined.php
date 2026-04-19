@@ -15,10 +15,12 @@ class CallDeclined implements ShouldBroadcast
     public function __construct(
         public readonly string $callUid,
         public readonly string $displayName
-    ) {}
+    ) {
+    }
 
     public function broadcastOn(): PresenceChannel
     {
+        \Log::info('CallDeclined event');
         return new PresenceChannel("call.{$this->callUid}");
     }
 
@@ -29,6 +31,6 @@ class CallDeclined implements ShouldBroadcast
 
     public function broadcastWith(): array
     {
-        return ['uid'=>$this->callUid,'declined_by'=>$this->displayName,'declined_at'=>now()->toIso8601String()];
+        return ['uid' => $this->callUid, 'declined_by' => $this->displayName, 'declined_at' => now()->toIso8601String()];
     }
 }

@@ -18,10 +18,12 @@ class CallWaiting implements ShouldBroadcast
     public function __construct(
         public readonly AudioCall $call,
         public readonly AudioCallParticipant $participant
-    ) {}
+    ) {
+    }
 
     public function broadcastOn(): PresenceChannel
     {
+        \Log::info('CallWaiting event');
         return new PresenceChannel("call.{$this->call->uid}");
     }
 
@@ -32,6 +34,6 @@ class CallWaiting implements ShouldBroadcast
 
     public function broadcastWith(): array
     {
-        return ['peer_id'=>$this->participant->peer_id,'display_name'=>$this->participant->display_name,'role'=>$this->participant->role];
+        return ['peer_id' => $this->participant->peer_id, 'display_name' => $this->participant->display_name, 'role' => $this->participant->role];
     }
 }

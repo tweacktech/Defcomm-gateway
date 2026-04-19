@@ -42,14 +42,14 @@ class AudioCallController extends Controller
         $user = $request->user();
 
         // Active / recent calls this user was part of
-        $calls = AudioCall::whereHas('participants', fn ($q) => $q->where('user_id', $user->id))
+        $calls = AudioCall::whereHas('participants', fn($q) => $q->where('user_id', $user->id))
             ->orWhere('initiator_id', $user->id)
             ->with(['initiator:id,name', 'callee:id,name'])
             ->withCount('activeParticipants')
             ->orderByRaw("FIELD(status,'pending','active','on_hold') DESC, created_at DESC")
             ->take(20)
             ->get()
-            ->map(fn ($c) => $this->callResource($c));
+            ->map(fn($c) => $this->callResource($c));
 
         return Inertia::render('calls/calls-index', [
             'calls' => $calls,
@@ -71,15 +71,15 @@ class AudioCallController extends Controller
             ]);
         }
 
-        $user    = $request->user();
-        $peerId  = (string) Str::uuid();
-        $isHost  = $call->initiator_id === $user->id;
+        $user = $request->user();
+        $peerId = (string) Str::uuid();
+        $isHost = $call->initiator_id === $user->id;
 
         return Inertia::render('calls/calls-room', [
-            'call'         => $this->callResource($call),
-            'peer_id'      => $peerId,
+            'call' => $this->callResource($call),
+            'peer_id' => $peerId,
             'display_name' => $user->name,
-            'is_host'      => $isHost,
+            'is_host' => $isHost,
             'reverb_key' => config('broadcasting.connections.reverb.key'),
             'reverb_host' => env('VITE_REVERB_HOST', env('REVERB_HOST')),
             'reverb_port' => (int) env('VITE_REVERB_PORT', env('REVERB_PORT', 8080)),
@@ -111,15 +111,15 @@ class AudioCallController extends Controller
     public function create(Request $request): JsonResponse|RedirectResponse
     {
         $validated = $request->validate([
-            'title'          => ['nullable', 'string', 'max:100'],
-            'mode'           => ['required', 'in:one_to_one,group'],
-            'callee_id'      => ['required_if:mode,one_to_one', 'nullable', 'exists:users,id'],
-            'priority'       => ['required', 'in:routine,important,urgent,emergency'],
-            'priority_note'  => ['nullable', 'string', 'max:255'],
-            'max_participants'=> ['nullable', 'integer', 'min:2', 'max:200'],
-            'password'       => ['nullable', 'string', 'min:4'],
-            'waiting_room'   => ['boolean'],
-            'mute_on_join'   => ['boolean'],
+            'title' => ['nullable', 'string', 'max:100'],
+            'mode' => ['required', 'in:one_to_one,group'],
+            'callee_id' => ['required_if:mode,one_to_one', 'nullable', 'exists:users,id'],
+            'priority' => ['required', 'in:routine,important,urgent,emergency'],
+            'priority_note' => ['nullable', 'string', 'max:255'],
+            'max_participants' => ['nullable', 'integer', 'min:2', 'max:200'],
+            'password' => ['nullable', 'string', 'min:4'],
+            'waiting_room' => ['boolean'],
+            'mute_on_join' => ['boolean'],
             'record_enabled' => ['boolean'],
         ]);
 
@@ -133,20 +133,20 @@ class AudioCallController extends Controller
         $call = AudioCall::create([
             ...$validated,
             'initiator_id' => $user->id,
-            'password'     => isset($validated['password']) ? Hash::make($validated['password']) : null,
-            'status'       => 'pending',
+            'password' => isset($validated['password']) ? Hash::make($validated['password']) : null,
+            'status' => 'pending',
         ]);
 
         // Create a host participant record
         AudioCallParticipant::create([
-            'call_id'      => $call->id,
-            'user_id'      => $user->id,
-            'peer_id'      => (string) Str::uuid(),
+            'call_id' => $call->id,
+            'user_id' => $user->id,
+            'peer_id' => (string) Str::uuid(),
             'display_name' => $user->name,
-            'role'         => 'host',
-            'is_admitted'  => true,
-            'status'       => 'ringing',
-            'audio_on'     => false,
+            'role' => 'host',
+            'is_admitted' => true,
+            'status' => 'ringing',
+            'audio_on' => false,
         ]);
 
         // Notify the callee (one_to_one) or broadcast on a group notification channel
@@ -156,7 +156,7 @@ class AudioCallController extends Controller
 
         if ($request->wantsJson()) {
             return $this->created([
-                'call'     => $this->callResource($call),
+                'call' => $this->callResource($call),
                 'join_url' => route('calls.room', $call->uid),
             ], 'Call initiated.');
         }
@@ -175,27 +175,28 @@ class AudioCallController extends Controller
         abort_if($call->isFull(), 403, 'Call is full.');
 
         $validated = $request->validate([
-            'peer_id'      => ['required', 'string', 'size:36'],
+            'peer_id' => ['required', 'string', 'size:36'],
             'display_name' => ['required', 'string', 'max:80'],
-            'audio_on'     => ['boolean'],
+            'audio_on' => ['boolean'],
         ]);
 
-        $user     = $request->user();
-        $isHost   = $call->initiator_id === $user->id;
+        $user = $request->user();
+        $isHost = $call->initiator_id === $user->id;
         $admitted = $isHost || !$call->waiting_room;
 
         $participant = AudioCallParticipant::updateOrCreate(
             ['call_id' => $call->id, 'user_id' => $user->id],
             [
-                'peer_id'      => $validated['peer_id'],
+                'peer_id' => $validated['peer_id'],
                 'display_name' => $validated['display_name'],
-                'role'         => $isHost ? 'host' : 'participant',
-                'is_admitted'  => $admitted,
-                'audio_on'     => $validated['audio_on'] ?? !$call->mute_on_join,
-                'status'       => $admitted ? 'joined' : 'ringing',
-                'joined_at'    => $admitted ? now() : null,
+                'role' => $isHost ? 'host' : 'participant',
+                'is_admitted' => $admitted,
+                'audio_on' => $validated['audio_on'] ?? !$call->mute_on_join,
+                'status' => $admitted ? 'joined' : 'ringing',
+                'joined_at' => $admitted ? now() : null,
             ]
         );
+        \Log::info('answer call');
 
         if ($call->isPending()) {
             $call->start();
@@ -209,7 +210,7 @@ class AudioCallController extends Controller
 
         return $this->ok([
             'participant' => $this->participantResource($participant),
-            'admitted'    => $participant->is_admitted,
+            'admitted' => $participant->is_admitted,
         ], 'Joined call.');
     }
 
@@ -258,7 +259,7 @@ class AudioCallController extends Controller
 
         $participant->leave();
 
-        $call   = AudioCall::find($participant->call_id);
+        $call = AudioCall::find($participant->call_id);
         $userId = $request->user()?->id;
 
         broadcast(new ParticipantLeftCall($call, $participant))->toOthers();
@@ -287,7 +288,7 @@ class AudioCallController extends Controller
         // Mark all active participants as left
         AudioCallParticipant::where('call_id', $call->id)
             ->where('status', 'joined')
-            ->each(fn ($p) => $p->leave());
+            ->each(fn($p) => $p->leave());
 
         broadcast(new CallEnded($call, 'host_ended'))->toOthers();
 
@@ -333,13 +334,13 @@ class AudioCallController extends Controller
         abort_if($call->isEnded(), 410, 'Call has ended.');
 
         $validated = $request->validate([
-            'priority'      => ['required', 'in:routine,important,urgent,emergency'],
+            'priority' => ['required', 'in:routine,important,urgent,emergency'],
             'priority_note' => ['nullable', 'string', 'max:255'],
         ]);
 
         $oldPriority = $call->priority;
         $call->update([
-            'priority'      => $validated['priority'],
+            'priority' => $validated['priority'],
             'priority_note' => $validated['priority_note'] ?? $call->priority_note,
         ]);
 
@@ -368,8 +369,8 @@ class AudioCallController extends Controller
 
         $participant->update([
             'is_admitted' => true,
-            'status'      => 'joined',
-            'joined_at'   => now(),
+            'status' => 'joined',
+            'joined_at' => now(),
         ]);
 
         // Broadcast to ALL so the waiting participant's overlay drops
@@ -428,17 +429,17 @@ class AudioCallController extends Controller
         $call = AudioCall::where('uid', $uid)->firstOrFail();
 
         $validated = $request->validate([
-            'to'           => ['required', 'string'],
-            'type'         => ['required', 'in:offer,answer,ice-candidate'],
-            'payload'      => ['required'],
+            'to' => ['required', 'string'],
+            'type' => ['required', 'in:offer,answer,ice-candidate'],
+            'payload' => ['required'],
             'from_peer_id' => ['required', 'string'],
         ]);
 
         broadcast(new CallSignalSent(
             callUid: $call->uid,
-            from:    $validated['from_peer_id'],
-            to:      $validated['to'],
-            type:    $validated['type'],
+            from: $validated['from_peer_id'],
+            to: $validated['to'],
+            type: $validated['type'],
             payload: $validated['payload'],
         ))->toOthers();
 
@@ -453,7 +454,7 @@ class AudioCallController extends Controller
         $call = AudioCall::where('uid', $uid)->firstOrFail();
 
         $validated = $request->validate([
-            'peer_id'  => ['required', 'string'],
+            'peer_id' => ['required', 'string'],
             'audio_on' => ['required', 'boolean'],
         ]);
 
@@ -479,41 +480,41 @@ class AudioCallController extends Controller
     {
         $priority = $call->priority;
         return [
-            'uid'                => $call->uid,
-            'title'              => $call->title ?? ($call->mode === 'one_to_one' ? "Call with {$call->callee?->name}" : 'Group Call'),
-            'mode'               => $call->mode,
-            'status'             => $call->status,
-            'priority'           => $priority,
-            'priority_label'     => ucfirst($priority),
-            'priority_color'     => $call->priorityColor(),
-            'priority_note'      => $call->priority_note,
-            'initiator_name'     => $call->initiator?->name,
-            'callee_name'        => $call->callee?->name,
-            'active_participants'=> $call->active_participants_count ?? 0,
-            'max_participants'   => $call->max_participants,
-            'has_password'       => $call->hasPassword(),
-            'waiting_room'       => $call->waiting_room,
-            'mute_on_join'       => $call->mute_on_join,
-            'record_enabled'     => $call->record_enabled,
-            'started_at'         => $call->started_at?->toIso8601String(),
-            'ended_at'           => $call->ended_at?->toIso8601String(),
-            'duration_seconds'   => $call->duration_seconds,
-            'join_url'           => route('calls.room', $call->uid),
+            'uid' => $call->uid,
+            'title' => $call->title ?? ($call->mode === 'one_to_one' ? "Call with {$call->callee?->name}" : 'Group Call'),
+            'mode' => $call->mode,
+            'status' => $call->status,
+            'priority' => $priority,
+            'priority_label' => ucfirst($priority),
+            'priority_color' => $call->priorityColor(),
+            'priority_note' => $call->priority_note,
+            'initiator_name' => $call->initiator?->name,
+            'callee_name' => $call->callee?->name,
+            'active_participants' => $call->active_participants_count ?? 0,
+            'max_participants' => $call->max_participants,
+            'has_password' => $call->hasPassword(),
+            'waiting_room' => $call->waiting_room,
+            'mute_on_join' => $call->mute_on_join,
+            'record_enabled' => $call->record_enabled,
+            'started_at' => $call->started_at?->toIso8601String(),
+            'ended_at' => $call->ended_at?->toIso8601String(),
+            'duration_seconds' => $call->duration_seconds,
+            'join_url' => route('calls.room', $call->uid),
         ];
     }
 
     private function participantResource(AudioCallParticipant $p): array
     {
         return [
-            'peer_id'          => $p->peer_id,
-            'display_name'     => $p->display_name,
-            'role'             => $p->role,
-            'is_admitted'      => $p->is_admitted,
-            'audio_on'         => $p->audio_on,
-            'hand_raised'      => $p->hand_raised,
+            'peer_id' => $p->peer_id,
+            'display_name' => $p->display_name,
+            'role' => $p->role,
+            'is_admitted' => $p->is_admitted,
+            'audio_on' => $p->audio_on,
+            'hand_raised' => $p->hand_raised,
             'is_muted_by_host' => $p->is_muted_by_host,
-            'status'           => $p->status,
-            'joined_at'        => $p->joined_at?->toIso8601String(),
+            'status' => $p->status,
+            'joined_at' => $p->joined_at?->toIso8601String(),
         ];
     }
 }

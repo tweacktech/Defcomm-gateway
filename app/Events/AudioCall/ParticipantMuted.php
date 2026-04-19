@@ -15,12 +15,14 @@ class ParticipantMuted implements ShouldBroadcast
     public function __construct(
         public readonly string $callUid,
         public readonly string $peerId,
-        public readonly bool   $muted,
-        public readonly bool   $byHost = false
-    ) {}
+        public readonly bool $muted,
+        public readonly bool $byHost = false
+    ) {
+    }
 
     public function broadcastOn(): PresenceChannel
     {
+        \Log::info('ParticipantMuted event');
         return new PresenceChannel("call.{$this->callUid}");
     }
 
@@ -31,6 +33,6 @@ class ParticipantMuted implements ShouldBroadcast
 
     public function broadcastWith(): array
     {
-        return ['peer_id'=>$this->peerId,'muted'=>$this->muted,'by_host'=>$this->byHost];
+        return ['peer_id' => $this->peerId, 'muted' => $this->muted, 'by_host' => $this->byHost];
     }
 }
