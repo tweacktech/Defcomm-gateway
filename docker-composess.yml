@@ -1,0 +1,135 @@
+# version: '3.9'
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: defcomm_app
+    restart: unless-stopped
+    working_dir: /var/www
+    volumes:
+      - ./:/var/www
+    depends_on:
+      - redis
+      - db
+      - reverb
+    environment:
+      # Redis / broadcasting targets inside the compose network
+      REDIS_HOST: redis
+      REVERB_SERVER_HOST: reverb
+      REVERB_SERVER_PORT: "8080"
+      # Browser WebSocket: host port 6001 is mapped to Reverb (nginx uses 8080 for HTTP)
+      REVERB_PORT: "6001"
+      VITE_REVERB_PORT: "6001"
+    networks:
+      - defcomm
+
+  nginx:
+    image: nginx:alpine
+    container_name: defcomm_nginx
+    restart: unless-stopped
+    ports:
+      - "8080:80"
+      - "8443:443"
+    volumes:
+      - ./:/var/www
+      - ./docker/nginx:/etc/nginx/conf.d
+    depends_on:
+      - app
+    networks:
+      - defcomm
+
+  db:
+    image: mysql:8.0
+    container_name: defcomm_db
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: defcome-gateway
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_USER: defcomm
+      MYSQL_PASSWORD: secret
+      MYSQL_ROOT_HOST: "%"
+    volumes:
+      - dbdata:/var/lib/mysql
+    ports:
+      - "3306:3306"
+    networks:
+      - defcomm
+
+  reverb:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: defcomm_reverb
+    restart: unless-stopped
+    working_dir: /var/www
+    volumes:
+      - ./:/var/www
+    command: php artisan reverb:start --host=0.0.0.0 --port=8080
+    ports:
+      - "6001:8080"
+    depends_on:
+      - redis
+    networks:
+      - defcomm
+
+  redis:
+    image: redis:alpine
+    container_name: defcomm_redis
+    ports:
+      - "6379:6379"
+    networks:
+      - defcomm
+
+
+  # coturn:
+  #   image: coturn/coturn
+  #   container_name: defcomm_turn
+  #   restart: unless-stopped
+  #   ports:
+  #     - "3478:3478/tcp"
+  #     - "3478:3478/udp"
+  #     - "5349:5349/tcp"
+  #     - "5349:5349/udp"
+  #     - "49160-49200:49160-49200/udp"
+  #   command: >
+  #     -n
+  #     --log-file=stdout
+  #     --listening-port=3478
+  #     --min-port=49160
+  #     --max-port=49200
+  #     --realm=defcomm.local
+  #     --user=user:pass
+  #     --lt-cred-mech
+  #   networks:
+  #     - defcomm
+
+  coturn:
+    image: coturn/coturn
+    container_name: defcomm_turn
+    restart: unless-stopped
+    network_mode: host
+    command: >
+      -n
+      --log-file=stdout
+      --min-port=49160
+      --max-port=49200
+      --listening-port=3478
+      --external-ip=173.249.22.187
+      --relay-ip=173.249.22.187
+      --realm=aisystem.defcomm.cloud
+      --server-name=aisystem.defcomm.cloud
+      --lt-cred-mech
+      --user=defcomm:StrongPassword123
+      --fingerprint
+      --no-multicast-peers
+      --denied-peer-ip=10.0.0.0-10.255.255.255
+      --denied-peer-ip=192.168.0.0-192.168.255.255
+      --denied-peer-ip=172.16.0.0-172.31.255.255
+networks:
+  defcomm:
+
+volumes:
+  dbdata:
+

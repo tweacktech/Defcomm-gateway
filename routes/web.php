@@ -16,6 +16,7 @@ use App\Http\Controllers\AudioCallController;
 use App\Http\Controllers\DocsController;
 
 
+// or 'auth' if using session
 Route::get('/', function () {
     return Inertia::render('welcome', [
         'canRegister' => Features::enabled(Features::registration()),
@@ -152,11 +153,11 @@ Route::middleware(['auth'])->prefix('meet')->name('meet.')->group(function () {
 
 
 
-
+Broadcast::routes(['middleware' => ['auth']]);
 
 Route::post('/broadcasting/auth', function (Illuminate\Http\Request $request) {
     $channelName = $request->input('channel_name', '');
-    $peerId      = $request->input('peer_id', '');
+    $peerId = $request->input('peer_id', '');
 
     // ── Authenticated users: use standard Broadcast::auth() ──────────────────
     if ($request->user()) {
@@ -182,23 +183,23 @@ Route::post('/broadcasting/auth', function (Illuminate\Http\Request $request) {
     // Manually sign the Pusher/Reverb presence auth response.
     // This is exactly what Broadcast::auth() does internally —
     // we just supply guest-specific member data instead of auth()->user().
-    $appKey    = config('broadcasting.connections.reverb.key');
+    $appKey = config('broadcasting.connections.reverb.key');
     $appSecret = config('broadcasting.connections.reverb.secret');
-    $socketId  = $request->input('socket_id');
+    $socketId = $request->input('socket_id');
 
     $channelData = json_encode([
-        'user_id'   => $peerId,
+        'user_id' => $peerId,
         'user_info' => [
-            'peer_id'      => $peerId,
+            'peer_id' => $peerId,
             'display_name' => $guestSession['name'] ?? 'Guest',
-            'role'         => 'participant',
+            'role' => 'participant',
         ],
     ]);
 
     $signature = hash_hmac('sha256', "{$socketId}:{$channelName}:{$channelData}", $appSecret);
 
     return response()->json([
-        'auth'         => "{$appKey}:{$signature}",
+        'auth' => "{$appKey}:{$signature}",
         'channel_data' => $channelData,
     ]);
 })->middleware('web');   // session only — no 'auth' guard
@@ -210,11 +211,11 @@ Route::post('/broadcasting/auth', function (Illuminate\Http\Request $request) {
 
 // Participant answer / join (axios from call room — no auth needed for guests,
 // but for now all calls are between authenticated users; keep open for SDK ext)
-Route::post('/calls/{uid}/answer',       [AudioCallController::class, 'answer'])->name('calls.answer');
-Route::post('/calls/{uid}/leave',        [AudioCallController::class, 'leave'])->name('calls.leave');
-Route::post('/calls/{uid}/signal',       [AudioCallController::class, 'signal'])->name('calls.signal');
-Route::post('/calls/{uid}/audio-state',  [AudioCallController::class, 'audioState'])->name('calls.audio-state');
-Route::post('/calls/{uid}/decline',      [AudioCallController::class, 'decline'])->name('calls.decline');
+Route::post('/calls/{uid}/answer', [AudioCallController::class, 'answer'])->name('calls.answer');
+Route::post('/calls/{uid}/leave', [AudioCallController::class, 'leave'])->name('calls.leave');
+Route::post('/calls/{uid}/signal', [AudioCallController::class, 'signal'])->name('calls.signal');
+Route::post('/calls/{uid}/audio-state', [AudioCallController::class, 'audioState'])->name('calls.audio-state');
+Route::post('/calls/{uid}/decline', [AudioCallController::class, 'decline'])->name('calls.decline');
 Route::patch('/calls/{uid}/kick/{peerId}', [AudioCallController::class, 'kick'])->name('calls.kick');
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -223,20 +224,24 @@ Route::patch('/calls/{uid}/kick/{peerId}', [AudioCallController::class, 'kick'])
 
 Route::middleware(['auth'])->group(function () {
     // Pages
-    Route::get('/calls',        [AudioCallController::class, 'index'])->name('calls.index');
-    Route::get('/calls/{uid}',  [AudioCallController::class, 'room'])->name('calls.room');
+    Route::get('/calls', [AudioCallController::class, 'index'])->name('calls.index');
+    Route::get('/calls/{uid}', [AudioCallController::class, 'room'])->name('calls.room');
 
     // Call management
-    Route::post('/calls',                         [AudioCallController::class, 'create'])->name('calls.create');
-    Route::patch('/calls/{uid}/end',              [AudioCallController::class, 'end'])->name('calls.end');
-    Route::patch('/calls/{uid}/hold',             [AudioCallController::class, 'hold'])->name('calls.hold');
-    Route::patch('/calls/{uid}/resume',           [AudioCallController::class, 'resume'])->name('calls.resume');
-    Route::patch('/calls/{uid}/priority',         [AudioCallController::class, 'changePriority'])->name('calls.priority');
-    Route::patch('/calls/{uid}/admit/{peerId}',   [AudioCallController::class, 'admit'])->name('calls.admit');
-    Route::patch('/calls/{uid}/mute/{peerId}',    [AudioCallController::class, 'muteParticipant'])->name('calls.mute');
+    Route::post('/calls', [AudioCallController::class, 'create'])->name('calls.create');
+    Route::patch('/calls/{uid}/end', [AudioCallController::class, 'end'])->name('calls.end');
+    Route::patch('/calls/{uid}/hold', [AudioCallController::class, 'hold'])->name('calls.hold');
+    Route::patch('/calls/{uid}/resume', [AudioCallController::class, 'resume'])->name('calls.resume');
+    Route::patch('/calls/{uid}/priority', [AudioCallController::class, 'changePriority'])->name('calls.priority');
+    Route::patch('/calls/{uid}/admit/{peerId}', [AudioCallController::class, 'admit'])->name('calls.admit');
+    Route::patch('/calls/{uid}/mute/{peerId}', [AudioCallController::class, 'muteParticipant'])->name('calls.mute');
 });
 
 
+Route::get('meet-test', function () {
+
+    return Inertia::render('test-app');
+})->middleware('auth');
 
 
 

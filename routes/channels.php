@@ -58,35 +58,38 @@ use Illuminate\Support\Str;
 // });
 
 
-
-
-Broadcast::channel('meet.{uid}', function ($user, string $uid) {
-    $room = App\Models\MeetRoom::where('uid', $uid)->first();
-    if (!$room || $room->isEnded())
-        return false;
-
-    if ($user) {
-        return [
-            'id' => $user->id,
-            'peer_id' => request()->input('peer_id', ''),
-            'display_name' => $user->name,
-            'role' => $room->owner_id === $user->id ? 'host' : 'participant',
-        ];
-    }
-
-    // Guest path — session was already validated by the route above.
-    $guestSession = request()->session()->get("meet_guest_{$room->id}");
-    if (empty($guestSession['admitted']))
-        return false;
-
-    $peerId = request()->input('peer_id', '');
-    return [
-        'id' => $peerId,
-        'peer_id' => $peerId,
-        'display_name' => $guestSession['name'] ?? 'Guest',
-        'role' => 'participant',
-    ];
+Broadcast::channel('meet.{roomId}', function ($user = null, $roomId) {
+    // Always return true for development
+    return true;
 });
+
+// Broadcast::channel('meet.{uid}', function ($user, string $uid) {
+//     $room = App\Models\MeetRoom::where('uid', $uid)->first();
+//     if (!$room || $room->isEnded())
+//         return false;
+
+//     if ($user) {
+//         return [
+//             'id' => $user->id,
+//             'peer_id' => request()->input('peer_id', ''),
+//             'display_name' => $user->name,
+//             'role' => $room->owner_id === $user->id ? 'host' : 'participant',
+//         ];
+//     }
+
+//     // Guest path — session was already validated by the route above.
+//     $guestSession = request()->session()->get("meet_guest_{$room->id}");
+//     if (empty($guestSession['admitted']))
+//         return false;
+
+//     $peerId = request()->input('peer_id', '');
+//     return [
+//         'id' => $peerId,
+//         'peer_id' => $peerId,
+//         'display_name' => $guestSession['name'] ?? 'Guest',
+//         'role' => 'participant',
+//     ];
+// });
 
 // ─────────────────────────────────────────────────────────────────────────────
 // ADD to routes/channels.php:

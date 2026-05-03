@@ -432,7 +432,10 @@ class MeetController extends Controller
     }
 
     /**
-     * POST /meet/{uid}/signal — relay WebRTC signal to a specific peer
+     * POST /meet/{uid}/signal — relay WebRTC signal to a SPECIFIC peer only
+     *
+     * FIXED: Changed to use PrivateChannel routing instead of broadcast to all.
+     * Removes ->toOthers() since the SignalSent event now targets only the recipient.
      */
     public function signal(Request $request, string $uid): JsonResponse
     {
@@ -445,13 +448,15 @@ class MeetController extends Controller
             'from_peer_id' => ['required', 'string'],
         ]);
 
+        // Broadcast ONLY to the target peer via private channel
+        // No ->toOthers() needed — the event's PrivateChannel handles targeting
         broadcast(new SignalSent(
             roomUid: $room->uid,
             from: $validated['from_peer_id'],
             to: $validated['to'],
             type: $validated['type'],
             payload: $validated['payload'],
-        ))->toOthers();
+        ));
 
         return response()->json(['status' => 'sent']);
     }

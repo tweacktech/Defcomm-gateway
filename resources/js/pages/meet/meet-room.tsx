@@ -1142,296 +1142,330 @@ export default function MeetRoom() {
      *   and presence subscription so we never emit `member_removed` (which was
      *   tearing down the peer for everyone and often missing `here()` after rejoin).
      */
-    const buildLiveEcho = useCallback(
-        (promoted?: { echo: Echo<any>; ch: any }) => {
-            if (R.current.liveEcho && !promoted) return;
+   // ─── Live call channel ─────────────────────────────────────────────────────
 
-            const useTls = reverb_use_tls ?? false;
-            const echo =
-                promoted?.echo ??
-                makeEcho(reverb_key, reverb_host, reverb_port, peer_id, useTls);
-            const ch = promoted?.ch ?? echo.join(`meet.${room.uid}`);
+/**
+ * FIXED: Changed from listening on presence channel '.meet.signal'
+ * to subscribing to private channel 'meet.signal.{peer_id}'
+ *
+ * This ensures only signals intended for THIS peer are received.
+ *
+ * @param promoted — guest promoted from waiting room: reuse the same WebSocket
+ *   and presence subscription so we never emit `member_removed` (which was
+ *   tearing down the peer for everyone and often missing `here()` after rejoin).
+ */
+const buildLiveEcho = useCallback(
+    (promoted?: { echo: Echo<any>; ch: any }) => {
+        if (R.current.liveEcho && !promoted) return;
 
-            R.current.liveEcho = echo;
-            R.current.channel = ch;
-            if (promoted) {
-                R.current.waitEcho = null;
-                R.current.waitChannel = null;
-            }
+        const useTls = reverb_use_tls ?? false;
+        const echo =
+            promoted?.echo ??
+            makeEcho(reverb_key, reverb_host, reverb_port, peer_id, useTls);
+        const ch = promoted?.ch ?? echo.join(`meet.${room.uid}`);
 
-            echo.connector.pusher.connection.bind('connected', () => {
-                R.current.socketId = echo.connector.pusher.connection.socket_id;
-            });
-            const sid = (echo.connector as any).pusher?.connection?.socket_id;
-            if (sid) R.current.socketId = sid;
+        R.current.liveEcho = echo;
+        R.current.channel = ch;
+        if (promoted) {
+            R.current.waitEcho = null;
+            R.current.waitChannel = null;
+        }
 
-            const peersFromPresenceInfos = (memberInfos: unknown[]) => {
-                const initial = new Map<string, PeerState>();
-                for (const raw of memberInfos) {
-                    const p = normalizePresencePayload(raw);
-                    if (!p || p.peer_id === peer_id) continue;
-                    initial.set(p.peer_id, {
-                        peer_id: p.peer_id,
-                        display_name: p.display_name,
-                        role: p.role,
-                        video_on: false,
-                        audio_on: false,
-                        screen_sharing: false,
-                        hand_raised: false,
-                        speaking: false,
-                    });
-                }
-                return initial;
-            };
+        echo.connector.pusher.connection.bind('connected', () => {
+            R.current.socketId = echo.connector.pusher.connection.socket_id;
+        });
+        const sid = (echo.connector as any).pusher?.connection?.socket_id;
+        if (sid) R.current.socketId = sid;
 
-            const commitInitialMesh = (memberInfos: unknown[]) => {
-                if (R.current.initialMeshRan) return;
-                R.current.initialMeshRan = true;
-                const initial = peersFromPresenceInfos(memberInfos);
-                setPeers(initial);
-                setTimeout(() => {
-                    // Waiting-room guests: existing peers send offers via participant-admitted;
-                    // we only answer here to avoid offer/offer glare on the same pair.
-                    if (!promoted) {
-                        initial.forEach((_, remotePeerId) =>
-                            sendOffer(remotePeerId),
-                        );
-                    }
-                }, 300);
-            };
-
-            if (!promoted) {
-                ch.here((members: unknown[]) => commitInitialMesh(members));
-            } else {
-                // After waiting-room promotion, `here()` often doesn't fire again. Bootstrap
-                // via a server endpoint so guests reliably see existing participants.
-                // Existing peers will send offers to the admitted participant via the
-                // `.meet.participant-admitted` handler.
-                (async () => {
-                    try {
-                        const resp = await http.get(
-                            `/meet/${room.uid}/participants`,
-                            { peer_id },
-                        );
-                        const list = Array.isArray(resp?.participants)
-                            ? resp.participants
-                            : [];
-                        const initial = new Map<string, PeerState>();
-                        for (const raw of list) {
-                            if (!raw || typeof raw !== 'object') continue;
-                            const r = raw as Record<string, unknown>;
-                            const pid = r.peer_id;
-                            const name = r.display_name;
-                            if (typeof pid !== 'string' || pid === peer_id)
-                                continue;
-                            initial.set(pid, {
-                                peer_id: pid,
-                                display_name:
-                                    typeof name === 'string' ? name : 'Guest',
-                                role:
-                                    typeof r.role === 'string'
-                                        ? r.role
-                                        : 'participant',
-                                video_on: r.video_on === true,
-                                audio_on: r.audio_on === true,
-                                screen_sharing: r.screen_sharing === true,
-                                hand_raised: r.hand_raised === true,
-                                speaking: false,
-                            });
-                        }
-                        if (!R.current.initialMeshRan) {
-                            R.current.initialMeshRan = true;
-                            setPeers(initial);
-                        }
-                    } catch {
-                        // If this fails, peers can still be discovered via join/admit events.
-                    }
-                })();
-            }
-
-            ch.joining((member: unknown) => {
-                const p = normalizePresencePayload(member);
-                if (!p || p.peer_id === peer_id) return;
-                setPeers((prev) => {
-                    if (prev.has(p.peer_id)) return prev;
-                    const m = new Map(prev);
-                    m.set(p.peer_id, {
-                        peer_id: p.peer_id,
-                        display_name: p.display_name,
-                        role: p.role,
-                        video_on: false,
-                        audio_on: false,
-                        screen_sharing: false,
-                        hand_raised: false,
-                        speaking: false,
-                    });
-                    return m;
+        const peersFromPresenceInfos = (memberInfos: unknown[]) => {
+            const initial = new Map<string, PeerState>();
+            for (const raw of memberInfos) {
+                const p = normalizePresencePayload(raw);
+                if (!p || p.peer_id === peer_id) continue;
+                initial.set(p.peer_id, {
+                    peer_id: p.peer_id,
+                    display_name: p.display_name,
+                    role: p.role,
+                    video_on: false,
+                    audio_on: false,
+                    screen_sharing: false,
+                    hand_raised: false,
+                    speaking: false,
                 });
-            });
+            }
+            return initial;
+        };
 
-            ch.leaving((member: unknown) => {
-                const p = normalizePresencePayload(member);
-                if (p) removePeer(p.peer_id);
-            });
+        const commitInitialMesh = (memberInfos: unknown[]) => {
+            if (R.current.initialMeshRan) return;
+            R.current.initialMeshRan = true;
+            const initial = peersFromPresenceInfos(memberInfos);
+            setPeers(initial);
+            setTimeout(() => {
+                // Waiting-room guests: existing peers send offers via participant-admitted;
+                // we only answer here to avoid offer/offer glare on the same pair.
+                if (!promoted) {
+                    initial.forEach((_, remotePeerId) =>
+                        sendOffer(remotePeerId),
+                    );
+                }
+            }, 300);
+        };
 
-            ch.listen('.meet.signal', async (data: any) => {
-                if (data.to !== peer_id) return;
-                if (data.type === 'offer')
-                    await handleOffer(data.from, data.payload);
-                else if (data.type === 'answer')
-                    await handleAnswer(data.from, data.payload);
-                else if (data.type === 'ice-candidate')
-                    await handleIce(data.from, data.payload);
-            });
+        if (!promoted) {
+            ch.here((members: unknown[]) => commitInitialMesh(members));
+        } else {
+            // After waiting-room promotion, `here()` often doesn't fire again. Bootstrap
+            // via a server endpoint so guests reliably see existing participants.
+            // Existing peers will send offers to the admitted participant via the
+            // `.meet.participant-admitted` handler.
+            (async () => {
+                try {
+                    const resp = await http.get(
+                        `/meet/${room.uid}/participants`,
+                        { peer_id },
+                    );
+                    const list = Array.isArray(resp?.participants)
+                        ? resp.participants
+                        : [];
+                    const initial = new Map<string, PeerState>();
+                    for (const raw of list) {
+                        if (!raw || typeof raw !== 'object') continue;
+                        const r = raw as Record<string, unknown>;
+                        const pid = r.peer_id;
+                        const name = r.display_name;
+                        if (typeof pid !== 'string' || pid === peer_id)
+                            continue;
+                        initial.set(pid, {
+                            peer_id: pid,
+                            display_name:
+                                typeof name === 'string' ? name : 'Guest',
+                            role:
+                                typeof r.role === 'string'
+                                    ? r.role
+                                    : 'participant',
+                            video_on: r.video_on === true,
+                            audio_on: r.audio_on === true,
+                            screen_sharing: r.screen_sharing === true,
+                            hand_raised: r.hand_raised === true,
+                            speaking: false,
+                        });
+                    }
+                    if (!R.current.initialMeshRan) {
+                        R.current.initialMeshRan = true;
+                        setPeers(initial);
+                    }
+                } catch {
+                    // If this fails, peers can still be discovered via join/admit events.
+                }
+            })();
+        }
 
-            ch.listen('.meet.participant-joined', (data: any) => {
-                if (data.peer_id === peer_id) return;
-                toast.info(`${data.display_name ?? 'Participant'} joined`);
-                setWaiting((wp) =>
-                    wp.filter((p) => p.peer_id !== data.peer_id),
-                );
-                setPeers((prev) => {
-                    const m = new Map(prev),
-                        ex = m.get(data.peer_id);
-                    m.set(data.peer_id, {
-                        ...(ex ?? { stream: undefined, speaking: false }),
-                        peer_id: data.peer_id,
+        ch.joining((member: unknown) => {
+            const p = normalizePresencePayload(member);
+            if (!p || p.peer_id === peer_id) return;
+            setPeers((prev) => {
+                if (prev.has(p.peer_id)) return prev;
+                const m = new Map(prev);
+                m.set(p.peer_id, {
+                    peer_id: p.peer_id,
+                    display_name: p.display_name,
+                    role: p.role,
+                    video_on: false,
+                    audio_on: false,
+                    screen_sharing: false,
+                    hand_raised: false,
+                    speaking: false,
+                });
+                return m;
+            });
+        });
+
+        ch.leaving((member: unknown) => {
+            const p = normalizePresencePayload(member);
+            if (p) removePeer(p.peer_id);
+        });
+
+        // ═══════════════════════════════════════════════════════════════════════
+        // FIXED: Changed from presence channel to PRIVATE channel for signaling
+        // ═══════════════════════════════════════════════════════════════════════
+        //
+        // OLD CODE (REMOVED):
+        // ch.listen('.meet.signal', async (data: any) => {
+        //     if (data.to !== peer_id) return;  // ← This check was not enough
+        //     if (data.type === 'offer')
+        //         await handleOffer(data.from, data.payload);
+        //     ...
+        // });
+        //
+        // NEW CODE (REPLACES ABOVE):
+        // Subscribe to a PRIVATE channel keyed by this peer's ID.
+        // Only signals intended for THIS peer arrive here.
+
+        const signalCh = echo.private(`meet.signal.${peer_id}`);
+
+        signalCh.listen('.signal', async (data: any) => {
+            // NOW: Only signals for THIS peer arrive here
+            // No need to check data.to — the channel routing ensures it
+            if (data.type === 'offer')
+                await handleOffer(data.from, data.payload);
+            else if (data.type === 'answer')
+                await handleAnswer(data.from, data.payload);
+            else if (data.type === 'ice-candidate')
+                await handleIce(data.from, data.payload);
+        });
+
+        // ═══════════════════════════════════════════════════════════════════════
+        // END OF FIXED SECTION
+        // ═══════════════════════════════════════════════════════════════════════
+
+        ch.listen('.meet.participant-joined', (data: any) => {
+            if (data.peer_id === peer_id) return;
+            toast.info(`${data.display_name ?? 'Participant'} joined`);
+            setWaiting((wp) =>
+                wp.filter((p) => p.peer_id !== data.peer_id),
+            );
+            setPeers((prev) => {
+                const m = new Map(prev),
+                    ex = m.get(data.peer_id);
+                m.set(data.peer_id, {
+                    ...(ex ?? { stream: undefined, speaking: false }),
+                    peer_id: data.peer_id,
+                    display_name: data.display_name,
+                    role: data.role ?? 'participant',
+                    video_on: data.video_on ?? false,
+                    audio_on: data.audio_on ?? false,
+                    screen_sharing: ex?.screen_sharing ?? false,
+                    hand_raised: ex?.hand_raised ?? false,
+                });
+                return m;
+            });
+        });
+
+        // Existing peers must start WebRTC toward the admitted participant; `here()` on the
+        // guest side often does not run again after a waiting-room promotion.
+        ch.listen('.meet.participant-admitted', (data: any) => {
+            if (data.admitted_peer_id === peer_id) return;
+            toast.info(`${data.display_name ?? 'Participant'} joined`);
+            setWaiting((wp) =>
+                wp.filter((p) => p.peer_id !== data.admitted_peer_id),
+            );
+            setPeers((prev) => {
+                const m = new Map(prev);
+                if (!m.has(data.admitted_peer_id)) {
+                    m.set(data.admitted_peer_id, {
+                        peer_id: data.admitted_peer_id,
                         display_name: data.display_name,
                         role: data.role ?? 'participant',
                         video_on: data.video_on ?? false,
                         audio_on: data.audio_on ?? false,
-                        screen_sharing: ex?.screen_sharing ?? false,
-                        hand_raised: ex?.hand_raised ?? false,
+                        screen_sharing: false,
+                        hand_raised: false,
+                        speaking: false,
                     });
-                    return m;
-                });
-            });
-
-            // Existing peers must start WebRTC toward the admitted participant; `here()` on the
-            // guest side often does not run again after a waiting-room promotion.
-            ch.listen('.meet.participant-admitted', (data: any) => {
-                if (data.admitted_peer_id === peer_id) return;
-                toast.info(`${data.display_name ?? 'Participant'} joined`);
-                setWaiting((wp) =>
-                    wp.filter((p) => p.peer_id !== data.admitted_peer_id),
-                );
-                setPeers((prev) => {
-                    const m = new Map(prev);
-                    if (!m.has(data.admitted_peer_id)) {
-                        m.set(data.admitted_peer_id, {
-                            peer_id: data.admitted_peer_id,
-                            display_name: data.display_name,
-                            role: data.role ?? 'participant',
-                            video_on: data.video_on ?? false,
-                            audio_on: data.audio_on ?? false,
-                            screen_sharing: false,
-                            hand_raised: false,
-                            speaking: false,
-                        });
-                    }
-                    return m;
-                });
-                const target = data.admitted_peer_id as string;
-                setTimeout(() => sendOffer(target), 120);
-            });
-
-            ch.listen('.meet.participant-left', (data: any) => {
-                const name =
-                    R.current.peerNames.get(data.peer_id) ?? 'Participant';
-                toast.message(`${name} left`);
-                removePeer(data.peer_id);
-            });
-
-            ch.listen('.meet.participant-waiting', (data: any) => {
-                if (!is_owner) return;
-                setWaiting((wp) => {
-                    if (wp.some((p) => p.peer_id === data.peer_id)) return wp;
-                    return [
-                        ...wp,
-                        {
-                            peer_id: data.peer_id,
-                            display_name: data.display_name,
-                            role: 'participant',
-                            video_on: false,
-                            audio_on: false,
-                            screen_sharing: false,
-                            hand_raised: false,
-                            speaking: false,
-                        },
-                    ];
-                });
-            });
-
-            ch.listen('.meet.media-updated', (data: any) => {
-                if (data.peer_id === peer_id) return;
-                setPeers((prev) => {
-                    const m = new Map(prev),
-                        p = m.get(data.peer_id);
-                    if (!p) return prev;
-                    m.set(data.peer_id, {
-                        ...p,
-                        video_on: data.video_on,
-                        audio_on: data.audio_on,
-                        screen_sharing: data.screen_sharing,
-                        hand_raised: data.hand_raised,
-                    });
-                    return m;
-                });
-            });
-
-            ch.listen('.meet.room-ended', () => {
-                teardown();
-                setEndReason('room-ended');
-            });
-
-            ch.listen('.meet.participant-kicked', (data: any) => {
-                if (data.peer_id === peer_id) {
-                    teardown();
-                    setEndReason('kicked');
-                } else removePeer(data.peer_id);
-            });
-
-            ch.listen('.meet.recording-started', (data: any) =>
-                setRec((r) => ({
-                    ...r,
-                    active: true,
-                    id: data.recording_id,
-                    duration: 0,
-                })),
-            );
-            ch.listen('.meet.recording-stopped', () =>
-                setRec((r) => ({ ...r, active: false })),
-            );
-
-            ch.listenForWhisper('chat', (data: ChatMsg) => {
-                if (R.current.seenMsgs.has(data.id)) return;
-                R.current.seenMsgs.add(data.id);
-                setMsgs((ms) => [...ms, data]);
-                if (
-                    data.peer_id !== peer_id &&
-                    (!R.current.chatOpen || document.hidden)
-                ) {
-                    toast(`${data.display_name}: ${data.text}`);
                 }
+                return m;
             });
-        },
-        [
-            room.uid,
-            peer_id,
-            is_owner,
-            reverb_key,
-            reverb_host,
-            reverb_port,
-            reverb_use_tls,
-            sendOffer,
-            handleOffer,
-            handleAnswer,
-            handleIce,
-            removePeer,
-            teardown,
-        ],
-    );
+            const target = data.admitted_peer_id as string;
+            setTimeout(() => sendOffer(target), 120);
+        });
 
+        ch.listen('.meet.participant-left', (data: any) => {
+            const name =
+                R.current.peerNames.get(data.peer_id) ?? 'Participant';
+            toast.message(`${name} left`);
+            removePeer(data.peer_id);
+        });
+
+        ch.listen('.meet.participant-waiting', (data: any) => {
+            if (!is_owner) return;
+            setWaiting((wp) => {
+                if (wp.some((p) => p.peer_id === data.peer_id)) return wp;
+                return [
+                    ...wp,
+                    {
+                        peer_id: data.peer_id,
+                        display_name: data.display_name,
+                        role: 'participant',
+                        video_on: false,
+                        audio_on: false,
+                        screen_sharing: false,
+                        hand_raised: false,
+                        speaking: false,
+                    },
+                ];
+            });
+        });
+
+        ch.listen('.meet.media-updated', (data: any) => {
+            if (data.peer_id === peer_id) return;
+            setPeers((prev) => {
+                const m = new Map(prev),
+                    p = m.get(data.peer_id);
+                if (!p) return prev;
+                m.set(data.peer_id, {
+                    ...p,
+                    video_on: data.video_on,
+                    audio_on: data.audio_on,
+                    screen_sharing: data.screen_sharing,
+                    hand_raised: data.hand_raised,
+                });
+                return m;
+            });
+        });
+
+        ch.listen('.meet.room-ended', () => {
+            teardown();
+            setEndReason('room-ended');
+        });
+
+        ch.listen('.meet.participant-kicked', (data: any) => {
+            if (data.peer_id === peer_id) {
+                teardown();
+                setEndReason('kicked');
+            } else removePeer(data.peer_id);
+        });
+
+        ch.listen('.meet.recording-started', (data: any) =>
+            setRec((r) => ({
+                ...r,
+                active: true,
+                id: data.recording_id,
+                duration: 0,
+            })),
+        );
+        ch.listen('.meet.recording-stopped', () =>
+            setRec((r) => ({ ...r, active: false })),
+        );
+
+        ch.listenForWhisper('chat', (data: ChatMsg) => {
+            if (R.current.seenMsgs.has(data.id)) return;
+            R.current.seenMsgs.add(data.id);
+            setMsgs((ms) => [...ms, data]);
+            if (
+                data.peer_id !== peer_id &&
+                (!R.current.chatOpen || document.hidden)
+            ) {
+                toast(`${data.display_name}: ${data.text}`);
+            }
+        });
+    },
+    [
+        room.uid,
+        peer_id,
+        is_owner,
+        reverb_key,
+        reverb_host,
+        reverb_port,
+        reverb_use_tls,
+        sendOffer,
+        handleOffer,
+        handleAnswer,
+        handleIce,
+        removePeer,
+        teardown,
+    ],
+);
     // ── Waiting-room channel ──────────────────────────────────────────────────
 
     /**
