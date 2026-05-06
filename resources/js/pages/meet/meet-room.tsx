@@ -1,39 +1,4 @@
-// resources/js/pages/meet/room.tsx
-// ─────────────────────────────────────────────────────────────────────────────
-// v4 — Admitted-event rewrite + 3 targeted bug fixes
-//
-// CHANGES over v3-patched:
-//
-// ADMIT-1 — buildWaitEcho now listens for `.meet.participant-admitted` instead
-//            of `.meet.participant-joined`. The admitted event carries
-//            `admitted_peer_id`, so the waiting participant can self-identify
-//            unambiguously. The old approach listened for participant-joined
-//            which could fire for OTHER people joining, causing a false
-//            transition out of the waiting overlay.
-//
-// ADMIT-2 — buildLiveEcho also listens for `.meet.participant-admitted` so
-//            existing peers add the newly admitted participant to their peers
-//            map and call sendOffer() for them — matching what participant-joined
-//            already did, but now without double-processing.
-//
-// BUG-FIX-1 — buildPC track-adding block: replaces the broken double
-//              startMedia() call with a single clean await path:
-//                if (!localStream) await startMedia()  (guaranteed single call)
-//              then reads from R.current.localStream after the await resolves.
-//
-// BUG-FIX-2 — startScreen: when no video sender exists, addTrack() is called
-//              AND a manual re-offer is sent for that specific pc (instead of
-//              relying solely on onnegotiationneeded which may not fire when
-//              the pc already has a data channel or other quirks in Firefox).
-//
-// BUG-FIX-3 — buildPC: onnegotiationneeded is registered with a
-//              `negotiating` lock flag per-pc to prevent concurrent re-offers
-//              from racing each other (e.g. screen share + ICE restart overlap).
-//
-// Unchanged from v3-patched:
-//   FIX 4 (VideoTile unmute), FIX 5 (WaitingOverlay resend wired),
-//   FIX 6 (deferred flushIce), screen lock, ICE buffering, chat dedup.
-// ─────────────────────────────────────────────────────────────────────────────
+
 
 import { Head, usePage, router } from '@inertiajs/react';
 import axios from 'axios';
