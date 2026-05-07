@@ -14,54 +14,55 @@
 use App\Models\MeetRoom;
 use Illuminate\Support\Facades\Broadcast;
 use Illuminate\Support\Str;
+use App\Models\AudioCall;
 
-// Broadcast::channel('meet.{uid}', function ($user, string $uid) {
-//     $room = MeetRoom::where('uid', $uid)->first();
+Broadcast::channel('meet.{uid}', function ($user, string $uid) {
+    $room = MeetRoom::where('uid', $uid)->first();
 
-//     if (!$room) {
-//         return false;
-//     }
+    if (!$room) {
+        return false;
+    }
 
-//     // Accept ended rooms too — participants still need to receive room-ended event
-//     // (don't block on isEnded here)
+    // Accept ended rooms too — participants still need to receive room-ended event
+    // (don't block on isEnded here)
 
-//     // peer_id is sent by the React authorizer in the POST body
-//     $peerId = request()->input('peer_id') ?: (string) Str::uuid();
+    // peer_id is sent by the React authorizer in the POST body
+    $peerId = request()->input('peer_id') ?: (string) Str::uuid();
 
-//     // ── (a) Authenticated user ────────────────────────────────────────────────
-//     if ($user) {
-//         return [
-//             'id'           => $user->id,          // Reverb uses this for dedup
-//             'peer_id'      => $peerId,
-//             'display_name' => $user->name,
-//             'role'         => $room->owner_id === $user->id ? 'host' : 'participant',
-//         ];
-//     }
+    // ── (a) Authenticated user ────────────────────────────────────────────────
+    if ($user) {
+        return [
+            'id' => $user->id,          // Reverb uses this for dedup
+            'peer_id' => $peerId,
+            'display_name' => $user->name,
+            'role' => $room->owner_id === $user->id ? 'host' : 'participant',
+        ];
+    }
 
-//     // ── (b) Guest — check session ─────────────────────────────────────────────
-//     // MeetController::guestJoin() stores ['name'=>..., 'admitted'=>true] in session.
-//     $guestData = request()->session()->get("meet_guest_{$room->id}");
+    // ── (b) Guest — check session ─────────────────────────────────────────────
+    // MeetController::guestJoin() stores ['name'=>..., 'admitted'=>true] in session.
+    $guestData = request()->session()->get("meet_guest_{$room->id}");
 
-//     if ($guestData && ($guestData['admitted'] ?? false)) {
-//         // Use session ID suffix as a stable unique ID for this guest
-//         $guestId = 'g_' . Str::substr(session()->getId(), 0, 16);
-//         return [
-//             'id'           => $guestId,
-//             'peer_id'      => $peerId,
-//             'display_name' => $guestData['name'],
-//             'role'         => 'participant',
-//         ];
-//     }
+    if ($guestData && ($guestData['admitted'] ?? false)) {
+        // Use session ID suffix as a stable unique ID for this guest
+        $guestId = 'g_' . Str::substr(session()->getId(), 0, 16);
+        return [
+            'id' => $guestId,
+            'peer_id' => $peerId,
+            'display_name' => $guestData['name'],
+            'role' => 'participant',
+        ];
+    }
 
-//     // Not admitted — deny channel authorization
-//     return false;
-// });
-
-
-Broadcast::channel('meet.{roomId}', function ($user = null, $roomId) {
-    // Always return true for development
-    return true;
+    // Not admitted — deny channel authorization
+    return false;
 });
+
+
+// Broadcast::channel('meet.{roomId}', function ($user = null, $roomId) {
+//     // Always return true for development
+//     return true;
+// });
 
 // Broadcast::channel('meet.{uid}', function ($user, string $uid) {
 //     $room = App\Models\MeetRoom::where('uid', $uid)->first();
@@ -92,11 +93,9 @@ Broadcast::channel('meet.{roomId}', function ($user = null, $roomId) {
 // });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// ADD to routes/channels.php:
+// ADD to this file to define more channels for other features (e.g. audio calls).
 // ─────────────────────────────────────────────────────────────────────────────
 
-
-use App\Models\AudioCall;
 
 Broadcast::channel('call.{uid}', function ($user, string $uid) {
     $call = AudioCall::where('uid', $uid)->first();
@@ -128,4 +127,3 @@ Broadcast::channel('call.{uid}', function ($user, string $uid) {
 Broadcast::channel('user.{id}', function ($user, $id) {
     return (int) $user->id === (int) $id;
 });
-

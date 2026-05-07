@@ -115,7 +115,6 @@ Route::prefix('')->middleware(['auth'])->group(function () {
 
     // Route::get('/services/translator', [ServiceController::class, 'translator'])->name('translator');
     Route::get('/services/{key}', [ServiceController::class, 'serviceDetails'])->name('services.details')->middleware('auth');
-
 });
 
 // ── PUBLIC — no auth required ─────────────────────────────────────────────────
@@ -153,7 +152,7 @@ Route::middleware(['auth'])->prefix('meet')->name('meet.')->group(function () {
 
 
 
-Broadcast::routes(['middleware' => ['auth']]);
+// Broadcast::routes(['middleware' => ['auth']]);
 
 Route::post('/broadcasting/auth', function (Illuminate\Http\Request $request) {
     $channelName = $request->input('channel_name', '');
@@ -258,6 +257,3 @@ Route::fallback(
 );
 
 require __DIR__ . '/settings.php';
-
-
-
