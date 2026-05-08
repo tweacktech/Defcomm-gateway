@@ -356,7 +356,7 @@ class MeetController extends Controller
                 'room_id' => $room->id,
                 'user_id' => $userId,
                 'display_name' => $validated['display_name'],
-                'peer_id' => $validated['peer_id'],
+                // 'peer_id' => $validated['peer_id'],
             ],
             [
                 'user_id' => $userId,

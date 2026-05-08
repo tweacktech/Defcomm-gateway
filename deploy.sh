@@ -1,14 +1,14 @@
 #!/bin/bash
 cd /www/wwwroot/aisystem.defcomm.cloud
 
-echo "Pulling latest changes..."
-git pull origin main
+# echo "Pulling latest changes..."
+# git pull origin main
 
-echo "Installing PHP dependencies..."
-composer install --no-dev --optimize-autoloader
+# echo "Installing PHP dependencies..."
+# composer install --no-dev --optimize-autoloader
 
-echo "Installing Node dependencies..."
-npm install --legacy-peer-deps
+# echo "Installing Node dependencies..."
+# npm install --legacy-peer-deps
 
 # echo "Building frontend..."
 # npm run build
