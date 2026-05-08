@@ -584,7 +584,7 @@ export function useWebRTCMesh(): UseWebRTCMeshReturn {
 
     // ── (I) Broadcast: ParticipantAdmitted ───────────────────────────────────
     R.current.channel.listen(".meet.participant-admitted", (e: any) => {
-      const admittedId: string = e.admitted_peer_id;
+      const admittedId: string = e.admitted_peer_id ?? e.participant?.peer_id ?? e.peer_id;
       if (!admittedId) return;
 
       // Host: remove from waiting list

@@ -8,7 +8,7 @@ import {
     Mic, MicOff, PhoneOff, Hand, Users, X, Shield,
     Clock, LogOut, StopCircle, UserX, UserCheck,
     Hourglass, AlertTriangle, AlertCircle, Siren, Phone,
-    Volume2, VolumeX, ChevronDown,
+    Volume2, VolumeX, ChevronDown, Activity,
 } from 'lucide-react';
 import { useState, useRef, useEffect } from 'react';
 import Echo from 'laravel-echo';
@@ -38,7 +38,6 @@ type PageProps = {
     /** Matches REVERB_SCHEME / useTLS */
     reverb_use_tls?: boolean;
     stun_servers: RTCIceServer[];
-    auth: { user: { id: number } };
 };
 
 // ─── HTTP helpers ─────────────────────────────────────────────────────────────
@@ -269,7 +268,7 @@ function EndScreen({ name, reason }: { name: string; reason: EndReason }) {
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export default function CallRoom() {
-    const { call, peer_id, display_name, is_host, auth,
+    const { call, peer_id, display_name, is_host,
             reverb_key, reverb_host, reverb_port, reverb_use_tls, stun_servers } = usePage<PageProps>().props;
 
     // ── UI state ──────────────────────────────────────────────────────────────
@@ -295,6 +294,7 @@ export default function CallRoom() {
     const audioOnRef  = useRef(!call.mute_on_join || is_host);
     const handRef     = useRef(false);
     const timerRef    = useRef<ReturnType<typeof setInterval> | null>(null);
+    const iceBufMap   = useRef<Map<string, RTCIceCandidateInit[]>>(new Map());
 
     useEffect(() => { audioOnRef.current = audioOn; }, [audioOn]);
     useEffect(() => { handRef.current    = handRaised; }, [handRaised]);
@@ -321,7 +321,25 @@ export default function CallRoom() {
     const removePeer = (pid: string) => {
         speakMap.current.get(pid)?.(); speakMap.current.delete(pid);
         pcMap.current.get(pid)?.close(); pcMap.current.delete(pid);
+        iceBufMap.current.delete(pid);
         setPeers(prev => { const m = new Map(prev); m.delete(pid); return m; });
+    };
+
+    const flushIce = async (pid: string, pc: RTCPeerConnection) => {
+        const buf = iceBufMap.current.get(pid) ?? [];
+        iceBufMap.current.delete(pid);
+        for (const c of buf) {
+            await pc.addIceCandidate(new RTCIceCandidate(c)).catch(() => {});
+        }
+    };
+
+    const sendOffer = async (remotePeerId: string) => {
+        const pc = createPC(remotePeerId);
+        const offer = await pc.createOffer({ offerToReceiveAudio: true });
+        await pc.setLocalDescription(offer);
+        await post(`/calls/${call.uid}/signal`, {
+            to: remotePeerId, type: 'offer', payload: offer, from_peer_id: peer_id,
+        }).catch(() => {});
     };
 
     const createPC = (remotePeerId: string): RTCPeerConnection => {
@@ -411,20 +429,24 @@ export default function CallRoom() {
         ch.here((members: any[]) => {
             const map = new Map<string, Peer>();
             members.forEach(m => {
-                if (m.peer_id === peer_id || String(m.id) === String(auth.user.id)) return;
+                if (m.peer_id === peer_id) return;
                 map.set(m.peer_id, {
                     peer_id: m.peer_id, display_name: m.display_name ?? m.name ?? 'Unknown',
                     role: m.role ?? 'participant', audio_on: false,
                 });
             });
             setPeers(map);
+            members.forEach((m: any) => {
+                const remotePeerId = m.peer_id;
+                if (!remotePeerId || remotePeerId === peer_id) return;
+                if (peer_id > remotePeerId) {
+                    sendOffer(remotePeerId).catch(() => {});
+                }
+            });
         });
 
         ch.joining(async (member: any) => {
-            if (member.peer_id === peer_id || String(member.id) === String(auth.user.id)) return;
-            const pc    = createPC(member.peer_id);
-            const offer = await pc.createOffer({ offerToReceiveAudio: true });
-            await pc.setLocalDescription(offer);
+            if (member.peer_id === peer_id) return;
             setPeers(prev => {
                 const m = new Map(prev);
                 if (!m.has(member.peer_id)) m.set(member.peer_id, {
@@ -434,9 +456,9 @@ export default function CallRoom() {
                 });
                 return m;
             });
-            post(`/calls/${call.uid}/signal`, {
-                to: member.peer_id, type: 'offer', payload: offer, from_peer_id: peer_id,
-            }).catch(() => {});
+            if (peer_id > member.peer_id) {
+                sendOffer(member.peer_id).catch(() => {});
+            }
         });
 
         ch.leaving((member: any) => removePeer(member.peer_id));
@@ -449,6 +471,7 @@ export default function CallRoom() {
             if (type === 'offer') {
                 const pc = createPC(from);
                 await pc.setRemoteDescription(new RTCSessionDescription(payload));
+                await flushIce(from, pc);
                 const answer = await pc.createAnswer();
                 await pc.setLocalDescription(answer);
                 setPeers(prev => {
@@ -462,13 +485,21 @@ export default function CallRoom() {
             }
             if (type === 'answer') {
                 const pc = pcMap.current.get(from);
-                if (pc && pc.signalingState !== 'stable')
+                if (pc && pc.signalingState !== 'stable') {
                     await pc.setRemoteDescription(new RTCSessionDescription(payload)).catch(() => {});
+                    await flushIce(from, pc);
+                }
             }
             if (type === 'ice-candidate') {
                 const pc = pcMap.current.get(from);
-                if (pc?.remoteDescription)
+                if (!pc) return;
+                if (!pc.remoteDescription?.type) {
+                    const buf = iceBufMap.current.get(from) ?? [];
+                    buf.push(payload);
+                    iceBufMap.current.set(from, buf);
+                } else {
                     await pc.addIceCandidate(new RTCIceCandidate(payload)).catch(() => {});
+                }
             }
         });
 
@@ -634,6 +665,14 @@ export default function CallRoom() {
                     </div>
                 </div>
                 <div className="flex items-center gap-2 text-xs text-zinc-400">
+                    <a
+                        href="/webrtc-health"
+                        target="_blank"
+                        rel="noreferrer"
+                        className="flex items-center gap-1 rounded-lg border border-zinc-700 px-2 py-1 text-zinc-300 transition hover:bg-zinc-800"
+                    >
+                        <Activity className="h-3.5 w-3.5" />Health
+                    </a>
                     <Users className="h-3.5 w-3.5" />{total}
                 </div>
             </header>

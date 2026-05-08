@@ -14,6 +14,7 @@ use Inertia\Inertia;
 use Laravel\Fortify\Features;
 use App\Http\Controllers\AudioCallController;
 use App\Http\Controllers\DocsController;
+use App\Http\Controllers\WebRtcHealthController;
 
 
 // or 'auth' if using session
@@ -245,6 +246,10 @@ Route::get('meet-test', function () {
 
     return Inertia::render('test-app');
 })->middleware('auth');
+
+Route::get('/webrtc-health', WebRtcHealthController::class)
+    ->middleware('auth')
+    ->name('webrtc.health');
 
 
 

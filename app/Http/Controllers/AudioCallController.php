@@ -184,9 +184,18 @@ class AudioCallController extends Controller
         $isHost = $call->initiator_id === $user->id;
         $admitted = $isHost || !$call->waiting_room;
 
+        // Reconnect cleanup: close stale active rows for the same user.
+        AudioCallParticipant::where('call_id', $call->id)
+            ->where('user_id', $user->id)
+            ->whereIn('status', ['joined', 'ringing'])
+            ->where('peer_id', '!=', $validated['peer_id'])
+            ->get()
+            ->each(fn(AudioCallParticipant $p) => $p->leave('reconnected'));
+
         $participant = AudioCallParticipant::updateOrCreate(
-            ['call_id' => $call->id, 'user_id' => $user->id],
+            ['call_id' => $call->id, 'peer_id' => $validated['peer_id']],
             [
+                'user_id' => $user->id,
                 'peer_id' => $validated['peer_id'],
                 'display_name' => $validated['display_name'],
                 'role' => $isHost ? 'host' : 'participant',

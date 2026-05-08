@@ -118,10 +118,11 @@ Broadcast::channel('call.{uid}', function ($user, string $uid) {
             return false;
 
         return [
-            'id' => $user->id,
+            'id' => $peerId,
             'peer_id' => $peerId,
             'display_name' => $user->name,
             'role' => $call->initiator_id === $user->id ? 'host' : 'participant',
+            'user_id' => $user->id,
         ];
     }
 

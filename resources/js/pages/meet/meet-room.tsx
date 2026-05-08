@@ -4,7 +4,7 @@ import {
   Mic, MicOff, Video, VideoOff, ScreenShare, ScreenShareOff,
   PhoneOff, Hand, MessageSquare, Users, Copy, Check, Shield,
   ChevronLeft, Clock, X, LogOut, StopCircle, Monitor,
-  UserX, UserCheck, Hourglass, AlertTriangle,
+  UserX, UserCheck, Hourglass, AlertTriangle, Activity,
 } from 'lucide-react';
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { toast } from 'sonner';
@@ -620,6 +620,14 @@ export default function MeetRoom() {
           </div>
         </div>
         <div className="flex items-center gap-2">
+          <a
+            href="/webrtc-health"
+            target="_blank"
+            rel="noreferrer"
+            className="flex items-center gap-1.5 rounded-lg border border-zinc-700 px-3 py-1.5 text-xs text-zinc-300 transition hover:bg-zinc-800"
+          >
+            <Activity className="h-3.5 w-3.5" /> Health
+          </a>
           {rec.active && <RecBadge duration={rec.duration} />}
           <button
             onClick={() => { navigator.clipboard.writeText(room.join_url); setUrlCopied(true); setTimeout(() => setUrlCopied(false), 2000); }}
