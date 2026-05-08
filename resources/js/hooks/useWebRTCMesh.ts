@@ -443,6 +443,12 @@ export function useWebRTCMesh(): UseWebRTCMeshReturn {
       wssPort: port,
       forceTLS: useTls,
       enabledTransports: ["ws", "wss"],
+      authEndpoint: "/broadcasting/auth",
+      auth: {
+        params: {
+          peer_id: peerId,
+        },
+      },
     });
 
     R.current.channel = R.current.echo.join(`meet.${roomUid}`);
@@ -464,6 +470,24 @@ export function useWebRTCMesh(): UseWebRTCMeshReturn {
       }
 
       setConnectionState(others.length > 0 ? "connecting" : "waiting");
+
+      // Re-sync from backend to recover from missed presence events.
+      try {
+        const res = await axios.get(`/meet/${roomUid}/participants`, {
+          params: { peer_id: peerId },
+        });
+        const list = Array.isArray(res.data?.participants) ? res.data.participants : [];
+        for (const p of list) {
+          if (!p?.peer_id || p.peer_id === peerId) continue;
+          addPeer(p.peer_id, p.display_name ?? "Peer", p.role ?? "participant", {
+            video_on: p.video_on ?? true,
+            audio_on: p.audio_on ?? true,
+            screen_sharing: p.screen_sharing ?? false,
+            hand_raised: p.hand_raised ?? false,
+          });
+          if (peerId > p.peer_id) await sendOffer(p.peer_id);
+        }
+      } catch {}
     });
 
     // ── (B) joining() — equivalent to "peer-joined" in signaling.js ──────────
@@ -503,35 +527,35 @@ export function useWebRTCMesh(): UseWebRTCMeshReturn {
     // This fires from the Laravel backend after DB write.
     // RULE: NEVER add a new peer here — joining() already did it.
     //       Only update existing peer's metadata (role, media flags).
-    R.current.channel.listen("Meet\\ParticipantJoined", (e: any) => {
-      const uid: string = e.participant?.peer_id;
+    R.current.channel.listen(".meet.participant-joined", (e: any) => {
+      const uid: string = e.peer_id;
       if (!uid || uid === peerId) return;
 
       // addPeer with the existing peer: seenPeers guard will prevent double-add
       // and will only merge the extra fields into the existing entry
       addPeer(
         uid,
-        e.participant.display_name ?? "Peer",
-        e.participant.role ?? "participant",
+        e.display_name ?? "Peer",
+        e.role ?? "participant",
         {
-          video_on:      e.participant.video_on      ?? true,
-          audio_on:      e.participant.audio_on      ?? true,
-          screen_sharing: e.participant.screen_sharing ?? false,
-          hand_raised:   e.participant.hand_raised   ?? false,
+          video_on:      e.video_on      ?? true,
+          audio_on:      e.audio_on      ?? true,
+          screen_sharing: e.screen_sharing ?? false,
+          hand_raised:   e.hand_raised   ?? false,
         },
       );
       // No sendOffer here — joining() handles that
     });
 
     // ── (F) Broadcast: ParticipantLeft ───────────────────────────────────────
-    R.current.channel.listen("Meet\\ParticipantLeft", (e: any) => {
-      const uid: string = e.participant?.peer_id ?? e.peer_id;
+    R.current.channel.listen(".meet.participant-left", (e: any) => {
+      const uid: string = e.peer_id;
       if (uid && uid !== peerId) removePeer(uid);
     });
 
     // ── (G) Broadcast: ParticipantMediaUpdated ───────────────────────────────
     // Equivalent to: socket.on("media-state") in signaling.js
-    R.current.channel.listen("Meet\\ParticipantMediaUpdated", (e: any) => {
+    R.current.channel.listen(".meet.media-updated", (e: any) => {
       const uid: string = e.peer_id;
       if (!uid || uid === peerId) return;
       const peer = R.current.peers.get(uid);
@@ -547,20 +571,20 @@ export function useWebRTCMesh(): UseWebRTCMeshReturn {
     });
 
     // ── (H) Broadcast: ParticipantWaiting ────────────────────────────────────
-    R.current.channel.listen("Meet\\ParticipantWaiting", (e: any) => {
-      const uid: string = e.participant?.peer_id;
+    R.current.channel.listen(".meet.participant-waiting", (e: any) => {
+      const uid: string = e.peer_id;
       if (!uid) return;
       if (!R.current.waiting.find(w => w.peer_id === uid)) {
         commitWaiting([
           ...R.current.waiting,
-          { peer_id: uid, display_name: e.participant.display_name ?? "Guest" },
+          { peer_id: uid, display_name: e.display_name ?? "Guest" },
         ]);
       }
     });
 
     // ── (I) Broadcast: ParticipantAdmitted ───────────────────────────────────
-    R.current.channel.listen("Meet\\ParticipantAdmitted", (e: any) => {
-      const admittedId: string = e.participant?.peer_id;
+    R.current.channel.listen(".meet.participant-admitted", (e: any) => {
+      const admittedId: string = e.admitted_peer_id;
       if (!admittedId) return;
 
       // Host: remove from waiting list
@@ -571,7 +595,7 @@ export function useWebRTCMesh(): UseWebRTCMeshReturn {
     });
 
     // ── (J) Broadcast: ParticipantKicked ─────────────────────────────────────
-    R.current.channel.listen("Meet\\ParticipantKicked", (e: any) => {
+    R.current.channel.listen(".meet.participant-kicked", (e: any) => {
       const kickedId: string = e.peer_id ?? e.participant?.peer_id;
       if (!kickedId) return;
       if (kickedId === peerId) callbacks.onKicked?.();
@@ -579,7 +603,7 @@ export function useWebRTCMesh(): UseWebRTCMeshReturn {
     });
 
     // ── (K) Broadcast: RoomEnded ─────────────────────────────────────────────
-    R.current.channel.listen("Meet\\RoomEnded", () => {
+    R.current.channel.listen(".meet.room-ended", () => {
       callbacks.onRoomEnded?.();
     });
 

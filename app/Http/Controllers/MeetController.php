@@ -351,22 +351,31 @@ class MeetController extends Controller
         //     return redirect()->back()->with('error', 'User already Joined');
         // }
 
+        // If the same authenticated user reconnects with a new peer_id, close
+        // stale active rows first to avoid duplicate participants in the room.
+        if ($userId) {
+            MeetParticipant::where('room_id', $room->id)
+                ->where('user_id', $userId)
+                ->whereNull('left_at')
+                ->where('peer_id', '!=', $validated['peer_id'])
+                ->get()
+                ->each(fn(MeetParticipant $p) => $p->leave());
+        }
+
         $participant = MeetParticipant::updateOrCreate(
             [
                 'room_id' => $room->id,
-                'user_id' => $userId,
-                'display_name' => $validated['display_name'],
-                // 'peer_id' => $validated['peer_id'],
+                'peer_id' => $validated['peer_id'],
             ],
             [
                 'user_id' => $userId,
                 'display_name' => $validated['display_name'],
-                'peer_id' => $validated['peer_id'],
                 'role' => $isOwner ? 'host' : 'participant',
                 'is_admitted' => $isOwner || !$room->waiting_room,
                 'video_on' => $validated['video_on'] ?? false,
                 'audio_on' => $validated['audio_on'] ?? false,
                 'joined_at' => now(),
+                'left_at' => null,
             ]
         );
 

@@ -24,6 +24,63 @@ Route::get('/', function () {
     // return Inertia::render('auth/login');
 })->name('home');
 
+
+
+
+
+
+Broadcast::routes(['middleware' => ['auth']]);
+
+Route::post('/broadcasting/auth', function (Illuminate\Http\Request $request) {
+    $channelName = $request->input('channel_name', '');
+    $peerId = $request->input('peer_id', '');
+
+    // ── Authenticated users: use standard Broadcast::auth() ──────────────────
+    if ($request->user()) {
+        return Broadcast::auth($request);
+    }
+
+    // ── Guests: validate via session admission token ──────────────────────────
+    // Only handle meet presence channels: presence-meet.{uid}
+    if (!preg_match('/^presence-meet\.([a-zA-Z0-9\-]+)$/', $channelName, $m)) {
+        abort(403, 'Unauthenticated');
+    }
+
+    $room = App\Models\MeetRoom::where('uid', $m[1])->first();
+    if (!$room || $room->isEnded()) {
+        abort(403, 'Room not found');
+    }
+
+    $guestSession = $request->session()->get("meet_guest_{$room->id}");
+    if (empty($guestSession['admitted'])) {
+        abort(403, 'Guest not admitted');
+    }
+
+    // Manually sign the Pusher/Reverb presence auth response.
+    // This is exactly what Broadcast::auth() does internally —
+    // we just supply guest-specific member data instead of auth()->user().
+    $appKey = config('broadcasting.connections.reverb.key');
+    $appSecret = config('broadcasting.connections.reverb.secret');
+    $socketId = $request->input('socket_id');
+
+    $channelData = json_encode([
+        'user_id' => $peerId,
+        'user_info' => [
+            'peer_id' => $peerId,
+            'display_name' => $guestSession['name'] ?? 'Guest',
+            'role' => 'participant',
+        ],
+    ]);
+
+    $signature = hash_hmac('sha256', "{$socketId}:{$channelName}:{$channelData}", $appSecret);
+
+    return response()->json([
+        'auth' => "{$appKey}:{$signature}",
+        'channel_data' => $channelData,
+    ]);
+})->middleware('web');   // session only — no 'auth' guard
+
+
 /*
 |--------------------------------------------------------------------------
 | Public Drive share links (guests — no authentication)
@@ -149,59 +206,6 @@ Route::middleware(['auth'])->prefix('meet')->name('meet.')->group(function () {
     Route::get('/recording/{id}/download', [MeetController::class, 'downloadRecording'])->name('recording.download');
 });
 
-
-
-
-// Broadcast::routes(['middleware' => ['auth']]);
-
-Route::post('/broadcasting/auth', function (Illuminate\Http\Request $request) {
-    $channelName = $request->input('channel_name', '');
-    $peerId = $request->input('peer_id', '');
-
-    // ── Authenticated users: use standard Broadcast::auth() ──────────────────
-    if ($request->user()) {
-        return Broadcast::auth($request);
-    }
-
-    // ── Guests: validate via session admission token ──────────────────────────
-    // Only handle meet presence channels: presence-meet.{uid}
-    if (!preg_match('/^presence-meet\.([a-zA-Z0-9\-]+)$/', $channelName, $m)) {
-        abort(403, 'Unauthenticated');
-    }
-
-    $room = App\Models\MeetRoom::where('uid', $m[1])->first();
-    if (!$room || $room->isEnded()) {
-        abort(403, 'Room not found');
-    }
-
-    $guestSession = $request->session()->get("meet_guest_{$room->id}");
-    if (empty($guestSession['admitted'])) {
-        abort(403, 'Guest not admitted');
-    }
-
-    // Manually sign the Pusher/Reverb presence auth response.
-    // This is exactly what Broadcast::auth() does internally —
-    // we just supply guest-specific member data instead of auth()->user().
-    $appKey = config('broadcasting.connections.reverb.key');
-    $appSecret = config('broadcasting.connections.reverb.secret');
-    $socketId = $request->input('socket_id');
-
-    $channelData = json_encode([
-        'user_id' => $peerId,
-        'user_info' => [
-            'peer_id' => $peerId,
-            'display_name' => $guestSession['name'] ?? 'Guest',
-            'role' => 'participant',
-        ],
-    ]);
-
-    $signature = hash_hmac('sha256', "{$socketId}:{$channelName}:{$channelData}", $appSecret);
-
-    return response()->json([
-        'auth' => "{$appKey}:{$signature}",
-        'channel_data' => $channelData,
-    ]);
-})->middleware('web');   // session only — no 'auth' guard
 
 
 // ─────────────────────────────────────────────────────────────────────────────

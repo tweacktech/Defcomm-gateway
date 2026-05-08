@@ -134,7 +134,7 @@ Broadcast::channel('user.{id}', function ($user, $id) {
 });
 
 
-Broadcast::channel('meet.{roomId}', function ($user = null, $roomId) {
-    // Always return true for development
-    return true;
-});
+// Broadcast::channel('meet.{roomId}', function ($user = null, $roomId) {
+//     // Always return true for development
+//     return true;
+// });
