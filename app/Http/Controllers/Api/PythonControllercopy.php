@@ -8,7 +8,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Process;
 use Illuminate\Support\Facades\Storage;
 
-class PythonController copy extends Controller
+class PythonControllercopy extends Controller
 {
     use LogsActivity;
 
@@ -125,8 +125,8 @@ class PythonController copy extends Controller
             | Move uploaded file (IMPORTANT FIX)
             |--------------------------------------------------------------------------
             */
-            $inputFilename = uniqid('input_').'.'.$request->file('audio')->extension();
-            $fullPath = $tempDir.DIRECTORY_SEPARATOR.$inputFilename;
+            $inputFilename = uniqid('input_') . '.' . $request->file('audio')->extension();
+            $fullPath = $tempDir . DIRECTORY_SEPARATOR . $inputFilename;
 
             // move instead of store()
             $request->file('audio')->move($tempDir, $inputFilename);
@@ -145,8 +145,8 @@ class PythonController copy extends Controller
             | Output audio path
             |--------------------------------------------------------------------------
             */
-            $outputFilename = uniqid('tts_').'.mp3';
-            $saveOutput = $outputDir.DIRECTORY_SEPARATOR.$outputFilename;
+            $outputFilename = uniqid('tts_') . '.mp3';
+            $saveOutput = $outputDir . DIRECTORY_SEPARATOR . $outputFilename;
 
             $script = base_path('app/Services/pythonService/speech.py');
 
@@ -158,11 +158,15 @@ class PythonController copy extends Controller
             $result = Process::timeout(120)->run([
                 'python3',
                 $script,
-                '--source', $request->input('source_lang'),
-                '--target', $request->input('target_lang'),
-                '--file', $fullPath,
+                '--source',
+                $request->input('source_lang'),
+                '--target',
+                $request->input('target_lang'),
+                '--file',
+                $fullPath,
                 '--tts',
-                '--save-output', $saveOutput,
+                '--save-output',
+                $saveOutput,
             ]);
 
             /*
@@ -202,7 +206,7 @@ class PythonController copy extends Controller
             return response()->json([
                 'success' => true,
                 'output' => trim($result->output()),
-                'audio_url' => asset('audio/'.$outputFilename),
+                'audio_url' => asset('audio/' . $outputFilename),
             ]);
         } catch (\Throwable $e) {
             return response()->json([
@@ -236,18 +240,22 @@ class PythonController copy extends Controller
                 mkdir($audioDir, 0755, true);
             }
 
-            $filename = uniqid('tts_').'.wav';
-            $saveOutput = $audioDir.DIRECTORY_SEPARATOR.$filename;
+            $filename = uniqid('tts_') . '.wav';
+            $saveOutput = $audioDir . DIRECTORY_SEPARATOR . $filename;
 
             $result = Process::timeout(60)->run([
                 'python3',
                 $script,
-                '--source',      $request->string('source_lang')->toString(),
-                '--target',      $request->string('target_lang')->toString(),
-                '--text',        $request->string('text')->toString(),
+                '--source',
+                $request->string('source_lang')->toString(),
+                '--target',
+                $request->string('target_lang')->toString(),
+                '--text',
+                $request->string('text')->toString(),
                 '--tts',         // ✅ triggers text_to_speech_advanced()
                 // '--play',        // ✅ plays audio on the server (remove if server has no audio)
-                '--save-output', $saveOutput, // ✅ saves mp3 so you can return a URL
+                '--save-output',
+                $saveOutput, // ✅ saves mp3 so you can return a URL
             ]);
 
             if ($result->failed()) {
@@ -260,7 +268,7 @@ class PythonController copy extends Controller
             return response()->json([
                 'success' => true,
                 'output' => trim($result->output()),
-                'audio_url' => asset('audio/'.$filename),
+                'audio_url' => asset('audio/' . $filename),
             ]);
         } catch (\Exception $e) {
             return response()->json([

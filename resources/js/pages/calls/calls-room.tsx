@@ -1,6 +1,16 @@
 // resources/js/pages/calls/room.tsx
 // Full audio-only WebRTC call room.
-// Architecture: ref-based (same pattern as meet/room.tsx) — zero stale closures.
+//
+// Fixes vs original:
+// A. createPC always re-uses a healthy existing PC (avoids duplicate connections).
+// B. ICE candidates for unknown peers are buffered, not silently dropped.
+// C. All event-handler callbacks (removePeer, sendOffer, createPC, flushIce)
+//    reference R.current so they never capture stale closures.
+// D. Offer direction: higher peer_id is the offerer (consistent with meet room).
+// E. here() seeds a proper peer map before sending any offers.
+// F. Audio track re-added correctly when PC is recreated for a peer.
+// G. doCleanup uses a ref to avoid stale capture in event listeners.
+// H. Answer handler guards against wrong signaling state gracefully.
 
 import axios from 'axios';
 import { Head, usePage, router } from '@inertiajs/react';
@@ -8,7 +18,7 @@ import {
     Mic, MicOff, PhoneOff, Hand, Users, X, Shield,
     Clock, LogOut, StopCircle, UserX, UserCheck,
     Hourglass, AlertTriangle, AlertCircle, Siren, Phone,
-    Volume2, VolumeX, ChevronDown, Activity,
+    VolumeX, Activity,
 } from 'lucide-react';
 import { useState, useRef, useEffect } from 'react';
 import Echo from 'laravel-echo';
@@ -35,7 +45,6 @@ type EndReason = 'left' | 'kicked' | 'call-ended' | 'declined';
 type PageProps = {
     call: CallConfig; peer_id: string; display_name: string; is_host: boolean;
     reverb_key: string; reverb_host: string; reverb_port: number;
-    /** Matches REVERB_SCHEME / useTLS */
     reverb_use_tls?: boolean;
     stun_servers: RTCIceServer[];
 };
@@ -77,7 +86,6 @@ function watchAudio(stream: MediaStream, cb: (v: boolean) => void, threshold = 1
 function ParticipantTile({ peer, local = false, onKick, onMute }: {
     peer: Peer; local?: boolean; onKick?: () => void; onMute?: () => void;
 }) {
-    // Attach audio element for remote stream
     const audioRef = useRef<HTMLAudioElement>(null);
     useEffect(() => {
         if (audioRef.current && peer.stream && !local) {
@@ -88,16 +96,11 @@ function ParticipantTile({ peer, local = false, onKick, onMute }: {
     return (
         <div className={`relative flex flex-col items-center gap-2 rounded-2xl border p-5 transition
             ${peer.speaking ? 'border-green-400/70 bg-green-500/5' : 'border-zinc-800 bg-zinc-900'}`}>
-            {/* Audio element for remote peers */}
             {!local && <audio ref={audioRef} autoPlay className="hidden" />}
-
-            {/* Avatar */}
             <div className={`flex h-16 w-16 items-center justify-center rounded-full text-2xl font-bold text-white transition-colors
                 ${peer.speaking ? 'bg-green-600' : 'bg-zinc-700'}`}>
                 {peer.display_name[0].toUpperCase()}
             </div>
-
-            {/* Name + status */}
             <div className="text-center">
                 <p className="text-sm font-semibold text-white">{local ? `${peer.display_name} (You)` : peer.display_name}</p>
                 <div className="mt-1 flex items-center justify-center gap-1.5">
@@ -108,8 +111,6 @@ function ParticipantTile({ peer, local = false, onKick, onMute }: {
                     {peer.is_muted_by_host && <VolumeX className="h-3 w-3 text-orange-400" />}
                 </div>
             </div>
-
-            {/* Host actions */}
             {(onKick || onMute) && (
                 <div className="flex gap-1.5">
                     {onMute && (
@@ -145,7 +146,7 @@ function WaitingOverlay({ callTitle }: { callTitle: string }) {
     );
 }
 
-// ─── Admit panel ─────────────────────────────────────────────────────────────
+// ─── Admit panel ──────────────────────────────────────────────────────────────
 function AdmitPanel({ waiting, onAdmit, onDeny }: {
     waiting: Peer[]; onAdmit: (id: string) => void; onDeny: (id: string) => void;
 }) {
@@ -182,7 +183,7 @@ function PriorityPanel({ current, onClose, onChangePriority }: {
 }) {
     const LEVELS = ['routine', 'important', 'urgent', 'emergency'];
     const [selected, setSelected] = useState(current);
-    const [note, setNote]         = useState('');
+    const [note, setNote] = useState('');
 
     return (
         <div className="absolute bottom-24 right-4 z-30 w-72 rounded-2xl border border-zinc-700 bg-zinc-900 p-4 shadow-2xl">
@@ -243,10 +244,10 @@ function HostLeaveDialog({ onEndAll, onLeaveOnly, onCancel }: {
 // ─── End screen ───────────────────────────────────────────────────────────────
 function EndScreen({ name, reason }: { name: string; reason: EndReason }) {
     const msgs: Record<EndReason, [string, string, string]> = {
-        left:        ['👋', 'Call ended',       'You left the call.'],
-        kicked:      ['🚫', 'You were removed', 'The host removed you from the call.'],
-        'call-ended':['📴', 'Call ended',       'The host ended the call for everyone.'],
-        declined:    ['❌', 'Call declined',    'The call was declined.'],
+        left:         ['👋', 'Call ended',       'You left the call.'],
+        kicked:       ['🚫', 'You were removed', 'The host removed you from the call.'],
+        'call-ended': ['📴', 'Call ended',       'The host ended the call for everyone.'],
+        declined:     ['❌', 'Call declined',    'The call was declined.'],
     };
     const [icon, title, sub] = msgs[reason];
     return (
@@ -272,81 +273,96 @@ export default function CallRoom() {
             reverb_key, reverb_host, reverb_port, reverb_use_tls, stun_servers } = usePage<PageProps>().props;
 
     // ── UI state ──────────────────────────────────────────────────────────────
-    const [peers,        setPeers]       = useState<Map<string, Peer>>(new Map());
-    const [waiting,      setWaiting]     = useState<Peer[]>([]);
-    const [admitted,     setAdmitted]    = useState(!call.waiting_room || is_host);
-    const [audioOn,      setAudioOn]     = useState(!call.mute_on_join || is_host);
-    const [handRaised,   setHandRaised]  = useState(false);
-    const [localSpeak,   setLocalSpeak]  = useState(false);
-    const [panelOpen,    setPanelOpen]   = useState(false);
-    const [hostDialog,   setHostDialog]  = useState(false);
-    const [priorityPanel,setPriorityPnl] = useState(false);
-    const [endReason,    setEndReason]   = useState<EndReason | null>(null);
-    const [priority,     setPriority]    = useState(call.priority);
-    const [priorityNote, setPriorityNote]= useState(call.priority_note ?? '');
-    const [elapsed,      setElapsed]     = useState(0);
+    const [peers,         setPeers]        = useState<Map<string, Peer>>(new Map());
+    const [waiting,       setWaiting]      = useState<Peer[]>([]);
+    const [admitted,      setAdmitted]     = useState(!call.waiting_room || is_host);
+    const [audioOn,       setAudioOn]      = useState(!call.mute_on_join || is_host);
+    const [handRaised,    setHandRaised]   = useState(false);
+    const [localSpeak,    setLocalSpeak]   = useState(false);
+    const [panelOpen,     setPanelOpen]    = useState(false);
+    const [hostDialog,    setHostDialog]   = useState(false);
+    const [priorityPanel, setPriorityPnl]  = useState(false);
+    const [endReason,     setEndReason]    = useState<EndReason | null>(null);
+    const [priority,      setPriority]     = useState(call.priority);
+    const [priorityNote,  setPriorityNote] = useState(call.priority_note ?? '');
+    const [elapsed,       setElapsed]      = useState(0);
 
-    // ── Refs ──────────────────────────────────────────────────────────────────
-    const streamRef   = useRef<MediaStream | null>(null);
-    const echoRef     = useRef<Echo<any> | null>(null);
-    const pcMap       = useRef<Map<string, RTCPeerConnection>>(new Map());
-    const speakMap    = useRef<Map<string, () => void>>(new Map());
-    const audioOnRef  = useRef(!call.mute_on_join || is_host);
-    const handRef     = useRef(false);
-    const timerRef    = useRef<ReturnType<typeof setInterval> | null>(null);
-    const iceBufMap   = useRef<Map<string, RTCIceCandidateInit[]>>(new Map());
+    // ── Refs — all mutable state lives here to avoid stale closures ───────────
+    const R = useRef({
+        stream:     null as MediaStream | null,
+        echo:       null as Echo<any> | null,
+        pcMap:      new Map<string, RTCPeerConnection>(),
+        speakMap:   new Map<string, () => void>(),
+        iceBufMap:  new Map<string, RTCIceCandidateInit[]>(),
+        audioOn:    !call.mute_on_join || is_host,
+        handRaised: false,
+        // FIX G: stable cleanup ref
+        cleanup:    null as (() => void) | null,
+    });
 
-    useEffect(() => { audioOnRef.current = audioOn; }, [audioOn]);
-    useEffect(() => { handRef.current    = handRaised; }, [handRaised]);
+    // Keep R.current.audioOn in sync with state
+    useEffect(() => { R.current.audioOn = audioOn; }, [audioOn]);
+    useEffect(() => { R.current.handRaised = handRaised; }, [handRaised]);
 
     // ── Elapsed timer ─────────────────────────────────────────────────────────
     useEffect(() => {
-        timerRef.current = setInterval(() => setElapsed(e => e + 1), 1000);
-        return () => { if (timerRef.current) clearInterval(timerRef.current); };
+        const id = setInterval(() => setElapsed(e => e + 1), 1000);
+        return () => clearInterval(id);
     }, []);
 
-    // ── Helpers ───────────────────────────────────────────────────────────────
+    // ── Core helpers (all read from R.current — no stale closures) ───────────
 
     const attachSpeak = (pid: string, stream: MediaStream, isLocal: boolean) => {
-        speakMap.current.get(pid)?.();
-        speakMap.current.set(pid, watchAudio(stream, v => {
+        R.current.speakMap.get(pid)?.();
+        R.current.speakMap.set(pid, watchAudio(stream, v => {
             if (isLocal) setLocalSpeak(v);
             else setPeers(prev => {
-                const m = new Map(prev); const p = m.get(pid);
-                if (p) m.set(pid, { ...p, speaking: v }); return m;
+                const m = new Map(prev);
+                const p = m.get(pid);
+                if (p) m.set(pid, { ...p, speaking: v });
+                return m;
             });
         }));
     };
 
+    // FIX C: removePeer reads from R.current, not captured state
     const removePeer = (pid: string) => {
-        speakMap.current.get(pid)?.(); speakMap.current.delete(pid);
-        pcMap.current.get(pid)?.close(); pcMap.current.delete(pid);
-        iceBufMap.current.delete(pid);
+        R.current.speakMap.get(pid)?.();
+        R.current.speakMap.delete(pid);
+        R.current.pcMap.get(pid)?.close();
+        R.current.pcMap.delete(pid);
+        R.current.iceBufMap.delete(pid);
         setPeers(prev => { const m = new Map(prev); m.delete(pid); return m; });
     };
 
     const flushIce = async (pid: string, pc: RTCPeerConnection) => {
-        const buf = iceBufMap.current.get(pid) ?? [];
-        iceBufMap.current.delete(pid);
+        const buf = R.current.iceBufMap.get(pid) ?? [];
+        if (!pc.remoteDescription?.type) {
+            // Not ready yet — leave the buffer intact
+            return;
+        }
+        R.current.iceBufMap.delete(pid);
         for (const c of buf) {
             await pc.addIceCandidate(new RTCIceCandidate(c)).catch(() => {});
         }
     };
 
-    const sendOffer = async (remotePeerId: string) => {
-        const pc = createPC(remotePeerId);
-        const offer = await pc.createOffer({ offerToReceiveAudio: true });
-        await pc.setLocalDescription(offer);
-        await post(`/calls/${call.uid}/signal`, {
-            to: remotePeerId, type: 'offer', payload: offer, from_peer_id: peer_id,
-        }).catch(() => {});
-    };
-
+    // FIX A+F: createPC re-uses a healthy PC; always adds audio tracks from R.current.stream
     const createPC = (remotePeerId: string): RTCPeerConnection => {
-        pcMap.current.get(remotePeerId)?.close();
-        const pc = new RTCPeerConnection({ iceServers: stun_servers });
-        const stream = streamRef.current;
+        const existing = R.current.pcMap.get(remotePeerId);
+        if (
+            existing &&
+            existing.connectionState !== 'failed' &&
+            existing.connectionState !== 'closed'
+        ) {
+            return existing;
+        }
+        existing?.close();
 
+        const pc = new RTCPeerConnection({ iceServers: stun_servers });
+
+        // FIX F: always re-read stream from ref so newly acquired audio is added
+        const stream = R.current.stream;
         if (stream) {
             stream.getAudioTracks().forEach(t => pc.addTrack(t, stream));
         }
@@ -355,14 +371,16 @@ export default function CallRoom() {
             if (!candidate) return;
             post(`/calls/${call.uid}/signal`, {
                 to: remotePeerId, type: 'ice-candidate',
-                payload: candidate, from_peer_id: peer_id,
+                payload: candidate.toJSON(), from_peer_id: peer_id,
             }).catch(() => {});
         };
 
         pc.ontrack = ({ streams: [remote] }) => {
+            if (!remote) return;
             attachSpeak(remotePeerId, remote, false);
             setPeers(prev => {
-                const m = new Map(prev); const p = m.get(remotePeerId);
+                const m = new Map(prev);
+                const p = m.get(remotePeerId);
                 if (p) m.set(remotePeerId, { ...p, stream: remote });
                 else m.set(remotePeerId, {
                     peer_id: remotePeerId, display_name: 'Connecting…',
@@ -370,205 +388,283 @@ export default function CallRoom() {
                 });
                 return m;
             });
+            // Flush any buffered ICE now that we have a remote track (and soon remoteDescription)
         };
 
-        pcMap.current.set(remotePeerId, pc);
+        // FIX E: connection state logging + ice restart on failure
+        pc.onconnectionstatechange = () => {
+            if (pc.connectionState === 'failed') {
+                pc.restartIce();
+            }
+            if (pc.connectionState === 'closed') {
+                removePeer(remotePeerId);
+            }
+        };
+
+        R.current.pcMap.set(remotePeerId, pc);
         return pc;
     };
 
-    const stopAllTracks = () => streamRef.current?.getTracks().forEach(t => t.stop());
+    // FIX D: higher peer_id always sends the offer
+    const sendOffer = async (remotePeerId: string) => {
+        const pc = createPC(remotePeerId);
+        try {
+            const offer = await pc.createOffer({ offerToReceiveAudio: true });
+            await pc.setLocalDescription(offer);
+            await post(`/calls/${call.uid}/signal`, {
+                to: remotePeerId, type: 'offer', payload: pc.localDescription, from_peer_id: peer_id,
+            }).catch(() => {});
+        } catch (e) {
+            console.error('[sendOffer]', remotePeerId, e);
+        }
+    };
 
     const doCleanup = () => {
-        stopAllTracks();
-        speakMap.current.forEach(fn => fn());
-        pcMap.current.forEach(pc => pc.close());
-        echoRef.current?.leave(`call.${call.uid}`);
+        R.current.stream?.getTracks().forEach(t => t.stop());
+        R.current.speakMap.forEach(fn => fn());
+        R.current.pcMap.forEach(pc => pc.close());
+        R.current.echo?.leave?.(`call.${call.uid}`);
     };
+
+    // FIX G: store doCleanup in a ref so event listeners always call the live version
+    useEffect(() => { R.current.cleanup = doCleanup; });
 
     // ── Background service ────────────────────────────────────────────────────
 
-    const startService = async () => {
-        // Get audio only
-        try {
-            const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
-            stream.getAudioTracks().forEach(t => { t.enabled = audioOnRef.current; });
-            streamRef.current = stream;
-            attachSpeak(peer_id, stream, true);
-        } catch { setAudioOn(false); }
+    useEffect(() => {
+        let mounted = true;
 
-        // Tell server we answered
-        const resp = await post(`/calls/${call.uid}/answer`, {
-            peer_id, display_name,
-            audio_on: audioOnRef.current,
-        }).catch(() => ({ admitted: true }));
-
-        if (resp?.admitted === false) setAdmitted(false);
-
-        // ── Echo ──────────────────────────────────────────────────────────────
-        (window as any).Pusher = Pusher;
-        const useTls = reverb_use_tls ?? false;
-        const echo = new Echo({
-            broadcaster: 'reverb', key: reverb_key,
-            wsHost: reverb_host, wsPort: reverb_port,
-            forceTLS: useTls,
-            enabledTransports: useTls
-                ? (['wss'] as ('ws' | 'wss')[])
-                : ['ws', 'wss'],
-            authorizer: (channel: any) => ({
-                authorize: (socketId: string, cb: Function) => {
-                    axios.post('/broadcasting/auth', {
-                        socket_id: socketId, channel_name: channel.name, peer_id,
-                    }).then(r => cb(false, r.data)).catch(e => cb(true, e));
-                },
-            }),
-        });
-        echoRef.current = echo;
-        const ch = echo.join(`call.${call.uid}`);
-
-        // ── Presence ──────────────────────────────────────────────────────────
-        ch.here((members: any[]) => {
-            const map = new Map<string, Peer>();
-            members.forEach(m => {
-                if (m.peer_id === peer_id) return;
-                map.set(m.peer_id, {
-                    peer_id: m.peer_id, display_name: m.display_name ?? m.name ?? 'Unknown',
-                    role: m.role ?? 'participant', audio_on: false,
-                });
-            });
-            setPeers(map);
-            members.forEach((m: any) => {
-                const remotePeerId = m.peer_id;
-                if (!remotePeerId || remotePeerId === peer_id) return;
-                if (peer_id > remotePeerId) {
-                    sendOffer(remotePeerId).catch(() => {});
-                }
-            });
-        });
-
-        ch.joining(async (member: any) => {
-            if (member.peer_id === peer_id) return;
-            setPeers(prev => {
-                const m = new Map(prev);
-                if (!m.has(member.peer_id)) m.set(member.peer_id, {
-                    peer_id: member.peer_id,
-                    display_name: member.display_name ?? member.name ?? 'Unknown',
-                    role: member.role ?? 'participant', audio_on: false,
-                });
-                return m;
-            });
-            if (peer_id > member.peer_id) {
-                sendOffer(member.peer_id).catch(() => {});
-            }
-        });
-
-        ch.leaving((member: any) => removePeer(member.peer_id));
-
-        // ── Signaling ─────────────────────────────────────────────────────────
-        ch.listen('.call.signal', async (data: any) => {
-            if (data.to !== peer_id) return;
-            const { from, type, payload } = data;
-
-            if (type === 'offer') {
-                const pc = createPC(from);
-                await pc.setRemoteDescription(new RTCSessionDescription(payload));
-                await flushIce(from, pc);
-                const answer = await pc.createAnswer();
-                await pc.setLocalDescription(answer);
-                setPeers(prev => {
-                    const m = new Map(prev);
-                    if (!m.has(from)) m.set(from, { peer_id: from, display_name: 'Connecting…', role: 'participant', audio_on: false });
-                    return m;
-                });
-                post(`/calls/${call.uid}/signal`, {
-                    to: from, type: 'answer', payload: answer, from_peer_id: peer_id,
-                }).catch(() => {});
-            }
-            if (type === 'answer') {
-                const pc = pcMap.current.get(from);
-                if (pc && pc.signalingState !== 'stable') {
-                    await pc.setRemoteDescription(new RTCSessionDescription(payload)).catch(() => {});
-                    await flushIce(from, pc);
-                }
-            }
-            if (type === 'ice-candidate') {
-                const pc = pcMap.current.get(from);
-                if (!pc) return;
-                if (!pc.remoteDescription?.type) {
-                    const buf = iceBufMap.current.get(from) ?? [];
-                    buf.push(payload);
-                    iceBufMap.current.set(from, buf);
-                } else {
-                    await pc.addIceCandidate(new RTCIceCandidate(payload)).catch(() => {});
-                }
-            }
-        });
-
-        // ── Call events ───────────────────────────────────────────────────────
-        ch.listen('.call.participant-joined', (data: any) => {
-            if (data.peer_id === peer_id) { setAdmitted(true); return; }
-            setWaiting(wp => wp.filter(p => p.peer_id !== data.peer_id));
-            setPeers(prev => {
-                const m = new Map(prev); const ex = m.get(data.peer_id);
-                m.set(data.peer_id, { ...(ex ?? { stream: undefined }), peer_id: data.peer_id, display_name: data.display_name, role: data.role, audio_on: data.audio_on ?? false });
-                return m;
-            });
-        });
-
-        ch.listen('.call.participant-left', (data: any) => removePeer(data.peer_id));
-
-        ch.listen('.call.participant-waiting', (data: any) => {
-            if (!is_host) return;
-            setWaiting(wp => wp.find(p => p.peer_id === data.peer_id) ? wp : [...wp, {
-                peer_id: data.peer_id, display_name: data.display_name,
-                role: 'participant', audio_on: false,
-            }]);
-        });
-
-        ch.listen('.call.participant-muted', (data: any) => {
-            if (data.peer_id === peer_id && data.by_host) {
-                // Host muted us — apply locally
-                streamRef.current?.getAudioTracks().forEach(t => { t.enabled = false; });
+        const startService = async () => {
+            // Acquire audio
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+                if (!mounted) { stream.getTracks().forEach(t => t.stop()); return; }
+                stream.getAudioTracks().forEach(t => { t.enabled = R.current.audioOn; });
+                R.current.stream = stream;
+                attachSpeak(peer_id, stream, true);
+            } catch {
                 setAudioOn(false);
             }
-            setPeers(prev => {
-                const m = new Map(prev); const p = m.get(data.peer_id);
-                if (p) m.set(data.peer_id, { ...p, audio_on: !data.muted, is_muted_by_host: data.by_host && data.muted });
-                return m;
+
+            // Tell server we answered
+            const resp = await post(`/calls/${call.uid}/answer`, {
+                peer_id, display_name,
+                audio_on: R.current.audioOn,
+            }).catch(() => ({ admitted: true }));
+
+            if (!mounted) return;
+            if (resp?.admitted === false) setAdmitted(false);
+
+            // ── Echo ──────────────────────────────────────────────────────────
+            (window as any).Pusher = Pusher;
+            const useTls = reverb_use_tls ?? false;
+            const echo = new Echo({
+                broadcaster: 'reverb', key: reverb_key,
+                wsHost: reverb_host, wsPort: reverb_port,
+                forceTLS: useTls,
+                enabledTransports: useTls ? (['wss'] as ('ws' | 'wss')[]) : ['ws', 'wss'],
+                authorizer: (channel: any) => ({
+                    authorize: (socketId: string, cb: Function) => {
+                        axios.post('/broadcasting/auth', {
+                            socket_id: socketId, channel_name: channel.name, peer_id,
+                        }).then(r => cb(false, r.data)).catch(e => cb(true, e));
+                    },
+                }),
             });
-        });
+            if (!mounted) { echo.disconnect(); return; }
+            R.current.echo = echo;
+            const ch = echo.join(`call.${call.uid}`);
 
-        ch.listen('.call.participant-kicked', (data: any) => {
-            if (data.peer_id === peer_id) { doCleanup(); setEndReason('kicked'); }
-            else removePeer(data.peer_id);
-        });
+            // ── Presence ──────────────────────────────────────────────────────
+            ch.here((members: any[]) => {
+                // FIX E: seed the peer map first, then send offers
+                const map = new Map<string, Peer>();
+                members.forEach(m => {
+                    if (m.peer_id === peer_id) return;
+                    map.set(m.peer_id, {
+                        peer_id: m.peer_id,
+                        display_name: m.display_name ?? m.name ?? 'Unknown',
+                        role: m.role ?? 'participant',
+                        audio_on: m.audio_on ?? false,
+                    });
+                });
+                setPeers(map);
 
-        ch.listen('.call.ended', () => { doCleanup(); setEndReason('call-ended'); });
-        ch.listen('.call.declined', () => { doCleanup(); setEndReason('declined'); });
+                // FIX D: only the higher peer_id sends the initial offer
+                members.forEach((m: any) => {
+                    const remotePeerId: string = m.peer_id;
+                    if (!remotePeerId || remotePeerId === peer_id) return;
+                    if (peer_id > remotePeerId) {
+                        sendOffer(remotePeerId).catch(() => {});
+                    }
+                });
+            });
 
-        ch.listen('.call.priority-changed', (data: any) => {
-            setPriority(data.priority);
-            setPriorityNote(data.priority_note ?? '');
-        });
-    };
+            ch.joining((member: any) => {
+                if (!member.peer_id || member.peer_id === peer_id) return;
+                setPeers(prev => {
+                    const m = new Map(prev);
+                    if (!m.has(member.peer_id)) m.set(member.peer_id, {
+                        peer_id: member.peer_id,
+                        display_name: member.display_name ?? member.name ?? 'Unknown',
+                        role: member.role ?? 'participant', audio_on: false,
+                    });
+                    return m;
+                });
+                // FIX D: higher peer_id sends the offer
+                if (peer_id > member.peer_id) {
+                    sendOffer(member.peer_id).catch(() => {});
+                }
+            });
 
-    useEffect(() => {
+            ch.leaving((member: any) => {
+                if (member.peer_id) removePeer(member.peer_id);
+            });
+
+            // ── Signaling ─────────────────────────────────────────────────────
+            ch.listen('.call.signal', async (data: any) => {
+                if (data.to !== peer_id) return;
+                const { from, type, payload } = data;
+
+                if (type === 'offer') {
+                    const pc = createPC(from);
+                    try {
+                        await pc.setRemoteDescription(new RTCSessionDescription(payload));
+                        await flushIce(from, pc);
+                        const answer = await pc.createAnswer();
+                        await pc.setLocalDescription(answer);
+                        // Ensure peer exists in UI
+                        setPeers(prev => {
+                            const m = new Map(prev);
+                            if (!m.has(from)) m.set(from, {
+                                peer_id: from, display_name: 'Connecting…',
+                                role: 'participant', audio_on: false,
+                            });
+                            return m;
+                        });
+                        post(`/calls/${call.uid}/signal`, {
+                            to: from, type: 'answer', payload: pc.localDescription, from_peer_id: peer_id,
+                        }).catch(() => {});
+                    } catch (e) {
+                        console.error('[signal:offer]', from, e);
+                    }
+                }
+
+                if (type === 'answer') {
+                    const pc = R.current.pcMap.get(from);
+                    if (!pc) return;
+                    // FIX H: guard against wrong signaling state
+                    if (pc.signalingState !== 'have-local-offer') {
+                        console.warn('[signal:answer] unexpected state', pc.signalingState, 'for', from);
+                        return;
+                    }
+                    try {
+                        await pc.setRemoteDescription(new RTCSessionDescription(payload));
+                        await flushIce(from, pc);
+                    } catch (e) {
+                        console.error('[signal:answer]', from, e);
+                    }
+                }
+
+                if (type === 'ice-candidate') {
+                    const pc = R.current.pcMap.get(from);
+                    if (!pc) {
+                        // FIX B: buffer even if the PC doesn't exist yet
+                        const buf = R.current.iceBufMap.get(from) ?? [];
+                        buf.push(payload);
+                        R.current.iceBufMap.set(from, buf);
+                        return;
+                    }
+                    if (!pc.remoteDescription?.type) {
+                        const buf = R.current.iceBufMap.get(from) ?? [];
+                        buf.push(payload);
+                        R.current.iceBufMap.set(from, buf);
+                    } else {
+                        await pc.addIceCandidate(new RTCIceCandidate(payload)).catch(() => {});
+                    }
+                }
+            });
+
+            // ── Call events ───────────────────────────────────────────────────
+            ch.listen('.call.participant-joined', (data: any) => {
+                if (data.peer_id === peer_id) { setAdmitted(true); return; }
+                setWaiting(wp => wp.filter(p => p.peer_id !== data.peer_id));
+                setPeers(prev => {
+                    const m = new Map(prev);
+                    const ex = m.get(data.peer_id);
+                    m.set(data.peer_id, {
+                        ...(ex ?? { stream: undefined }),
+                        peer_id: data.peer_id,
+                        display_name: data.display_name,
+                        role: data.role,
+                        audio_on: data.audio_on ?? false,
+                    });
+                    return m;
+                });
+            });
+
+            ch.listen('.call.participant-left', (data: any) => {
+                if (data.peer_id) removePeer(data.peer_id);
+            });
+
+            ch.listen('.call.participant-waiting', (data: any) => {
+                if (!is_host) return;
+                setWaiting(wp => wp.find(p => p.peer_id === data.peer_id) ? wp : [...wp, {
+                    peer_id: data.peer_id, display_name: data.display_name,
+                    role: 'participant', audio_on: false,
+                }]);
+            });
+
+            ch.listen('.call.participant-muted', (data: any) => {
+                if (data.peer_id === peer_id && data.by_host) {
+                    R.current.stream?.getAudioTracks().forEach(t => { t.enabled = false; });
+                    setAudioOn(false);
+                    R.current.audioOn = false;
+                }
+                setPeers(prev => {
+                    const m = new Map(prev);
+                    const p = m.get(data.peer_id);
+                    if (p) m.set(data.peer_id, { ...p, audio_on: !data.muted, is_muted_by_host: data.by_host && data.muted });
+                    return m;
+                });
+            });
+
+            ch.listen('.call.participant-kicked', (data: any) => {
+                if (data.peer_id === peer_id) { R.current.cleanup?.(); setEndReason('kicked'); }
+                else removePeer(data.peer_id);
+            });
+
+            ch.listen('.call.ended',    () => { R.current.cleanup?.(); setEndReason('call-ended'); });
+            ch.listen('.call.declined', () => { R.current.cleanup?.(); setEndReason('declined'); });
+
+            ch.listen('.call.priority-changed', (data: any) => {
+                setPriority(data.priority);
+                setPriorityNote(data.priority_note ?? '');
+            });
+        };
+
         startService().catch(console.error);
-        return doCleanup;
-    }, []); // eslint-disable-line
+
+        return () => {
+            mounted = false;
+            R.current.cleanup?.();
+        };
+    }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
     // ── Controls ──────────────────────────────────────────────────────────────
 
     const toggleAudio = () => {
         const next = !audioOn;
-        streamRef.current?.getAudioTracks().forEach(t => { t.enabled = next; });
+        R.current.stream?.getAudioTracks().forEach(t => { t.enabled = next; });
         setAudioOn(next);
+        R.current.audioOn = next;
         post(`/calls/${call.uid}/audio-state`, { peer_id, audio_on: next }).catch(() => {});
     };
 
     const toggleHand = () => {
         const next = !handRaised;
         setHandRaised(next);
-        // Whisper hand raise state via chat channel
+        R.current.handRaised = next;
     };
 
     const admitPeer = async (pid: string) => {
@@ -581,8 +677,8 @@ export default function CallRoom() {
         setWaiting(wp => wp.filter(p => p.peer_id !== pid));
     };
 
-    const kickPeer = (pid: string) => patch(`/calls/${call.uid}/kick/${pid}`).catch(() => {});
-    const mutePeer = (pid: string) => patch(`/calls/${call.uid}/mute/${pid}`).catch(() => {});
+    const kickPeer  = (pid: string) => patch(`/calls/${call.uid}/kick/${pid}`).catch(() => {});
+    const mutePeer  = (pid: string) => patch(`/calls/${call.uid}/mute/${pid}`).catch(() => {});
 
     const handleChangePriority = async (newPriority: string, note: string) => {
         await patch(`/calls/${call.uid}/priority`, { priority: newPriority, priority_note: note || undefined });
@@ -591,16 +687,14 @@ export default function CallRoom() {
     };
 
     const leaveCall = async () => {
-        stopAllTracks();
         await post(`/calls/${call.uid}/leave`, { peer_id }).catch(() => {});
-        doCleanup();
+        R.current.cleanup?.();
         setEndReason('left');
     };
 
     const endForAll = async () => {
-        stopAllTracks();
         await patch(`/calls/${call.uid}/end`).catch(() => {});
-        doCleanup();
+        R.current.cleanup?.();
         setEndReason('left');
     };
 
@@ -653,7 +747,7 @@ export default function CallRoom() {
                         <p className="text-sm font-semibold">{call.title}</p>
                         <div className="flex items-center gap-2 text-xs text-zinc-400">
                             <Clock className="h-3 w-3" />{fmtTime(elapsed)}
-                            <span className="flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-medium ${prUi.badge}">
+                            <span className={`flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-medium ${prUi.badge}`}>
                                 <PrIcon className="h-2.5 w-2.5" />{prUi.label}
                             </span>
                             {waiting.length > 0 && (
@@ -739,25 +833,21 @@ export default function CallRoom() {
 
             {/* Controls */}
             <footer className="flex shrink-0 items-center justify-center gap-3 border-t border-zinc-800 py-4">
-                {/* Mute */}
                 <button onClick={toggleAudio} title={audioOn ? 'Mute' : 'Unmute'}
                     className={`flex h-12 w-12 items-center justify-center rounded-full transition ${audioOn ? 'bg-zinc-700 hover:bg-zinc-600' : 'bg-red-600 hover:bg-red-500'}`}>
                     {audioOn ? <Mic className="h-5 w-5" /> : <MicOff className="h-5 w-5" />}
                 </button>
 
-                {/* Raise hand */}
                 <button onClick={toggleHand}
                     className={`flex h-12 w-12 items-center justify-center rounded-full transition ${handRaised ? 'bg-yellow-500 ring-2 ring-yellow-400/40 hover:bg-yellow-400' : 'bg-zinc-700 hover:bg-zinc-600'}`}>
                     <Hand className="h-5 w-5" />
                 </button>
 
-                {/* Participants */}
                 <button onClick={() => setPanelOpen(p => !p)}
                     className={`flex h-12 w-12 items-center justify-center rounded-full transition ${panelOpen ? 'bg-primary ring-2 ring-primary/30' : 'bg-zinc-700 hover:bg-zinc-600'}`}>
                     <Users className="h-5 w-5" />
                 </button>
 
-                {/* Priority (host only) */}
                 {is_host && (
                     <button onClick={() => setPriorityPnl(p => !p)} title="Change priority"
                         className={`flex h-12 w-12 items-center justify-center rounded-full transition ${priorityPanel ? `${prUi.bar} opacity-100` : 'bg-zinc-700 hover:bg-zinc-600'}`}>
@@ -765,7 +855,6 @@ export default function CallRoom() {
                     </button>
                 )}
 
-                {/* Leave / End */}
                 <button onClick={() => is_host ? setHostDialog(true) : leaveCall()}
                     className="flex h-12 w-14 items-center justify-center rounded-full bg-red-600 transition hover:bg-red-500">
                     <PhoneOff className="h-5 w-5" />

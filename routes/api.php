@@ -9,6 +9,7 @@ use Illuminate\Http\Request;
 use App\Http\Controllers\Api\FileShareController;
 
 use App\Http\Controllers\Api\AudioCallApiController;
+use App\Http\Controllers\TurnCredentialController;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/user', function (Request $request) {
@@ -127,6 +128,8 @@ Route::middleware(['auth:sanctum'])->prefix('api/calls')->name('api.calls.')->gr
 });
 
 
+ # Add to routes/api.php
+ Route::get('/turn-credentials', TurnCredentialController::class);
 
 
 

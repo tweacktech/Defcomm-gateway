@@ -1,3 +1,4 @@
+// resources/js/pages/meet/room.tsx
 import { Head, usePage, router } from '@inertiajs/react';
 import axios from 'axios';
 import {
@@ -307,6 +308,7 @@ export default function MeetRoom() {
     teardown,
     broadcastChat,
     broadcastMediaState,
+    allowMedia,   // FIX 8: expose allowMedia so we call it on admission
   } = useWebRTCMesh();
 
   const [videoOn, setVideoOn] = useState(is_owner && room.video_enabled);
@@ -326,23 +328,20 @@ export default function MeetRoom() {
 
   const chatEndRef = useRef<HTMLDivElement>(null);
 
-  // Use refs for values needed inside the setupEcho callbacks to avoid
-  // stale closures (callbacks are registered once on mount)
   const R = useRef({
     inMeeting: true,
     pendingNav: null as (() => void) | null,
     seenMsgs: new Set<string>(),
-    chatOpen: false,       // mirror of chatOpen state — avoids stale closure
+    chatOpen: false,
   });
 
-  // Keep ref in sync with state
   useEffect(() => { R.current.chatOpen = chatOpen; }, [chatOpen]);
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [msgs]);
 
-  // ── navigation guard ──────────────────────────────────────────────────────
+  // ── navigation guard ────────────────────────────────────────────────────────
 
   useEffect(() => {
     const onUnload = (e: BeforeUnloadEvent) => {
@@ -365,7 +364,7 @@ export default function MeetRoom() {
     };
   }, []);
 
-  // ── mount: join → start media → setup Echo ────────────────────────────────
+  // ── mount: join → start media → setup Echo ──────────────────────────────────
 
   useEffect(() => {
     let mounted = true;
@@ -384,7 +383,6 @@ export default function MeetRoom() {
 
       const admitted = resp?.admitted !== false;
 
-      // Callbacks defined once — use R.current refs to avoid stale closures
       const callbacks = {
         onError: (msg: string) => toast.error(msg),
         onConnectionStateChanged: (state: string) => {
@@ -400,7 +398,6 @@ export default function MeetRoom() {
           if (R.current.seenMsgs.has(msg.id)) return;
           R.current.seenMsgs.add(msg.id);
           setMsgs(prev => [...prev, msg]);
-          // Use ref to check chatOpen — avoids stale closure
           if (!R.current.chatOpen) {
             toast.message(`${msg.display_name}: ${msg.text}`, { duration: 3000 });
           }
@@ -416,6 +413,8 @@ export default function MeetRoom() {
           setEndReason('kicked');
         },
         onAdmitted: async () => {
+          // FIX 8: Allow media acquisition before calling startMedia
+          allowMedia();
           setIsWaiting(false);
           await startMedia();
           setVideoOn(room.video_enabled);
@@ -425,15 +424,15 @@ export default function MeetRoom() {
       };
 
       if (admitted) {
+        // Owners/directly-admitted: media allowed immediately
+        allowMedia();
         await startMedia();
       } else {
-        // Show waiting overlay but still connect to Echo so we receive
-        // the ParticipantAdmitted event when the host lets us in
+        // FIX 8: Waiting peers must NOT acquire media yet —
+        // mediaAllowed stays false until onAdmitted fires.
         setIsWaiting(true);
       }
 
-      // Always setup Echo regardless of admitted — waiting peers need
-      // to receive ParticipantAdmitted / RoomEnded events
       await setupEcho(
         reverb_key,
         reverb_host,
@@ -452,7 +451,7 @@ export default function MeetRoom() {
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── controls ──────────────────────────────────────────────────────────────
+  // ── controls ────────────────────────────────────────────────────────────────
 
   const handleToggleAudio = () => {
     const next = !audioOn;
@@ -527,7 +526,7 @@ export default function MeetRoom() {
     setChatInput('');
   };
 
-  // ── render ────────────────────────────────────────────────────────────────
+  // ── render ──────────────────────────────────────────────────────────────────
 
   if (endReason) return <EndScreen name={display_name} reason={endReason} />;
 
@@ -568,12 +567,12 @@ export default function MeetRoom() {
         />
       )}
 
-      {/* Waiting overlay — participant waiting for host admission */}
+      {/* Waiting overlay */}
       {isWaiting && !endReason && (
         <WaitingOverlay name={room.name} onResend={handleResendAdmission} />
       )}
 
-      {/* Admit panel — host sees this when waiting_room is on */}
+      {/* Admit panel */}
       {is_owner && room.waiting_room && waiting.length > 0 && (
         <WaitingApprovalPanel list={waiting} onAdmit={admitPeer} onDeny={denyPeer} />
       )}
