@@ -48,40 +48,46 @@ echo "Starting Laravel Reverb..."
 # systemctl restart reverb
 
 # Method 3: Kill existing Reverb process and start new one (current implementation)
-echo "Stopping existing Reverb processes..."
-pkill -f "reverb:start" || true
-sleep 2
+# echo "Stopping existing Reverb processes..."
+# pkill -f "reverb:start" || true
+# sleep 2
 
 # Method 4: Using PM2 (if you prefer Node.js process manager)
 # npm install -g pm2
 # pm2 restart reverb
 
 # Start Reverb in background with queue worker
-echo "Starting Reverb server..."
-nohup php artisan reverb:start --host=0.0.0.0 --port=8080 > /dev/null 2>&1 &
+# echo "Starting Reverb server..."
+# nohup php artisan reverb:start --host=0.0.0.0 --port=8081 > /dev/null 2>&1 &
 
 # Also start queue worker for broadcasting events
-echo "Starting queue worker..."
-nohup php artisan queue:work --daemon > /dev/null 2>&1 &
+# echo "Starting queue worker..."
+# nohup php artisan queue:work --daemon > /dev/null 2>&1 &
 
-echo "Waiting for Reverb to start..."
-sleep 3
+# echo "Waiting for Reverb to start..."
+# sleep 3
+
 
 # Check if Reverb is running
-if pgrep -f "reverb:start" > /dev/null; then
-    echo "✅ Reverb started successfully!"
-    echo "Reverb PID: $(pgrep -f 'reverb:start')"
-else
-    echo "❌ Failed to start Reverb. Check logs: tail -f storage/logs/laravel.log"
-fi
+# if pgrep -f "reverb:start" > /dev/null; then
+#     echo "✅ Reverb started successfully!"
+#     echo "Reverb PID: $(pgrep -f 'reverb:start')"
+# else
+#     echo "❌ Failed to start Reverb. Check logs: tail -f storage/logs/laravel.log"
+# fi
 
 # Optional: Check if port 8080 is listening
-echo "Checking WebSocket port..."
-if netstat -tulpn 2>/dev/null | grep ":8080" > /dev/null; then
-    echo "✅ Port 8080 is listening"
-else
-    echo "⚠️ Port 8080 not yet listening (may need a few more seconds)"
-fi
+# echo "Checking WebSocket port..."
+# if netstat -tulpn 2>/dev/null | grep ":8080" > /dev/null; then
+#     echo "✅ Port 8080 is listening"
+# else
+#     echo "⚠️ Port 8080 not yet listening (may need a few more seconds)"
+# fi
+
+echo nohup php artisan reverb:start --host=0.0.0.0 --port=8080 >> /var/log/reverb.log 2>&1 &
+
+# Or with supervisor (recommended for production)
+
 
 
 # ─────────────────────────────────────────────────────────────────
@@ -124,5 +130,6 @@ else
     echo "⚠️ Coturn container failed to start. Check logs: docker-compose logs coturn"
 fi
 
+echo ps aux | grep reverb
 
 echo "Done!"

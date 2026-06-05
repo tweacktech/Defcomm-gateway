@@ -43,7 +43,7 @@ return new class extends Migration {
             $table->timestamp('scheduled_at')->nullable();
             $table->timestamp('started_at')->nullable();
             $table->timestamp('ended_at')->nullable();
-            $table->decimal('duration_seconds', 8, 3)->nullable(); // filled on end
+            $table->unsignedInteger('duration_seconds')->nullable(); // filled on end
 
             // ── Webhooks (SDK feature) ─────────────────────────────────────────
             $table->string('webhook_url')->nullable();
