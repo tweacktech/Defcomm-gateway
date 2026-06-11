@@ -13,9 +13,11 @@ use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
 use Laravel\Fortify\Features;
 use App\Http\Controllers\AudioCallController;
+use App\Http\Controllers\RegisteredUsersController;
 use App\Http\Controllers\DocsController;
 use App\Http\Controllers\WebRtcHealthController;
 
+use App\Http\Controllers\OrganizationController;
 
 // or 'auth' if using session
 Route::get('/', function () {
@@ -26,6 +28,17 @@ Route::get('/', function () {
 })->name('home');
 
 
+
+
+Route::middleware('guest')->group(function () {
+    Route::get('register', [RegisteredUsersController::class, 'create'])->name('register');
+    Route::post('register', [RegisteredUsersController::class, 'store'])->name('register.store');
+});
+
+// Organization search endpoint (accessible to guests during registration)
+Route::get('organizations/search', [OrganizationController::class, 'search'])
+    ->name('organizations.search')
+    ->middleware('guest');
 
 
 
