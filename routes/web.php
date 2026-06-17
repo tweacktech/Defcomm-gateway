@@ -105,6 +105,8 @@ Route::prefix('')->middleware(['auth'])->group(function () {
         Route::patch('/services/{service}', [ServiceController::class, 'update'])->name('services.update');
         Route::patch('/services/{service}/toggle', [ServiceController::class, 'toggle'])->name('services.toggle');
         Route::delete('/services/{service}', [ServiceController::class, 'destroy'])->name('services.destroy');
+
+        require __DIR__ . '/secure-db.php';
     });
 
     // Route::get('/services/translator', [ServiceController::class, 'translator'])->name('translator');

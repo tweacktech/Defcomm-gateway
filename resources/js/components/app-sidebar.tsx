@@ -1,5 +1,5 @@
 import { Link } from '@inertiajs/react';
-import { BookOpen, Folder, Key, LayoutGrid, Mic, ScissorsSquareIcon, Settings, Vault, Video } from 'lucide-react';
+import { BookOpen, Folder, Key, LayoutGrid, Mic, ScissorsSquareIcon, Shield, Vault, Video } from 'lucide-react';
 import { NavFooter } from '@/components/nav-footer';
 import { NavMain } from '@/components/nav-main';
 import { NavUser } from '@/components/nav-user';
@@ -46,6 +46,17 @@ const mainNavItems: NavItem[] = [
         title: 'Access Meeting',
         href: '/meet',
         icon: Video ,
+    },
+    {
+        title: 'Security',
+        icon: Shield,
+        children: [
+            {
+                title: 'Secure DB',
+                href: '/admin/secure-db',
+                icon: Shield,
+            },
+        ],
     },
 
 ];
