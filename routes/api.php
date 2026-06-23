@@ -102,6 +102,16 @@ Route::prefix('drive')
 // SDK REST API — Sanctum token
 // ─────────────────────────────────────────────────────────────────────────────
 
+Route::middleware([\App\Modules\SecureDB\Middleware\SecureDbApiAuth::class])
+    ->prefix('secure-db')
+    ->name('api.secure-db.')
+    ->group(function () {
+        Route::post('/encrypt', [\App\Modules\SecureDB\Http\Controllers\Api\SecureDbApiController::class, 'encrypt'])->name('encrypt');
+        Route::post('/decrypt', [\App\Modules\SecureDB\Http\Controllers\Api\SecureDbApiController::class, 'decrypt'])->name('decrypt');
+        Route::post('/rotate', [\App\Modules\SecureDB\Http\Controllers\Api\SecureDbApiController::class, 'rotate'])->name('rotate');
+        Route::get('/status', [\App\Modules\SecureDB\Http\Controllers\Api\SecureDbApiController::class, 'status'])->name('status');
+    });
+
 Route::middleware(['auth:sanctum'])->prefix('api/meet')->name('api.meet.')->group(function () {
     Route::get('/rooms', [MeetApiController::class, 'listRooms'])->name('rooms.index');
     Route::post('/rooms', [MeetApiController::class, 'createRoom'])->name('rooms.create');

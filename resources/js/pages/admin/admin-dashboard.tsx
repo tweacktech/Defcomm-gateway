@@ -2,7 +2,7 @@ import { Head, Link, usePage } from '@inertiajs/react';
 import {
     Users, ShoppingCart, TrendingUp, Settings, Package,
     AlertCircle, ArrowUpRight, CheckCircle2, XCircle,
-    ToggleRight, UserCheck, UserX, ShieldCheck, UserPlus,
+    ToggleRight, UserCheck, UserX, ShieldCheck, UserPlus, Shield,
 } from 'lucide-react';
 import { ActivityFeed, type ActivityEntry } from '@/components/activity-feed';
 import AppLayout from '@/layouts/app-layout';
@@ -258,6 +258,7 @@ export default function AdminDashboard() {
                                 {[
                                     { icon: Package,      label: 'Manage service', href: '/admin/services' },
                                     { icon: Users,        label: 'Manage users',       href: '/admin/users' },
+                                    { icon: Shield,       label: 'Secure DB',          href: '/admin/secure-db' },
                                     { icon: ShoppingCart, label: 'View all orders',    href: '/orders' },
                                     { icon: TrendingUp,   label: 'View reports',       href: '/reports' },
                                     { icon: Settings,     label: 'System settings',    href: '/settings/profile' },
