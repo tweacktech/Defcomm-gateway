@@ -5,7 +5,6 @@ namespace App\Http\Controllers\Settings;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Settings\ProfileDeleteRequest;
 use App\Http\Requests\Settings\ProfileUpdateRequest;
-use App\Models\ApiClient;
 use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -17,9 +16,7 @@ use Inertia\Response;
 class ProfileController extends Controller
 {
     use \App\Traits\LogsActivity;
-    /**
-     * Show the user's profile settings page.
-     */
+
     public function edit(Request $request): Response
     {
         return Inertia::render('settings/profile', [
@@ -28,9 +25,6 @@ class ProfileController extends Controller
         ]);
     }
 
-    /**
-     * Update the user's profile information.
-     */
     public function update(ProfileUpdateRequest $request): RedirectResponse
     {
         $request->user()->fill($request->validated());
@@ -44,17 +38,15 @@ class ProfileController extends Controller
         return to_route('profile.edit');
     }
 
-    /**
-     * Delete the user's profile.
-     */
     public function destroy(ProfileDeleteRequest $request): RedirectResponse
     {
         $user = $request->user();
 
-        $this->log('logout',    'User logged logout', 'auth');
+        $this->log('logout', 'User logged logout', 'auth');
 
         Auth::logout();
 
+        $user->tokens()->delete();
         $user->delete();
 
         $request->session()->invalidate();
@@ -64,84 +56,69 @@ class ProfileController extends Controller
     }
 
     /**
-     * Delete the user's profile.
+     * Show organization credentials + user bearer token page.
      */
-    public function accessToken(Request $request)
+    public function accessToken(Request $request): Response
     {
-        $user = $request->user();
-        $client_details = ApiClient::where('user_id', $user->id)->first();
-        if (empty($client_details)) {
-            $client_details = null;
-        }
+        $user = $request->user()->load('organization');
+        $organization = $user->organization;
 
-        return Inertia::render('settings/token', ['client' => $client_details]);
+        return Inertia::render('settings/token', [
+            'organization' => $organization ? [
+                'id' => $organization->id,
+                'name' => $organization->name,
+                'client_id' => $organization->client_id,
+                'client_secret' => session('plain_client_secret'),
+                'client_credentials_active' => $organization->client_credentials_active,
+            ] : null,
+            'access_token' => session('plain_access_token'),
+            'can_manage_org_credentials' => $user->isAtLeastCompanyAdmin(),
+            'role_label' => $user->roleLabel(),
+        ]);
     }
 
-    public function genAccessToken(Request $request)
+    /**
+     * Generate a Sanctum bearer token for the authenticated user.
+     */
+    public function genAccessToken(Request $request): RedirectResponse
+    {
+        try {
+            $user = $request->user()->load('organization');
+
+            if (! $user->organization?->client_credentials_active) {
+                return redirect()->back()->with('error', 'Your organization has no active API credentials. Ask your company admin to generate them.');
+            }
+
+            $user->tokens()->where('name', 'api-access-token')->delete();
+
+            $plainToken = $user->createToken('api-access-token')->plainTextToken;
+
+            return redirect()->back()
+                ->with('plain_access_token', $plainToken)
+                ->with('success', 'Access token generated. Copy it now — it will not be shown again.');
+        } catch (\Exception $e) {
+            Log::error('Token generation failed: '.$e->getMessage());
+
+            return redirect()->back()->with('error', $e->getMessage());
+        }
+    }
+
+    public function delAccessToken(Request $request): RedirectResponse
     {
         try {
             $user = $request->user();
+            $user->tokens()->where('name', 'api-access-token')->delete();
 
-            // return $request->all();
-
-            if (ApiClient::where('user_id', $user->id)->exists()) {
-                return redirect()->back()->with('error', 'Client ID already exists. Please try again.');
-            }
-            $client_id = bin2hex(random_bytes(16));
-            $client_secret = bin2hex(random_bytes(32));
-
-            $client_details = ApiClient::create([
-                'user_id' => $user->id,
-                'name' => $user->name,
-                'client_id' => $client_id,
-                'client_secret' => $client_secret,
-                'ip_address' => $request->ip(),
-                'user_agent' => $request->userAgent(), ]);
-
-            if (empty($client_details)) {
-                $client_details = null;
-            }
-
-            return redirect()->back()->with('success', 'Keys generated successfully .');
-            // return Inertia::render('settings/token', ['client' => $client_details]);
+            return redirect()->back()->with('success', 'Access token revoked successfully.');
         } catch (\Exception $e) {
-            Log::error('message'.$e->getMessage());
+            Log::error('Token deletion failed: '.$e->getMessage());
 
             return redirect()->back()->with('error', $e->getMessage());
         }
     }
 
-    // Delet the generated token.
-    public function delAccessToken(Request $request)
+    public function document(Request $request): Response
     {
-        try {
-            $user = $request->user();
-            if (ApiClient::where('user_id', $user->id)->exists()) {
-                ApiClient::where('user_id', $user->id)->delete();
-
-                return redirect()->back()->with('status', 'Access token deleted successfully.');
-            } else {
-                return redirect()->back()->with('error', 'Client ID already exists. Please try again.');
-            }
-
-            // return Inertia::render('settings/token');
-        } catch (\Exception $e) {
-            Log::error('message'.$e->getMessage());
-
-            return redirect()->back()->with('error', $e->getMessage());
-        }
-    }
-    // Delet the generated token.
-    public function document(Request $request)
-    {
-        try {
-           
-
-            return Inertia::render('document');
-        } catch (\Exception $e) {
-            Log::error('message'.$e->getMessage());
-
-            return redirect()->back()->with('error', $e->getMessage());
-        }
+        return Inertia::render('document');
     }
 }

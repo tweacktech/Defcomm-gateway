@@ -8,12 +8,27 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Organization extends Model
 {
+    /** @use HasFactory<\Database\Factories\OrganizationFactory> */
     use HasFactory;
 
-    protected $fillable = ['name', 'email', 'status'];
+    protected $fillable = [
+        'name',
+        'email',
+        'status',
+        'client_id',
+        'client_secret',
+        'client_credentials_active',
+        'client_credentials_created_at',
+    ];
+
+    protected $hidden = [
+        'client_secret',
+    ];
 
     protected $casts = [
         'status' => 'string',
+        'client_credentials_active' => 'boolean',
+        'client_credentials_created_at' => 'datetime',
     ];
 
     public function users(): HasMany

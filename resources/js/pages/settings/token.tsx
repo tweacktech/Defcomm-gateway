@@ -9,7 +9,8 @@ import {
     Shield,
     Clock,
     AlertCircle,
-    Download,
+    Building2,
+    Trash2,
 } from 'lucide-react';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
@@ -20,44 +21,42 @@ import { edit } from '@/routes/profile';
 import type { BreadcrumbItem } from '@/types';
 
 const breadcrumbs: BreadcrumbItem[] = [
-    {
-        title: 'Tokens',
-        href: edit().url,
-    },
+    { title: 'API Credentials', href: edit().url },
 ];
 
-interface ApiClient {
+interface OrganizationCredentials {
     id: number;
-    user_id: number;
-    client_id: string;
-    client_secret: string;
-    access_token?: string | null;
-    name?: string;
-    created_at: string;
-    updated_at: string;
-    expires_at?: string;
+    name: string;
+    client_id: string | null;
+    client_secret?: string | null;
+    client_credentials_active: boolean;
 }
 
 type PageProps = {
-    client: ApiClient | null;
+    organization: OrganizationCredentials | null;
     access_token?: string | null;
-    auth: {
-        user: unknown;
-    };
+    can_manage_org_credentials: boolean;
+    role_label: string;
+    auth: { user: { id: number; role: string } };
 } & Record<string, unknown>;
 
 export default function Token() {
-    // Get the client data from Inertia props
-    const { client, access_token } = usePage<PageProps>().props;
+    const {
+        organization,
+        access_token,
+        can_manage_org_credentials,
+        role_label,
+    } = usePage<PageProps>().props;
 
     const [copiedField, setCopiedField] = useState<string | null>(null);
     const [showAccessToken, setShowAccessToken] = useState(false);
     const [showSecret, setShowSecret] = useState(false);
     const [isGenerating, setIsGenerating] = useState(false);
-    const [credentials, setCredentials] = useState<ApiClient | null>(client);
-    const [accessToken, setAccessToken] = useState<string | null>(
-        access_token ?? client?.access_token ?? null,
-    );
+
+    const orgClientSecret = organization?.client_secret ?? null;
+    const userAccessToken = access_token ?? null;
+    const hasOrgCredentials =
+        organization?.client_credentials_active && organization?.client_id;
 
     const handleCopy = async (text: string, field: string) => {
         try {
@@ -69,39 +68,19 @@ export default function Token() {
         }
     };
 
-    const handleGenerate = () => {
+    const handleGenerateToken = () => {
         setIsGenerating(true);
-
-        // Make a POST request to generate new credentials
         router.post(
             '/generate-access-token',
             {},
             {
-                onSuccess: (page) => {
-                    const props = page.props as unknown as PageProps;
-                    const newClient = props.client;
-
-                    setCredentials(newClient);
-
-                    setAccessToken(
-                        props.access_token ?? newClient?.access_token ?? null,
-                    );
-                    setIsGenerating(false);
-                },
-                onError: (errors) => {
-                    console.error('Failed to generate credentials:', errors);
-                    setIsGenerating(false);
-                },
+                onFinish: () => setIsGenerating(false),
             },
         );
     };
 
-    const formatDate = (dateString: string) => {
-        return new Date(dateString).toLocaleDateString('en-US', {
-            year: 'numeric',
-            month: 'long',
-            day: 'numeric',
-        });
+    const handleRevokeToken = () => {
+        router.delete('/revoke-access-token');
     };
 
     const maskString = (str: string, visibleChars = 8) => {
@@ -112,231 +91,151 @@ export default function Token() {
         return `${firstChars}${'•'.repeat(Math.min(maskedLength, 20))}${lastChars}`;
     };
 
+    const CopyButton = ({
+        value,
+        field,
+        disabled,
+    }: {
+        value: string;
+        field: string;
+        disabled?: boolean;
+    }) => (
+        <Button
+            size="sm"
+            variant="ghost"
+            className="h-7 px-2 text-xs"
+            disabled={disabled}
+            onClick={() => handleCopy(value, field)}
+        >
+            {copiedField === field ? (
+                <>
+                    <Check className="mr-1 h-3.5 w-3.5 text-green-600" />
+                    Copied!
+                </>
+            ) : (
+                <>
+                    <Copy className="mr-1 h-3.5 w-3.5" />
+                    Copy
+                </>
+            )}
+        </Button>
+    );
+
     return (
         <AppLayout breadcrumbs={breadcrumbs}>
             <Head title="API Credentials" />
 
             <div className="flex flex-col gap-8 p-6">
-                {/* Header */}
                 <div>
                     <h1 className="text-2xl font-bold tracking-tight">
                         API Credentials
                     </h1>
                     <p className="text-muted-foreground">
-                        Manage your client credentials for API authentication
+                        Your role: <span className="font-medium">{role_label}</span>.
+                        Use organization credentials + your personal bearer token to access services.
                     </p>
                 </div>
 
-                {/* Main Content */}
                 <div className="grid gap-8 lg:grid-cols-3">
-                    {/* Credentials Card */}
                     <div className="space-y-6 lg:col-span-2">
+                        {/* Organization credentials (from company) */}
                         <div className="rounded-xl border border-sidebar-border/70 bg-card">
                             <div className="border-b p-6">
-                                <div className="flex items-center justify-between">
-                                    <div className="flex items-center gap-3">
-                                        <div className="rounded-lg bg-primary/10 p-2.5">
-                                            <Key className="h-5 w-5 text-primary" />
-                                        </div>
-                                        <div>
-                                            <h2 className="text-lg font-semibold">
-                                                Client Credentials
-                                            </h2>
-                                            <p className="text-sm text-muted-foreground">
-                                                Use these credentials to
-                                                authenticate your API requests
-                                            </p>
-                                        </div>
+                                <div className="flex items-center gap-3">
+                                    <div className="rounded-lg bg-primary/10 p-2.5">
+                                        <Building2 className="h-5 w-5 text-primary" />
                                     </div>
-                                    {credentials && (
-                                        <div className="flex items-center gap-2">
-                                            <span className="flex items-center gap-1 rounded-full bg-green-100 px-3 py-1 text-xs font-medium text-green-700 dark:bg-green-900/30 dark:text-green-400">
-                                                <span className="h-1.5 w-1.5 rounded-full bg-green-600" />
-                                                Active
-                                            </span>
-                                        </div>
-                                    )}
+                                    <div>
+                                        <h2 className="text-lg font-semibold">
+                                            Organization Credentials
+                                        </h2>
+                                        <p className="text-sm text-muted-foreground">
+                                            {organization?.name ?? 'No organization'} — provided by your company
+                                        </p>
+                                    </div>
                                 </div>
                             </div>
 
                             <div className="space-y-6 p-6">
-                                {credentials ? (
+                                {!hasOrgCredentials ? (
+                                    <div className="py-8 text-center text-sm text-muted-foreground">
+                                        {can_manage_org_credentials ? (
+                                            <>
+                                                No credentials yet.{' '}
+                                                <a
+                                                    href="/company/credentials"
+                                                    className="text-primary underline"
+                                                >
+                                                    Generate organization credentials
+                                                </a>
+                                            </>
+                                        ) : (
+                                            'Ask your company admin to generate organization API credentials.'
+                                        )}
+                                    </div>
+                                ) : (
                                     <>
-                                        {/* Access Token */}
                                         <div className="space-y-2">
-                                            <Label
-                                                htmlFor="access_token"
-                                                className="text-sm font-medium"
-                                            >
-                                                Access Token
-                                                <span className="ml-2 text-xs text-yellow-600 dark:text-yellow-400">
-                                                    (Use as Bearer token)
-                                                </span>
-                                            </Label>
-                                            <div className="flex items-center gap-2">
-                                                <div className="relative flex-1">
-                                                    <Input
-                                                        id="access_token"
-                                                        type={
-                                                            showAccessToken
-                                                                ? 'text'
-                                                                : 'password'
-                                                        }
-                                                        value={
-                                                            accessToken
-                                                                ? showAccessToken
-                                                                    ? accessToken
-                                                                    : maskString(
-                                                                          accessToken,
-                                                                      )
-                                                                : ''
-                                                        }
-                                                        readOnly
-                                                        placeholder={
-                                                            accessToken
-                                                                ? undefined
-                                                                : 'Generate credentials to obtain an access token'
-                                                        }
-                                                        className="bg-muted/50 pr-36 font-mono text-sm"
+                                            <Label htmlFor="client_id">Client ID</Label>
+                                            <div className="relative">
+                                                <Input
+                                                    id="client_id"
+                                                    readOnly
+                                                    value={organization!.client_id ?? ''}
+                                                    className="bg-muted/50 pr-24 font-mono text-sm"
+                                                />
+                                                <div className="absolute top-1/2 right-1 -translate-y-1/2">
+                                                    <CopyButton
+                                                        value={organization!.client_id ?? ''}
+                                                        field="client_id"
                                                     />
-                                                    <div className="absolute top-1/2 right-1 flex -translate-y-1/2 items-center gap-1">
-                                                        <Button
-                                                            size="sm"
-                                                            variant="ghost"
-                                                            className="h-7 px-2 text-xs"
-                                                            disabled={!accessToken}
-                                                            onClick={() =>
-                                                                setShowAccessToken(
-                                                                    !showAccessToken,
-                                                                )
-                                                            }
-                                                        >
-                                                            {showAccessToken ? (
-                                                                <EyeOff className="h-3.5 w-3.5" />
-                                                            ) : (
-                                                                <Eye className="h-3.5 w-3.5" />
-                                                            )}
-                                                        </Button>
-                                                        <Button
-                                                            size="sm"
-                                                            variant="ghost"
-                                                            className="h-7 px-2 text-xs"
-                                                            disabled={!accessToken}
-                                                            onClick={() =>
-                                                                accessToken &&
-                                                                handleCopy(
-                                                                    accessToken,
-                                                                    'access_token',
-                                                                )
-                                                            }
-                                                        >
-                                                            {copiedField ===
-                                                            'access_token' ? (
-                                                                <>
-                                                                    <Check className="mr-1 h-3.5 w-3.5 text-green-600" />
-                                                                    Copied!
-                                                                </>
-                                                            ) : (
-                                                                <>
-                                                                    <Copy className="mr-1 h-3.5 w-3.5" />
-                                                                    Copy
-                                                                </>
-                                                            )}
-                                                        </Button>
-                                                    </div>
                                                 </div>
                                             </div>
                                         </div>
-
-                                        {/* Client ID */}
-                                        <div className="space-y-2">
-                                            <Label
-                                                htmlFor="client_id"
-                                                className="text-sm font-medium"
-                                            >
-                                                Client ID
-                                            </Label>
-                                            <div className="flex items-center gap-2">
-                                                <div className="relative flex-1">
-                                                    <Input
-                                                        id="client_id"
-                                                        type="text"
-                                                        value={
-                                                            credentials.client_id
-                                                        }
-                                                        readOnly
-                                                        className="bg-muted/50 pr-24 font-mono text-sm"
+                                        {/* <div className="space-y-2">
+                                            <Label htmlFor="client_secret">Secret Key</Label>
+                                            <div className="relative">
+                                                <Input
+                                                    id="client_secret"
+                                                    readOnly
+                                                    value={organization!.client_secret ?? ''}
+                                                    className="bg-muted/50 pr-24 font-mono text-sm"
+                                                />
+                                                <div className="absolute top-1/2 right-1 -translate-y-1/2">
+                                                    <CopyButton
+                                                        value={organization!.client_secret ?? ''}
+                                                        field="client_id"
                                                     />
-                                                    <div className="absolute top-1/2 right-1 flex -translate-y-1/2 items-center gap-1">
-                                                        <Button
-                                                            size="sm"
-                                                            variant="ghost"
-                                                            className="h-7 px-2 text-xs"
-                                                            onClick={() =>
-                                                                handleCopy(
-                                                                    credentials.client_id,
-                                                                    'client_id',
-                                                                )
-                                                            }
-                                                        >
-                                                            {copiedField ===
-                                                            'client_id' ? (
-                                                                <>
-                                                                    <Check className="mr-1 h-3.5 w-3.5 text-green-600" />
-                                                                    Copied!
-                                                                </>
-                                                            ) : (
-                                                                <>
-                                                                    <Copy className="mr-1 h-3.5 w-3.5" />
-                                                                    Copy
-                                                                </>
-                                                            )}
-                                                        </Button>
-                                                    </div>
                                                 </div>
                                             </div>
-                                        </div>
+                                        </div> */}
 
-                                        {/* Client Secret */}
-                                        <div className="space-y-2">
-                                            <Label
-                                                htmlFor="client_secret"
-                                                className="text-sm font-medium"
-                                            >
-                                                Client Secret
-                                                <span className="ml-2 text-xs text-yellow-600 dark:text-yellow-400">
-                                                    (Keep this secure!)
-                                                </span>
-                                            </Label>
-                                            <div className="flex items-center gap-2">
-                                                <div className="relative flex-1">
+                                        {orgClientSecret && (
+                                            <div className="space-y-2">
+                                                <Label htmlFor="client_secret">
+                                                    Client Secret
+                                                    <span className="ml-2 text-xs text-yellow-600">
+                                                        (shown once after generation)
+                                                    </span>
+                                                </Label>
+                                                <div className="relative">
                                                     <Input
                                                         id="client_secret"
-                                                        type={
-                                                            showSecret
-                                                                ? 'text'
-                                                                : 'password'
-                                                        }
+                                                        readOnly
+                                                        type={showSecret ? 'text' : 'password'}
                                                         value={
                                                             showSecret
-                                                                ? credentials.client_secret
-                                                                : maskString(
-                                                                      credentials.client_secret,
-                                                                  )
+                                                                ? orgClientSecret
+                                                                : maskString(orgClientSecret)
                                                         }
-                                                        readOnly
                                                         className="bg-muted/50 pr-36 font-mono text-sm"
                                                     />
                                                     <div className="absolute top-1/2 right-1 flex -translate-y-1/2 items-center gap-1">
                                                         <Button
                                                             size="sm"
                                                             variant="ghost"
-                                                            className="h-7 px-2 text-xs"
-                                                            onClick={() =>
-                                                                setShowSecret(
-                                                                    !showSecret,
-                                                                )
-                                                            }
+                                                            className="h-7 px-2"
+                                                            onClick={() => setShowSecret(!showSecret)}
                                                         >
                                                             {showSecret ? (
                                                                 <EyeOff className="h-3.5 w-3.5" />
@@ -344,82 +243,86 @@ export default function Token() {
                                                                 <Eye className="h-3.5 w-3.5" />
                                                             )}
                                                         </Button>
-                                                        <Button
-                                                            size="sm"
-                                                            variant="ghost"
-                                                            className="h-7 px-2 text-xs"
-                                                            onClick={() =>
-                                                                handleCopy(
-                                                                    credentials.client_secret,
-                                                                    'client_secret',
-                                                                )
-                                                            }
-                                                        >
-                                                            {copiedField ===
-                                                            'client_secret' ? (
-                                                                <>
-                                                                    <Check className="mr-1 h-3.5 w-3.5 text-green-600" />
-                                                                    Copied!
-                                                                </>
-                                                            ) : (
-                                                                <>
-                                                                    <Copy className="mr-1 h-3.5 w-3.5" />
-                                                                    Copy
-                                                                </>
-                                                            )}
-                                                        </Button>
+                                                        <CopyButton
+                                                            value={orgClientSecret}
+                                                            field="client_secret"
+                                                        />
                                                     </div>
                                                 </div>
                                             </div>
-                                        </div>
-
-                                        {/* Metadata */}
-                                        <div className="grid grid-cols-2 gap-4 border-t pt-4">
-                                            <div className="flex items-center gap-2 text-sm">
-                                                <Clock className="h-4 w-4 text-muted-foreground" />
-                                                <span className="text-muted-foreground">
-                                                    Created:
-                                                </span>
-                                                <span className="font-medium">
-                                                    {formatDate(
-                                                        credentials.created_at,
-                                                    )}
-                                                </span>
-                                            </div>
-                                            {credentials.expires_at && (
-                                                <div className="flex items-center gap-2 text-sm">
-                                                    <Shield className="h-4 w-4 text-muted-foreground" />
-                                                    <span className="text-muted-foreground">
-                                                        Expires:
-                                                    </span>
-                                                    <span className="font-medium">
-                                                        {formatDate(
-                                                            credentials.expires_at,
-                                                        )}
-                                                    </span>
-                                                </div>
-                                            )}
-                                        </div>
+                                        )}
                                     </>
-                                ) : (
-                                    <div className="py-12 text-center">
-                                        <Key className="mx-auto mb-4 h-12 w-12 text-muted-foreground/50" />
-                                        <h3 className="mb-2 text-lg font-medium">
-                                            No credentials found
-                                        </h3>
-                                        <p className="mb-6 text-sm text-muted-foreground">
-                                            You haven't generated any API
-                                            credentials yet. Generate your first
-                                            set to get started.
+                                )}
+                            </div>
+                        </div>
+
+                        {/* User bearer token */}
+                        <div className="rounded-xl border border-sidebar-border/70 bg-card">
+                            <div className="border-b p-6">
+                                <div className="flex items-center gap-3">
+                                    <div className="rounded-lg bg-primary/10 p-2.5">
+                                        <Key className="h-5 w-5 text-primary" />
+                                    </div>
+                                    <div>
+                                        <h2 className="text-lg font-semibold">
+                                            Your Access Token
+                                        </h2>
+                                        <p className="text-sm text-muted-foreground">
+                                            Personal bearer token — use with organization credentials
                                         </p>
                                     </div>
-                                )}
+                                </div>
+                            </div>
 
-                                {/* Actions */}
+                            <div className="space-y-6 p-6">
+                                <div className="space-y-2">
+                                    <Label htmlFor="access_token">
+                                        Bearer Token
+                                    </Label>
+                                    <div className="relative">
+                                        <Input
+                                            id="access_token"
+                                            readOnly
+                                            type={showAccessToken ? 'text' : 'password'}
+                                            value={
+                                                userAccessToken
+                                                    ? showAccessToken
+                                                        ? userAccessToken
+                                                        : maskString(userAccessToken)
+                                                    : ''
+                                            }
+                                            placeholder="Generate a token to use the API"
+                                            className="bg-muted/50 pr-36 font-mono text-sm"
+                                        />
+                                        {userAccessToken && (
+                                            <div className="absolute top-1/2 right-1 flex -translate-y-1/2 items-center gap-1">
+                                                <Button
+                                                    size="sm"
+                                                    variant="ghost"
+                                                    className="h-7 px-2"
+                                                    onClick={() =>
+                                                        setShowAccessToken(!showAccessToken)
+                                                    }
+                                                >
+                                                    {showAccessToken ? (
+                                                        <EyeOff className="h-3.5 w-3.5" />
+                                                    ) : (
+                                                        <Eye className="h-3.5 w-3.5" />
+                                                    )}
+                                                </Button>
+                                                <CopyButton
+                                                    value={userAccessToken}
+                                                    field="access_token"
+                                                />
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+
                                 <div className="flex items-center gap-3 border-t pt-4">
                                     <Button
-                                        onClick={handleGenerate}
-                                        disabled={isGenerating}
+                                        onClick={handleGenerateToken}
+                                        disabled={isGenerating || !hasOrgCredentials}
                                         className="gap-2"
                                     >
                                         {isGenerating ? (
@@ -430,42 +333,31 @@ export default function Token() {
                                         ) : (
                                             <>
                                                 <RefreshCw className="h-4 w-4" />
-                                                {credentials
-                                                    ? 'Regenerate Credentials'
-                                                    : 'Generate Credentials'}
+                                                {userAccessToken
+                                                    ? 'Regenerate Token'
+                                                    : 'Generate Token'}
                                             </>
                                         )}
                                     </Button>
-
-                                    {credentials && (
+                                    {userAccessToken && (
                                         <Button
                                             variant="outline"
                                             className="gap-2"
+                                            onClick={handleRevokeToken}
                                         >
-                                            <Download className="h-4 w-4" />
-                                            Download
+                                            <Trash2 className="h-4 w-4" />
+                                            Revoke
                                         </Button>
                                     )}
                                 </div>
 
-                                {/* Warning for regeneration */}
-                                {credentials && (
+                                {userAccessToken && (
                                     <div className="rounded-lg bg-yellow-50 p-4 dark:bg-yellow-950/50">
                                         <div className="flex items-start gap-3">
-                                            <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-yellow-600 dark:text-yellow-400" />
-                                            <div className="text-sm text-yellow-800 dark:text-yellow-300">
-                                                <p className="font-medium">
-                                                    Important:
-                                                </p>
-                                                <p>
-                                                    Regenerating credentials
-                                                    will immediately invalidate
-                                                    your existing credentials.
-                                                    Any applications using the
-                                                    old credentials will need to
-                                                    be updated.
-                                                </p>
-                                            </div>
+                                            <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-yellow-600" />
+                                            <p className="text-sm text-yellow-800 dark:text-yellow-300">
+                                                Regenerating invalidates your previous token immediately.
+                                            </p>
                                         </div>
                                     </div>
                                 )}
@@ -473,56 +365,41 @@ export default function Token() {
                         </div>
                     </div>
 
-                    {/* Sidebar - Keep the same as before */}
                     <div className="space-y-4">
-                        {/* Info Card */}
                         <div className="rounded-xl border border-sidebar-border/70 bg-card p-6">
-                            <h3 className="mb-4 font-semibold">
-                                Using Your Credentials
-                            </h3>
-                            <div className="space-y-4 text-sm">
-                                <p className="text-muted-foreground">
-                                    Include your credentials in the
-                                    Authorization header:
-                                </p>
-                                <div className="rounded-lg bg-muted p-3 font-mono text-xs">
-                                    Authorization: Bearer {'{client_secret}'}
-                                </div>
-                                <div className="space-y-2">
-                                    <p className="font-medium">
-                                        Example Request:
-                                    </p>
-                                    <pre className="overflow-x-auto rounded-lg bg-muted p-3 text-xs">
-                                        {`curl -X GET https://api.example.com/v1/users \\
-  -H "Authorization: Bearer YOUR_CLIENT_SECRET" \\
-  -H "X-Client-ID: YOUR_CLIENT_ID"`}
-                                    </pre>
-                                </div>
-                            </div>
+                            <h3 className="mb-4 font-semibold">Authentication Flow</h3>
+                            <ol className="space-y-3 text-sm text-muted-foreground list-decimal list-inside">
+                                <li>Company admin generates Client ID + Secret</li>
+                                <li>Company shares credentials with users</li>
+                                <li>User generates a personal bearer token</li>
+                                <li>Include all three on every API request</li>
+                            </ol>
                         </div>
 
-                        {/* Security Tips */}
                         <div className="rounded-xl border border-sidebar-border/70 bg-card p-6">
-                            <h3 className="mb-4 font-semibold">
-                                Security Tips
-                            </h3>
+                            <h3 className="mb-4 font-semibold">Example Request</h3>
+                            <pre className="overflow-x-auto rounded-lg bg-muted p-3 text-xs">
+                                {`curl -X POST /api/chat/push \\
+  -H "X-Client-Id: YOUR_CLIENT_ID" \\
+  -H "X-Client-Secret: YOUR_CLIENT_SECRET" \\
+  -H "Authorization: Bearer YOUR_TOKEN" \\
+  -d '{"recipient_id":2,"message":"Hello"}'`}
+                            </pre>
+                        </div>
+
+                        <div className="rounded-xl border border-sidebar-border/70 bg-card p-6">
+                            <h3 className="mb-4 font-semibold">Security Tips</h3>
                             <ul className="space-y-3 text-sm">
                                 <li className="flex items-start gap-2">
                                     <Shield className="mt-0.5 h-4 w-4 text-green-600" />
                                     <span className="text-muted-foreground">
-                                        Never share your client secret publicly
+                                        Never share your bearer token publicly
                                     </span>
                                 </li>
                                 <li className="flex items-start gap-2">
-                                    <Shield className="mt-0.5 h-4 w-4 text-green-600" />
+                                    <Clock className="mt-0.5 h-4 w-4 text-green-600" />
                                     <span className="text-muted-foreground">
-                                        Rotate credentials regularly
-                                    </span>
-                                </li>
-                                <li className="flex items-start gap-2">
-                                    <Shield className="mt-0.5 h-4 w-4 text-green-600" />
-                                    <span className="text-muted-foreground">
-                                        Use environment variables for storage
+                                        Revoke tokens you no longer use
                                     </span>
                                 </li>
                             </ul>

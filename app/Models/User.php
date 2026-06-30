@@ -3,15 +3,20 @@
 namespace App\Models;
 
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
+use App\Enums\UserRole;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Laravel\Fortify\TwoFactorAuthenticatable;
+use Laravel\Sanctum\HasApiTokens;
 
 class User extends Authenticatable
 {
     /** @use HasFactory<\Database\Factories\UserFactory> */
+    use HasApiTokens;
+
     use HasFactory;
     use Notifiable;
     use TwoFactorAuthenticatable;
@@ -27,6 +32,7 @@ class User extends Authenticatable
         'email',
         'password',
         'status',
+        'organization_id',
     ];
 
     /**
@@ -55,8 +61,38 @@ class User extends Authenticatable
         ];
     }
 
+    public function organization(): BelongsTo
+    {
+        return $this->belongsTo(Organization::class);
+    }
+
     public function apiClients(): HasMany
     {
         return $this->hasMany(ApiClient::class);
+    }
+
+    public function userRole(): UserRole
+    {
+        return UserRole::tryFrom($this->role) ?? UserRole::Client;
+    }
+
+    public function isSuperAdmin(): bool
+    {
+        return $this->userRole()->isSuperAdmin();
+    }
+
+    public function isCompanyAdmin(): bool
+    {
+        return $this->userRole()->isCompanyAdmin();
+    }
+
+    public function isAtLeastCompanyAdmin(): bool
+    {
+        return $this->userRole()->isAtLeastCompanyAdmin();
+    }
+
+    public function roleLabel(): string
+    {
+        return $this->userRole()->label();
     }
 }

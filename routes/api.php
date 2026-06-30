@@ -1,29 +1,65 @@
 <?php
 
+use App\Http\Controllers\Api\AudioCallApiController;
+use App\Http\Controllers\Api\AuthApiController;
+use App\Http\Controllers\Api\ChatApiController;
 use App\Http\Controllers\Api\DriveApiController;
+use App\Http\Controllers\Api\FileShareController;
 use App\Http\Controllers\Api\MeetApiController;
 use App\Http\Controllers\Api\PythonController;
 use App\Http\Controllers\Api\VaultApiController;
-use Illuminate\Http\Request;
-
-use App\Http\Controllers\Api\FileShareController;
-
-use App\Http\Controllers\Api\AudioCallApiController;
 use App\Http\Controllers\TurnCredentialController;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
+
+/*
+|--------------------------------------------------------------------------
+| Authentication — organization credentials + user bearer token
+|--------------------------------------------------------------------------
+|
+| Flow:
+|   1. Company admin generates client_id + client_secret on the organization
+|   2. User obtains a personal bearer token (web UI or POST /api/auth/token)
+|   3. Service calls include X-Client-Id, X-Client-Secret, Authorization: Bearer
+|
+*/
+
+Route::prefix('auth')->name('api.auth.')->group(function () {
+    Route::post('/token', [AuthApiController::class, 'token'])->name('token');
+
+    Route::middleware(['auth:sanctum'])->group(function () {
+        Route::get('/me', [AuthApiController::class, 'me'])->name('me');
+        Route::post('/revoke', [AuthApiController::class, 'revoke'])->name('revoke');
+    });
+});
 
 Route::get('/user', function (Request $request) {
     return $request->user();
 })->middleware('auth:sanctum');
 
+/*
+|--------------------------------------------------------------------------
+| Chat API — push messages via service auth
+|--------------------------------------------------------------------------
+*/
+
+Route::middleware(['auth:sanctum', \App\Http\Middleware\ServiceAuthMiddleware::class])
+    ->prefix('chat')
+    ->name('api.chat.')
+    ->group(function () {
+        Route::post('/push', [ChatApiController::class, 'push'])->name('push');
+        Route::get('/messages', [ChatApiController::class, 'messages'])->name('messages');
+        Route::get('/conversations', [ChatApiController::class, 'conversations'])->name('conversations');
+    });
+
 Route::get('/run-python', [PythonController::class, 'run']);
 
-Route::prefix('client')->group(function () {
+Route::prefix('client')->middleware(['auth:sanctum', \App\Http\Middleware\ServiceAuthMiddleware::class])->group(function () {
     Route::post('/translate-text', [PythonController::class, 'translateText']);
     Route::post('/translate-audio', [PythonController::class, 'translateAudio']);
     Route::post('/text-translate-audio', [PythonController::class, 'textTranslateAudio']);
 });
-Route::prefix('client')->group(function () {
+Route::prefix('client')->middleware(['auth:sanctum', \App\Http\Middleware\ServiceAuthMiddleware::class])->group(function () {
     Route::get('/vault', [VaultApiController::class, 'index']);
     Route::get('/vault/{id}', [VaultApiController::class, 'show']);
     Route::post('/vault', [VaultApiController::class, 'store']);
@@ -96,9 +132,7 @@ Route::prefix('drive')
         Route::get('/items/{item}/download', [DriveApiController::class, 'download'])->name('items.download');
     });
 
-
-
-    // ─────────────────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
 // SDK REST API — Sanctum token
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -120,28 +154,24 @@ Route::middleware(['auth:sanctum'])->prefix('api/meet')->name('api.meet.')->grou
     Route::post('/rooms/{uid}/token', [MeetApiController::class, 'issueToken'])->name('rooms.token');
 });
 
-
 // ─────────────────────────────────────────────────────────────────────────────
 // SDK REST API — Sanctum token
 // ─────────────────────────────────────────────────────────────────────────────
 
 Route::middleware(['auth:sanctum'])->prefix('api/calls')->name('api.calls.')->group(function () {
-    Route::get('/',                               [AudioCallApiController::class, 'list'])->name('index');
-    Route::post('/',                              [AudioCallApiController::class, 'create'])->name('create');
-    Route::get('/{uid}',                          [AudioCallApiController::class, 'show'])->name('show');
-    Route::delete('/{uid}',                       [AudioCallApiController::class, 'end'])->name('end');
-    Route::post('/{uid}/token',                   [AudioCallApiController::class, 'issueToken'])->name('token');
-    Route::get('/{uid}/participants',             [AudioCallApiController::class, 'participants'])->name('participants');
+    Route::get('/', [AudioCallApiController::class, 'list'])->name('index');
+    Route::post('/', [AudioCallApiController::class, 'create'])->name('create');
+    Route::get('/{uid}', [AudioCallApiController::class, 'show'])->name('show');
+    Route::delete('/{uid}', [AudioCallApiController::class, 'end'])->name('end');
+    Route::post('/{uid}/token', [AudioCallApiController::class, 'issueToken'])->name('token');
+    Route::get('/{uid}/participants', [AudioCallApiController::class, 'participants'])->name('participants');
     Route::delete('/{uid}/participants/{peerId}', [AudioCallApiController::class, 'kick'])->name('participants.kick');
     Route::post('/{uid}/participants/{peerId}/admit', [AudioCallApiController::class, 'admit'])->name('participants.admit');
-    Route::patch('/{uid}/priority',               [AudioCallApiController::class, 'changePriority'])->name('priority');
+    Route::patch('/{uid}/priority', [AudioCallApiController::class, 'changePriority'])->name('priority');
 });
 
-
- # Add to routes/api.php
- Route::get('/turn-credentials', TurnCredentialController::class);
-
-
+// Add to routes/api.php
+Route::get('/turn-credentials', TurnCredentialController::class);
 
 // File CRUD operations - NO AUTH MIDDLEWARE, user_id passed as parameter
 Route::apiResource('files', FileShareController::class);
@@ -159,4 +189,3 @@ Route::delete('shares/{share}', [FileShareController::class, 'revokeShare'])->na
 // User-centric views
 Route::get('my-files', [FileShareController::class, 'myFiles'])->name('files.my');
 Route::get('shared-with-me', [FileShareController::class, 'sharedWithMe'])->name('files.shared-with-me');
-

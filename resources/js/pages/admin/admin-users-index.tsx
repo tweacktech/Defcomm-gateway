@@ -14,7 +14,7 @@ import type { BreadcrumbItem } from '@/types';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type UserRole   = 'admin' | 'client';
+type UserRole   = 'admin' | 'company_admin' | 'client';
 type UserStatus = 'active' | 'inactive' | 'suspended';
 
 interface User {
@@ -80,13 +80,23 @@ function StatusBadge({ status }: { status: UserStatus }) {
 }
 
 function RoleBadge({ role }: { role: UserRole }) {
-    return role === 'admin' ? (
-        <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
-            <ShieldCheck className="h-3 w-3" />Admin
-        </span>
-    ) : (
+    if (role === 'admin') {
+        return (
+            <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
+                <ShieldCheck className="h-3 w-3" />Super Admin
+            </span>
+        );
+    }
+    if (role === 'company_admin') {
+        return (
+            <span className="inline-flex items-center gap-1 rounded-full bg-blue-500/10 px-2 py-0.5 text-xs font-medium text-blue-600 dark:text-blue-400">
+                <ShieldCheck className="h-3 w-3" />Company Admin
+            </span>
+        );
+    }
+    return (
         <span className="inline-flex items-center gap-1 rounded-full bg-muted/60 px-2 py-0.5 text-xs font-medium text-muted-foreground">
-            <UserCog className="h-3 w-3" />Client
+            <UserCog className="h-3 w-3" />User
         </span>
     );
 }
@@ -133,8 +143,9 @@ function EditDrawer({ user, currentUserId, onClose }: {
 
     // ── Role options ─────────────────────────────────────────────────────────
     const roleOptions: { value: UserRole; icon: React.ReactNode; label: string; sub: string; activeColor: string }[] = [
-        { value: 'admin',  icon: <ShieldCheck className="h-4 w-4" />, label: 'Admin',  sub: 'Full platform access', activeColor: 'border-primary bg-primary/10 text-primary'             },
-        { value: 'client', icon: <UserCog     className="h-4 w-4" />, label: 'Client', sub: 'Standard access',      activeColor: 'border-sidebar-border/70 bg-muted/30 text-foreground'  },
+        { value: 'admin',         icon: <ShieldCheck className="h-4 w-4" />, label: 'Super Admin',   sub: 'Full platform access',    activeColor: 'border-primary bg-primary/10 text-primary'             },
+        { value: 'company_admin', icon: <ShieldCheck className="h-4 w-4" />, label: 'Company Admin', sub: 'Manage organization',     activeColor: 'border-blue-500 bg-blue-500/10 text-blue-600 dark:text-blue-400' },
+        { value: 'client',        icon: <UserCog     className="h-4 w-4" />, label: 'User',          sub: 'Standard access',         activeColor: 'border-sidebar-border/70 bg-muted/30 text-foreground'  },
     ];
 
     return (
@@ -390,13 +401,19 @@ function RowMenu({ user, currentUserId, onEdit }: {
                             {user.role !== 'admin' && (
                                 <button onClick={() => act(() => setRole('admin'))}
                                     className="flex w-full items-center gap-2 px-3 py-2 text-sm text-primary hover:bg-accent/50">
-                                    <ShieldCheck className="h-3.5 w-3.5" />Make Admin
+                                    <ShieldCheck className="h-3.5 w-3.5" />Make Super Admin
+                                </button>
+                            )}
+                            {user.role !== 'company_admin' && (
+                                <button onClick={() => act(() => setRole('company_admin'))}
+                                    className="flex w-full items-center gap-2 px-3 py-2 text-sm text-blue-600 hover:bg-accent/50 dark:text-blue-400">
+                                    <ShieldCheck className="h-3.5 w-3.5" />Make Company Admin
                                 </button>
                             )}
                             {user.role !== 'client' && (
                                 <button onClick={() => act(() => setRole('client'))}
                                     className="flex w-full items-center gap-2 px-3 py-2 text-sm text-muted-foreground hover:bg-accent/50">
-                                    <UserCog className="h-3.5 w-3.5" />Make Client
+                                    <UserCog className="h-3.5 w-3.5" />Make User
                                 </button>
                             )}
 
@@ -515,7 +532,7 @@ export default function UsersIndex() {
 
                         {/* Role tabs */}
                         <div className="flex overflow-hidden rounded-lg border border-sidebar-border/50">
-                            {(['all', 'admin', 'client'] as const).map(r => (
+                            {(['all', 'admin', 'company_admin', 'client'] as const).map(r => (
                                 <button key={r} onClick={() => applyFilter('role', r)}
                                     className={`px-3 py-1.5 text-xs font-medium capitalize transition
                                         ${initRole === r ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-accent/50'}`}>
