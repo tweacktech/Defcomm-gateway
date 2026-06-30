@@ -267,3 +267,10 @@ body::after {
 .ctrl-btn--blue { background: rgba(59,130,246,.15); color: var(--blue); border-color: rgba(59,130,246,.3); }
 .ctrl-btn--end  { background: var(--red); color: #fff; border-color: transparent; padding: 10px 24px; }
 .ctrl-btn--end:hover { background: #dc2626; }
+.bg-grid-slate-100 {
+    background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32' width='32' height='32' fill='none' stroke='rgb(241 245 249)'%3e%3cpath d='M0 .5H31.5V32'/%3e%3c/svg%3e");
+  }
+
+  .dark .bg-grid-slate-800 {
+    background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32' width='32' height='32' fill='none' stroke='rgb(30 41 59)'%3e%3cpath d='M0 .5H31.5V32'/%3e%3c/svg%3e");
+  }
