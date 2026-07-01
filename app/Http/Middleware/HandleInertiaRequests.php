@@ -39,15 +39,20 @@ class HandleInertiaRequests extends Middleware
             ...parent::share($request),
             'name' => config('app.name'),
             'auth' => [
-                'user' => $request->user(),
+                'user' => $request->user() ? [
+                    ...$request->user()->toArray(),
+                    'role_label' => $request->user()->roleLabel(),
+                    'is_super_admin' => $request->user()->isSuperAdmin(),
+                    'is_company_admin' => $request->user()->isCompanyAdmin(),
+                ] : null,
             ],
             'flash' => [
-            'success'   => session('success'),
-            'error'     => session('error'),
-            'info'      => session('info'),
-            'warning'   => session('warning'),
-            'share_url' => session('share_url'),  // for Drive share links
-        ],
+                'success' => session('success'),
+                'error' => session('error'),
+                'info' => session('info'),
+                'warning' => session('warning'),
+                'share_url' => session('share_url'),  // for Drive share links
+            ],
             'sidebarOpen' => ! $request->hasCookie('sidebar_state') || $request->cookie('sidebar_state') === 'true',
         ];
     }

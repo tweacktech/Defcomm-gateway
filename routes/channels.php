@@ -1,4 +1,5 @@
 <?php
+
 // routes/channels.php
 // ─────────────────────────────────────────────────────────────────────────────
 // Meet presence channel authorization.
@@ -11,10 +12,10 @@
 // Requires BroadcastServiceProvider to register with middleware=['web'] only.
 // ─────────────────────────────────────────────────────────────────────────────
 
+use App\Models\AudioCall;
 use App\Models\MeetRoom;
 use Illuminate\Support\Facades\Broadcast;
 use Illuminate\Support\Str;
-use App\Models\AudioCall;
 
 // Broadcast::channel('meet.{uid}', function ($user, string $uid) {
 //     $room = App\Models\MeetRoom::where('uid', $uid)->first();
@@ -51,15 +52,10 @@ use App\Models\AudioCall;
 //     ];
 // });
 
-
-
-
-
-
 Broadcast::channel('meet.{uid}', function ($user, string $uid) {
     $room = MeetRoom::where('uid', $uid)->first();
 
-    if (!$room || $room->isEnded()) {
+    if (! $room || $room->isEnded()) {
         return false;
     }
 
@@ -97,15 +93,15 @@ Broadcast::channel('meet.{uid}', function ($user, string $uid) {
     ];
 }, ['middleware' => ['web']]);
 
-
 // ─────────────────────────────────────────────────────────────────────────────
 // ADD to this file to define more channels for other features (e.g. audio calls).
 // ─────────────────────────────────────────────────────────────────────────────
 
 Broadcast::channel('call.{uid}', function ($user, string $uid) {
     $call = AudioCall::where('uid', $uid)->first();
-    if (!$call)
+    if (! $call) {
         return false;
+    }
 
     $peerId = request()->input('peer_id') ?: (string) \Illuminate\Support\Str::uuid();
 
@@ -114,8 +110,9 @@ Broadcast::channel('call.{uid}', function ($user, string $uid) {
             || $call->callee_id === $user->id
             || $call->participants()->where('user_id', $user->id)->exists();
 
-        if (!$isParticipant)
+        if (! $isParticipant) {
             return false;
+        }
 
         return [
             'id' => $peerId,
@@ -134,6 +131,10 @@ Broadcast::channel('user.{id}', function ($user, $id) {
     return (int) $user->id === (int) $id;
 });
 
+// Chat private channel — user receives pushed messages in real time
+Broadcast::channel('chat.{id}', function ($user, $id) {
+    return (int) $user->id === (int) $id;
+});
 
 // Broadcast::channel('meet.{roomId}', function ($user = null, $roomId) {
 //     // Always return true for development

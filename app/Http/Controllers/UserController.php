@@ -2,7 +2,6 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\ApiClient;
 use App\Models\User;
 use App\Traits\LogsActivity;
 use Illuminate\Http\RedirectResponse;
@@ -17,7 +16,8 @@ class UserController extends Controller
     use LogsActivity;
 
     private const STATUSES = ['active', 'inactive', 'suspended'];
-    private const ROLES    = ['admin', 'client'];
+
+    private const ROLES = ['admin', 'company_admin', 'client'];
 
     // ── Pages ─────────────────────────────────────────────────────────────────
 
@@ -30,25 +30,25 @@ class UserController extends Controller
 
         $search = $request->input('search', '');
         $status = $request->input('status', 'all');
-        $role   = $request->input('role', 'all');
+        $role = $request->input('role', 'all');
 
         $users = User::query()
             ->when($search, fn ($q) => $q->where(function ($q) use ($search) {
-                $q->where('name',  'like', "%{$search}%")
-                  ->orWhere('email', 'like', "%{$search}%");
+                $q->where('name', 'like', "%{$search}%")
+                    ->orWhere('email', 'like', "%{$search}%");
             }))
             ->when(in_array($status, self::STATUSES), fn ($q) => $q->where('status', $status))
-            ->when(in_array($role, self::ROLES),      fn ($q) => $q->where('role', $role))
-            ->withCount('apiClients as tokens_count')
+            ->when(in_array($role, self::ROLES), fn ($q) => $q->where('role', $role))
+            ->withCount(['tokens as tokens_count'])
             ->latest()
             ->paginate(20)
             ->through(fn ($u) => $this->userResource($u));
 
         return Inertia::render('admin/admin-users-index', [
-            'users'   => $users,
-            'search'  => $search,
-            'status'  => $status,
-            'role'    => $role,
+            'users' => $users,
+            'search' => $search,
+            'status' => $status,
+            'role' => $role,
             'summary' => $this->userSummary(),
         ]);
     }
@@ -64,14 +64,14 @@ class UserController extends Controller
         $this->requireAdmin($request);
 
         $validated = $request->validate([
-            'name'                  => ['required', 'string', 'max:255'],
-            'email'                 => ['required', 'email', Rule::unique('users')->ignore($user->id)],
-            'password'              => ['nullable', 'string', 'min:8', 'confirmed'],
+            'name' => ['required', 'string', 'max:255'],
+            'email' => ['required', 'email', Rule::unique('users')->ignore($user->id)],
+            'password' => ['nullable', 'string', 'min:8', 'confirmed'],
             'password_confirmation' => ['nullable', 'string'],
         ]);
 
         $data = [
-            'name'  => $validated['name'],
+            'name' => $validated['name'],
             'email' => $validated['email'],
         ];
 
@@ -88,7 +88,7 @@ class UserController extends Controller
 
     /**
      * PATCH /admin/users/{user}/role
-     * Set role: admin | client.
+     * Set role: admin (super admin) | company_admin | client.
      */
     public function setRole(Request $request, User $user): RedirectResponse
     {
@@ -151,16 +151,14 @@ class UserController extends Controller
 
     /**
      * DELETE /admin/users/{user}/tokens
-     * Deactivate + delete ALL ApiClient tokens for this user.
+     * Revoke ALL Sanctum tokens for this user.
      */
     public function revokeAllTokens(Request $request, User $user): RedirectResponse
     {
         $this->requireAdmin($request);
 
-        $count = $user->apiClients()->count();
-
-        $user->apiClients()->update(['active' => false]);
-        $user->apiClients()->delete();
+        $count = $user->tokens()->count();
+        $user->tokens()->delete();
 
         $this->log(
             'token_revoked',
@@ -173,21 +171,19 @@ class UserController extends Controller
     }
 
     /**
-     * DELETE /admin/users/{user}/tokens/{clientId}
-     * Revoke a single ApiClient token.
+     * DELETE /admin/users/{user}/tokens/{tokenId}
+     * Revoke a single Sanctum token.
      */
-    public function revokeSingleToken(Request $request, User $user, int $clientId): RedirectResponse
+    public function revokeSingleToken(Request $request, User $user, int $tokenId): RedirectResponse
     {
         $this->requireAdmin($request);
 
-        $client = ApiClient::where('user_id', $user->id)->findOrFail($clientId);
-
-        $client->update(['active' => false]);
-        $client->delete();
+        $token = $user->tokens()->where('id', $tokenId)->firstOrFail();
+        $token->delete();
 
         $this->log(
             'token_revoked',
-            "Revoked API client #{$clientId} for {$user->email}",
+            "Revoked token #{$tokenId} for {$user->email}",
             'auth',
             $user
         );
@@ -210,7 +206,7 @@ class UserController extends Controller
 
         $email = $user->email;
 
-        $user->apiClients()->delete();
+        $user->tokens()->delete();
         $user->delete();
 
         $this->log('deleted', "Deleted user {$email}", 'auth');
@@ -223,7 +219,7 @@ class UserController extends Controller
 
     private function requireAdmin(Request $request): void
     {
-        if ($request->user()?->role !== 'admin') {
+        if (! $request->user()?->isSuperAdmin()) {
             abort(403);
         }
     }
@@ -231,15 +227,16 @@ class UserController extends Controller
     public function userResource(User $user): array
     {
         return [
-            'id'            => $user->id,
-            'name'          => $user->name,
-            'email'         => $user->email,
-            'role'          => $user->role,             // 'admin' | 'client'
-            'status'        => $user->status,           // 'active' | 'inactive' | 'suspended'
-            'token_count'   => (int) ($user->tokens_count ?? $user->apiClients()->count()),
-            'created_at'    => $user->created_at->toIso8601String(),
-            'created_ago'   => $user->created_at->diffForHumans(),
-            'last_seen_at'  => $user->last_seen_at?->toIso8601String(),
+            'id' => $user->id,
+            'name' => $user->name,
+            'email' => $user->email,
+            'role' => $user->role,
+            'role_label' => $user->roleLabel(),
+            'status' => $user->status,
+            'token_count' => (int) ($user->tokens_count ?? $user->tokens()->count()),
+            'created_at' => $user->created_at->toIso8601String(),
+            'created_ago' => $user->created_at->diffForHumans(),
+            'last_seen_at' => $user->last_seen_at?->toIso8601String(),
             'last_seen_ago' => $user->last_seen_at?->diffForHumans() ?? 'Never',
         ];
     }
@@ -247,12 +244,14 @@ class UserController extends Controller
     public function userSummary(): array
     {
         return [
-            'total'         => User::count(),
-            'active'        => User::where('status', 'active')->count(),
-            'inactive'      => User::where('status', 'inactive')->count(),
-            'suspended'     => User::where('status', 'suspended')->count(),
-            'admins'        => User::where('role', 'admin')->count(),
-            'clients'       => User::where('role', 'client')->count(),
+            'total' => User::count(),
+            'active' => User::where('status', 'active')->count(),
+            'inactive' => User::where('status', 'inactive')->count(),
+            'suspended' => User::where('status', 'suspended')->count(),
+            'admins' => User::whereIn('role', ['admin', 'company_admin'])->count(),
+            'super_admins' => User::where('role', 'admin')->count(),
+            'company_admins' => User::where('role', 'company_admin')->count(),
+            'clients' => User::where('role', 'client')->count(),
             'new_this_week' => User::where('created_at', '>=', now()->subWeek())->count(),
         ];
     }

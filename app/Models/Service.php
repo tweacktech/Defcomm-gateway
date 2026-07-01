@@ -16,7 +16,18 @@ class Service extends Model
         'key',
         'name',
         'description',
+        'web_path',
+        'api_base_path',
+        'api_endpoints',
+        'usage_notes',
         'is_active',
     ];
-}
 
+    protected function casts(): array
+    {
+        return [
+            'is_active' => 'boolean',
+            'api_endpoints' => 'array',
+        ];
+    }
+}

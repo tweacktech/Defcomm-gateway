@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\ActivityLog;
+use App\Models\Organization;
 use App\Models\Service;
 use App\Models\User;
 use App\Traits\LogsActivity;
@@ -22,11 +23,22 @@ class DashboardController extends Controller
             ->orderBy('name')
             ->get(['id', 'key', 'name', 'description', 'is_active', 'created_at']);
 
-        if ($user->role == 'admin') {
+        if ($user->isSuperAdmin()) {
             return Inertia::render('admin/admin-dashboard', [
-                'services' => $services,
+                'services' => $services->map(fn ($s) => [
+                    'id' => $s->id,
+                    'key' => $s->key,
+                    'name' => $s->name,
+                    'description' => $s->description,
+                    'is_active' => $s->is_active,
+                    'web_path' => $s->web_path,
+                    'api_base_path' => $s->api_base_path,
+                    'endpoint_count' => count($s->api_endpoints ?? []),
+                    'created_at' => $s->created_at->toIso8601String(),
+                ]),
                 'stats' => $this->adminStats(),
                 'user_summary' => $this->userSummary(),
+                'organization_summary' => $this->organizationSummary(),
                 'activity_logs' => $this->allActivity(),
             ]);
         }
@@ -45,7 +57,16 @@ class DashboardController extends Controller
             'total_services' => Service::count(),
             'active_services' => Service::where('is_active', true)->count(),
             'total_users' => User::count(),
-            // 'total_orders'  => Order::count(),
+            'total_organizations' => Organization::count(),
+        ];
+    }
+
+    private function organizationSummary(): array
+    {
+        return [
+            'total' => Organization::count(),
+            'active' => Organization::where('status', 'active')->count(),
+            'with_credentials' => Organization::where('client_credentials_active', true)->count(),
         ];
     }
 
@@ -55,7 +76,9 @@ class DashboardController extends Controller
             'total' => User::count(),
             'active' => User::where('status', 'active')->count(),
             'inactive' => User::where('status', 'inactive')->count(),
-            'admins' => User::where('role', 'admin')->count(),
+            'admins' => User::whereIn('role', ['admin', 'company_admin'])->count(),
+            'super_admins' => User::where('role', 'admin')->count(),
+            'company_admins' => User::where('role', 'company_admin')->count(),
             'new_this_week' => User::where('created_at', '>=', now()->subWeek())->count(),
         ];
     }

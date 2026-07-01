@@ -2,7 +2,7 @@
 
 namespace App\Http\Middleware;
 
-use App\Models\ApiClient;
+use App\Models\Organization;
 use Closure;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
@@ -11,9 +11,7 @@ use Symfony\Component\HttpFoundation\Response;
 class ClientCredentialsMiddleware
 {
     /**
-     * Handle an incoming request.
-     *
-     * @param  \Closure(\Illuminate\Http\Request): (\Symfony\Component\HttpFoundation\Response)  $next
+     * Validate organization-level client credentials only (no user token).
      */
     public function handle(Request $request, Closure $next): Response
     {
@@ -26,21 +24,20 @@ class ClientCredentialsMiddleware
             ], 401);
         }
 
-        $apiClient = ApiClient::query()
+        $organization = Organization::query()
             ->where('client_id', $clientId)
-            ->where('active', true)
+            ->where('status', 'active')
+            ->where('client_credentials_active', true)
             ->first();
 
-        if (! $apiClient || ! Hash::check($clientSecret, $apiClient->client_secret)) {
+        if (! $organization || ! Hash::check($clientSecret, $organization->client_secret)) {
             return response()->json([
                 'message' => 'Invalid client credentials.',
             ], 401);
         }
 
-        // Optionally make the resolved client available to controllers
-        $request->attributes->set('api_client', $apiClient);
+        $request->attributes->set('organization', $organization);
 
         return $next($request);
     }
 }
-

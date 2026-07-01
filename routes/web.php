@@ -1,23 +1,23 @@
 <?php
 
 use App\Http\Controllers\Api\PythonController;
+use App\Http\Controllers\AudioCallController;
 use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\DocsController;
 use App\Http\Controllers\DriveController;
 use App\Http\Controllers\MeetController;
+use App\Http\Controllers\OrganizationAdminController;
+use App\Http\Controllers\OrganizationController;
+use App\Http\Controllers\RegisteredUsersController;
 use App\Http\Controllers\ServiceController;
 use App\Http\Controllers\Settings\ProfileController;
 use App\Http\Controllers\UserController;
 use App\Http\Controllers\VaultController;
+use App\Http\Controllers\WebRtcHealthController;
 use Illuminate\Support\Facades\Broadcast;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
 use Laravel\Fortify\Features;
-use App\Http\Controllers\AudioCallController;
-use App\Http\Controllers\RegisteredUsersController;
-use App\Http\Controllers\DocsController;
-use App\Http\Controllers\WebRtcHealthController;
-
-use App\Http\Controllers\OrganizationController;
 
 // or 'auth' if using session
 Route::get('/', function () {
@@ -26,9 +26,6 @@ Route::get('/', function () {
     ]);
     // return Inertia::render('auth/login');
 })->name('home');
-
-
-
 
 Route::middleware('guest')->group(function () {
     Route::get('register', [RegisteredUsersController::class, 'create'])->name('register');
@@ -39,9 +36,6 @@ Route::middleware('guest')->group(function () {
 Route::get('organizations/search', [OrganizationController::class, 'search'])
     ->name('organizations.search')
     ->middleware('guest');
-
-
-
 
 Broadcast::routes(['middleware' => ['auth']]);
 
@@ -56,12 +50,12 @@ Route::post('/broadcasting/auth', function (Illuminate\Http\Request $request) {
 
     // ── Guests: validate via session admission token ──────────────────────────
     // Only handle meet presence channels: presence-meet.{uid}
-    if (!preg_match('/^presence-meet\.([a-zA-Z0-9\-]+)$/', $channelName, $m)) {
+    if (! preg_match('/^presence-meet\.([a-zA-Z0-9\-]+)$/', $channelName, $m)) {
         abort(403, 'Unauthenticated');
     }
 
     $room = App\Models\MeetRoom::where('uid', $m[1])->first();
-    if (!$room || $room->isEnded()) {
+    if (! $room || $room->isEnded()) {
         abort(403, 'Room not found');
     }
 
@@ -94,7 +88,6 @@ Route::post('/broadcasting/auth', function (Illuminate\Http\Request $request) {
     ]);
 })->middleware('web');   // session only — no 'auth' guard
 
-
 /*
 |--------------------------------------------------------------------------
 | Public Drive share links (guests — no authentication)
@@ -108,9 +101,10 @@ Route::prefix('')->middleware(['auth'])->group(function () {
     // dashboard
     Route::get('dashboard', [DashboardController::class, 'dashboard'])->name('dashboard');
 
-    // route to generate access token for apiClients
-    Route::get('access-token', [ProfileController::class, 'accessToken']);
-    Route::post('generate-access-token', [ProfileController::class, 'genAccessToken']);
+    // User API token (Sanctum bearer) + org credentials display
+    Route::get('access-token', [ProfileController::class, 'accessToken'])->name('access-token');
+    Route::post('generate-access-token', [ProfileController::class, 'genAccessToken'])->name('generate-access-token');
+    Route::delete('revoke-access-token', [ProfileController::class, 'delAccessToken'])->name('revoke-access-token');
 
     Route::get('/docs/sdk', [DocsController::class, 'sdk'])->name('docs.sdk');
 
@@ -166,7 +160,7 @@ Route::prefix('')->middleware(['auth'])->group(function () {
     // documentation page
     Route::get('/document', [ProfileController::class, 'document']);
 
-    Route::middleware(['auth'])->prefix('admin')->name('admin.')->group(function () {
+    Route::middleware(['auth', 'super.admin'])->prefix('admin')->name('admin.')->group(function () {
         Route::get('/users', [UserController::class, 'index'])->name('users.index');
         Route::patch('/users/{user}', [UserController::class, 'update'])->name('users.update');
         Route::patch('/users/{user}/role', [UserController::class, 'setRole'])->name('users.role');
@@ -174,16 +168,33 @@ Route::prefix('')->middleware(['auth'])->group(function () {
         Route::delete('/users/{user}/tokens', [UserController::class, 'revokeAllTokens'])->name('users.tokens.revoke-all');
         Route::delete('/users/{user}/tokens/{clientId}', [UserController::class, 'revokeSingleToken'])->name('users.tokens.revoke');
         Route::delete('/users/{user}', [UserController::class, 'destroy'])->name('users.destroy');
-    });
 
-    Route::middleware(['auth'])->prefix('admin')->group(function () {
         Route::get('/services', [ServiceController::class, 'index'])->name('services.index');
         Route::post('/services', [ServiceController::class, 'store'])->name('services.store');
         Route::patch('/services/{service}', [ServiceController::class, 'update'])->name('services.update');
         Route::patch('/services/{service}/toggle', [ServiceController::class, 'toggle'])->name('services.toggle');
         Route::delete('/services/{service}', [ServiceController::class, 'destroy'])->name('services.destroy');
 
-        require __DIR__ . '/secure-db.php';
+        Route::get('/organizations', [\App\Http\Controllers\Admin\OrganizationController::class, 'index'])->name('organizations.index');
+        Route::post('/organizations', [\App\Http\Controllers\Admin\OrganizationController::class, 'store'])->name('organizations.store');
+        Route::get('/organizations/{organization}', [\App\Http\Controllers\Admin\OrganizationController::class, 'show'])->name('organizations.show');
+        Route::patch('/organizations/{organization}', [\App\Http\Controllers\Admin\OrganizationController::class, 'update'])->name('organizations.update');
+        Route::delete('/organizations/{organization}', [\App\Http\Controllers\Admin\OrganizationController::class, 'destroy'])->name('organizations.destroy');
+
+        require __DIR__.'/secure-db.php';
+    });
+
+    // Company admin — organization credentials & user management
+    Route::middleware(['auth', 'company.admin'])->prefix('company')->name('company.')->group(function () {
+        Route::get('/credentials', [OrganizationAdminController::class, 'credentials'])->name('credentials');
+        Route::post('/credentials/generate', [OrganizationAdminController::class, 'generateCredentials'])->name('credentials.generate');
+        Route::delete('/credentials', [OrganizationAdminController::class, 'revokeCredentials'])->name('credentials.revoke');
+        Route::get('/users', [OrganizationAdminController::class, 'users'])->name('users.index');
+        Route::post('/users', [OrganizationAdminController::class, 'storeUser'])->name('users.store');
+        Route::patch('/users/{user}', [OrganizationAdminController::class, 'updateUser'])->name('users.update');
+        Route::patch('/users/{user}/role', [OrganizationAdminController::class, 'setUserRole'])->name('users.role');
+        Route::patch('/users/{user}/status', [OrganizationAdminController::class, 'setUserStatus'])->name('users.status');
+        Route::delete('/users/{user}/tokens', [OrganizationAdminController::class, 'revokeUserTokens'])->name('users.tokens.revoke');
     });
 
     // Route::get('/services/translator', [ServiceController::class, 'translator'])->name('translator');
@@ -222,8 +233,6 @@ Route::middleware(['auth'])->prefix('meet')->name('meet.')->group(function () {
     Route::get('/recording/{id}/download', [MeetController::class, 'downloadRecording'])->name('recording.download');
 });
 
-
-
 // ─────────────────────────────────────────────────────────────────────────────
 // PUBLIC (web middleware from web.php include)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -256,7 +265,6 @@ Route::middleware(['auth'])->group(function () {
     Route::patch('/calls/{uid}/mute/{peerId}', [AudioCallController::class, 'muteParticipant'])->name('calls.mute');
 });
 
-
 Route::get('meet-test', function () {
 
     return Inertia::render('test-app');
@@ -265,9 +273,6 @@ Route::get('meet-test', function () {
 Route::get('/webrtc-health', WebRtcHealthController::class)
     ->middleware('auth')
     ->name('webrtc.health');
-
-
-
 
 //
 // Audio server is used for routing to play audio
@@ -280,4 +285,4 @@ Route::fallback(
     }
 );
 
-require __DIR__ . '/settings.php';
+require __DIR__.'/settings.php';

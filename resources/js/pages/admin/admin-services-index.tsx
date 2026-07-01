@@ -14,12 +14,24 @@ import type { BreadcrumbItem } from '@/types';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
+interface ApiEndpoint {
+    method: string;
+    path: string;
+    description?: string;
+    auth?: string;
+}
+
 interface Service {
     id: number;
     key: string;
     name: string;
     description: string | null;
+    web_path: string | null;
+    api_base_path: string | null;
+    api_endpoints: ApiEndpoint[];
+    usage_notes: string | null;
     is_active: boolean;
+    endpoint_count: number;
     created_at: string;
     created_ago: string;
     updated_ago: string;
@@ -64,7 +76,11 @@ interface FormState {
     key: string;
     name: string;
     description: string;
+    web_path: string;
+    api_base_path: string;
+    usage_notes: string;
     is_active: boolean;
+    api_endpoints: ApiEndpoint[];
 }
 
 interface ServiceFormProps {
@@ -79,8 +95,12 @@ function ServiceForm({ initial = {}, onSubmit, saving, errors, isEdit = false }:
     const [key, setKey]               = useState(initial.key ?? '');
     const [name, setName]             = useState(initial.name ?? '');
     const [description, setDesc]      = useState(initial.description ?? '');
+    const [webPath, setWebPath]       = useState(initial.web_path ?? '');
+    const [apiBase, setApiBase]       = useState(initial.api_base_path ?? '');
+    const [usageNotes, setUsageNotes] = useState(initial.usage_notes ?? '');
+    const [endpoints, setEndpoints]   = useState<ApiEndpoint[]>(initial.api_endpoints ?? []);
     const [isActive, setActive]       = useState(initial.is_active ?? true);
-    const [keyTouched, setKeyTouched] = useState(isEdit); // don't auto-derive key in edit mode
+    const [keyTouched, setKeyTouched] = useState(isEdit);
 
     // Auto-derive key from name (create mode only)
     useEffect(() => {
@@ -89,7 +109,18 @@ function ServiceForm({ initial = {}, onSubmit, saving, errors, isEdit = false }:
         }
     }, [name, keyTouched, isEdit]);
 
-    const handleSubmit = () => onSubmit({ key, name, description, is_active: isActive });
+    const handleSubmit = () => onSubmit({
+        key, name, description, web_path: webPath, api_base_path: apiBase,
+        usage_notes: usageNotes, is_active: isActive, api_endpoints: endpoints,
+    });
+
+    const addEndpoint = () => setEndpoints([...endpoints, { method: 'GET', path: '', description: '', auth: 'service' }]);
+    const updateEndpoint = (i: number, field: keyof ApiEndpoint, value: string) => {
+        const next = [...endpoints];
+        next[i] = { ...next[i], [field]: value };
+        setEndpoints(next);
+    };
+    const removeEndpoint = (i: number) => setEndpoints(endpoints.filter((_, idx) => idx !== i));
 
     return (
         <div className="space-y-4">
@@ -137,6 +168,53 @@ function ServiceForm({ initial = {}, onSubmit, saving, errors, isEdit = false }:
                     className="w-full resize-none rounded-md border border-input bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 />
                 {errors.description && <p className="mt-1 text-xs text-destructive">{errors.description}</p>}
+            </div>
+
+            {/* Web path */}
+            <div>
+                <Label className="mb-1 block text-xs font-medium">Web UI Path</Label>
+                <Input value={webPath} onChange={e => setWebPath(e.target.value)} placeholder="/services/vault" className="h-9 text-sm" />
+            </div>
+
+            {/* API base path */}
+            <div>
+                <Label className="mb-1 block text-xs font-medium">API Base Path</Label>
+                <Input value={apiBase} onChange={e => setApiBase(e.target.value)} placeholder="/api/client/vault" className="h-9 font-mono text-sm" />
+            </div>
+
+            {/* API endpoints */}
+            <div>
+                <div className="mb-2 flex items-center justify-between">
+                    <Label className="text-xs font-medium">API Endpoints</Label>
+                    <Button type="button" size="sm" variant="outline" onClick={addEndpoint}>Add endpoint</Button>
+                </div>
+                <div className="space-y-2">
+                    {endpoints.map((ep, i) => (
+                        <div key={i} className="rounded-lg border p-3 space-y-2">
+                            <div className="flex gap-2">
+                                <select value={ep.method} onChange={e => updateEndpoint(i, 'method', e.target.value)}
+                                    className="h-8 rounded-md border bg-background px-2 text-xs">
+                                    {['GET', 'POST', 'PUT', 'PATCH', 'DELETE'].map(m => <option key={m}>{m}</option>)}
+                                </select>
+                                <Input value={ep.path} onChange={e => updateEndpoint(i, 'path', e.target.value)}
+                                    placeholder="/api/..." className="h-8 flex-1 font-mono text-xs" />
+                                <Button type="button" size="sm" variant="ghost" onClick={() => removeEndpoint(i)}>×</Button>
+                            </div>
+                            <Input value={ep.description ?? ''} onChange={e => updateEndpoint(i, 'description', e.target.value)}
+                                placeholder="Description" className="h-8 text-xs" />
+                            <Input value={ep.auth ?? ''} onChange={e => updateEndpoint(i, 'auth', e.target.value)}
+                                placeholder="Auth type (service, sanctum, secure-db-key)" className="h-8 text-xs" />
+                        </div>
+                    ))}
+                </div>
+            </div>
+
+            {/* Usage notes */}
+            <div>
+                <Label className="mb-1 block text-xs font-medium">API Usage Notes</Label>
+                <textarea value={usageNotes} onChange={e => setUsageNotes(e.target.value)} rows={3}
+                    placeholder="How to authenticate and use this service API…"
+                    className="w-full resize-none rounded-md border border-input bg-background px-3 py-2 text-sm" />
             </div>
 
             {/* Active toggle */}
@@ -455,7 +533,7 @@ export default function ServicesIndex() {
                         <table className="w-full text-sm">
                             <thead>
                                 <tr className="border-b text-left">
-                                    {['Service', 'Key', 'Status', 'Last updated', ''].map(h => (
+                                    {['Service', 'Key', 'API', 'Status', 'Last updated', ''].map(h => (
                                         <th key={h} className="px-5 pb-3 pt-4 font-medium text-muted-foreground whitespace-nowrap">
                                             {h}
                                         </th>
@@ -465,7 +543,7 @@ export default function ServicesIndex() {
                             <tbody>
                                 {services.data.length === 0 ? (
                                     <tr>
-                                        <td colSpan={5} className="px-5 py-14 text-center">
+                                        <td colSpan={6} className="px-5 py-14 text-center">
                                             <Package className="mx-auto mb-3 h-8 w-8 text-muted-foreground/30" />
                                             <p className="font-medium text-muted-foreground">No services found</p>
                                             <button
@@ -502,6 +580,19 @@ export default function ServicesIndex() {
                                             <code className="rounded bg-muted/60 px-1.5 py-0.5 text-xs font-mono">
                                                 {svc.key}
                                             </code>
+                                        </td>
+
+                                        {/* API info */}
+                                        <td className="px-5 py-3">
+                                            <div className="text-xs">
+                                                {svc.api_base_path && (
+                                                    <code className="block truncate max-w-[140px] text-muted-foreground">{svc.api_base_path}</code>
+                                                )}
+                                                <span className="text-muted-foreground">{svc.endpoint_count} endpoint{svc.endpoint_count !== 1 ? 's' : ''}</span>
+                                                {svc.web_path && (
+                                                    <a href={svc.web_path} className="block text-primary hover:underline">Web UI</a>
+                                                )}
+                                            </div>
                                         </td>
 
                                         {/* Status — click to toggle */}

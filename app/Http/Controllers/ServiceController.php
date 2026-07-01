@@ -14,23 +14,19 @@ class ServiceController extends Controller
 {
     use LogsActivity;
 
-    // ── Pages ─────────────────────────────────────────────────────────────────
-
-    /**
-     * GET /admin/services.
-     */
     public function index(Request $request): Response
     {
-        // $this->requireAdmin($request);
+        $this->requireSuperAdmin($request);
 
         $search = $request->input('search', '');
-        $status = $request->input('status', 'all'); // all | active | inactive
+        $status = $request->input('status', 'all');
 
         $services = Service::query()
-            ->when($search, fn ($q) => $q->where('name', 'like', "%{$search}%")
-                  ->orWhere('key', 'like', "%{$search}%")
-                  ->orWhere('description', 'like', "%{$search}%")
-            )
+            ->when($search, fn ($q) => $q->where(function ($q) use ($search) {
+                $q->where('name', 'like', "%{$search}%")
+                    ->orWhere('key', 'like', "%{$search}%")
+                    ->orWhere('description', 'like', "%{$search}%");
+            }))
             ->when($status === 'active', fn ($q) => $q->where('is_active', true))
             ->when($status === 'inactive', fn ($q) => $q->where('is_active', false))
             ->orderBy('name')
@@ -44,21 +40,11 @@ class ServiceController extends Controller
         ]);
     }
 
-    // ── Mutations ─────────────────────────────────────────────────────────────
-
-    /**
-     * POST /admin/services.
-     */
     public function store(Request $request): RedirectResponse
     {
-        $this->requireAdmin($request);
+        $this->requireSuperAdmin($request);
 
-        $validated = $request->validate([
-            'key' => ['required', 'string', 'max:100', 'unique:services,key'],
-            'name' => ['required', 'string', 'max:255'],
-            'description' => ['nullable', 'string', 'max:5000'],
-            'is_active' => ['boolean'],
-        ]);
+        $validated = $this->validateService($request);
 
         $service = Service::create($validated);
 
@@ -67,20 +53,11 @@ class ServiceController extends Controller
         return redirect()->back()->with('success', "Service \"{$service->name}\" created.");
     }
 
-    /**
-     * PATCH /admin/services/{service}.
-     */
     public function update(Request $request, Service $service): RedirectResponse
     {
-        $this->requireAdmin($request);
+        $this->requireSuperAdmin($request);
 
-        $validated = $request->validate([
-            'key' => ['required', 'string', 'max:100',
-                Rule::unique('services', 'key')->ignore($service->id)],
-            'name' => ['required', 'string', 'max:255'],
-            'description' => ['nullable', 'string', 'max:5000'],
-            'is_active' => ['boolean'],
-        ]);
+        $validated = $this->validateService($request, $service);
 
         $service->update($validated);
 
@@ -89,15 +66,11 @@ class ServiceController extends Controller
         return redirect()->back()->with('success', "Service \"{$service->name}\" updated.");
     }
 
-    /**
-     * PATCH /admin/services/{service}/toggle
-     * Flip is_active without opening the edit form.
-     */
     public function toggle(Request $request, Service $service): RedirectResponse
     {
-        $this->requireAdmin($request);
+        $this->requireSuperAdmin($request);
 
-        $service->update(['is_active' => !$service->is_active]);
+        $service->update(['is_active' => ! $service->is_active]);
 
         $state = $service->is_active ? 'activated' : 'deactivated';
 
@@ -106,12 +79,9 @@ class ServiceController extends Controller
         return redirect()->back()->with('success', "Service \"{$service->name}\" {$state}.");
     }
 
-    /**
-     * DELETE /admin/services/{service}.
-     */
     public function destroy(Request $request, Service $service): RedirectResponse
     {
-        $this->requireAdmin($request);
+        $this->requireSuperAdmin($request);
 
         $name = $service->name;
         $service->delete();
@@ -121,13 +91,34 @@ class ServiceController extends Controller
         return redirect()->back()->with('success', "Service \"{$name}\" deleted.");
     }
 
-    // ── Helpers ───────────────────────────────────────────────────────────────
-
-    private function requireAdmin(Request $request): void
+    private function requireSuperAdmin(Request $request): void
     {
-        if (!$request->user()?->role == 'admin') {
-            abort(403);
+        if (! $request->user()?->isSuperAdmin()) {
+            abort(403, 'Super admin access required.');
         }
+    }
+
+    private function validateService(Request $request, ?Service $service = null): array
+    {
+        $validated = $request->validate([
+            'key' => ['required', 'string', 'max:100',
+                Rule::unique('services', 'key')->ignore($service?->id)],
+            'name' => ['required', 'string', 'max:255'],
+            'description' => ['nullable', 'string', 'max:5000'],
+            'web_path' => ['nullable', 'string', 'max:255'],
+            'api_base_path' => ['nullable', 'string', 'max:255'],
+            'usage_notes' => ['nullable', 'string', 'max:10000'],
+            'is_active' => ['boolean'],
+            'api_endpoints' => ['nullable', 'array'],
+            'api_endpoints.*.method' => ['required_with:api_endpoints', 'string', 'max:10'],
+            'api_endpoints.*.path' => ['required_with:api_endpoints', 'string', 'max:255'],
+            'api_endpoints.*.description' => ['nullable', 'string', 'max:500'],
+            'api_endpoints.*.auth' => ['nullable', 'string', 'max:50'],
+        ]);
+
+        $validated['api_endpoints'] = $validated['api_endpoints'] ?? [];
+
+        return $validated;
     }
 
     private function serviceResource(Service $service): array
@@ -137,7 +128,12 @@ class ServiceController extends Controller
             'key' => $service->key,
             'name' => $service->name,
             'description' => $service->description,
+            'web_path' => $service->web_path,
+            'api_base_path' => $service->api_base_path,
+            'api_endpoints' => $service->api_endpoints ?? [],
+            'usage_notes' => $service->usage_notes,
             'is_active' => $service->is_active,
+            'endpoint_count' => count($service->api_endpoints ?? []),
             'created_at' => $service->created_at->toIso8601String(),
             'created_ago' => $service->created_at->diffForHumans(),
             'updated_ago' => $service->updated_at->diffForHumans(),
@@ -163,7 +159,6 @@ class ServiceController extends Controller
         $service = Service::where('key', $key)->firstOrFail();
 
         if ($service->key === 'translator') {
-            // For example, if you want to show usage stats for the translator service
             $usageStats = 10;
 
             return Inertia::render('translator', [
@@ -183,9 +178,6 @@ class ServiceController extends Controller
                 'service' => $this->serviceResource($service),
             ]);
         } elseif ($service->key === 'meet') {
-            // return Inertia::render('meet/meet-index', [
-            //     'service' => $this->serviceResource($service),
-            // ]);
             return redirect()->route('meet.index');
         } else {
             return Inertia::render('service-details', [

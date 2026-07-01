@@ -52,6 +52,12 @@ export default function Profile({
                     >
                         {({ processing, recentlySuccessful, errors }) => (
                             <>
+                            <div className="grid gap-2">
+                                <Label>User Role</Label>
+                                <div className="mt-1 rounded-md bg-muted/50 px-3 py-2 text-sm text-muted-foreground">
+                                    {auth.user.role}
+                                </div>
+                            </div>
                                 <div className="grid gap-2">
                                     <Label htmlFor="name">Name</Label>
 
@@ -70,7 +76,6 @@ export default function Profile({
                                         message={errors.name}
                                     />
                                 </div>
-
                                 <div className="grid gap-2">
                                     <Label htmlFor="email">Email address</Label>
 

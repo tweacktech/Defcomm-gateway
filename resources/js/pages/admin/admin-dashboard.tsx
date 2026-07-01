@@ -1,8 +1,8 @@
 import { Head, Link, usePage } from '@inertiajs/react';
 import {
-    Users, ShoppingCart, TrendingUp, Settings, Package,
+    Users, TrendingUp, Settings, Package,
     AlertCircle, ArrowUpRight, CheckCircle2, XCircle,
-    ToggleRight, UserCheck, UserX, ShieldCheck, UserPlus, Shield,
+    ToggleRight, UserCheck, UserX, ShieldCheck, UserPlus, Shield, Building2,
 } from 'lucide-react';
 import { ActivityFeed, type ActivityEntry } from '@/components/activity-feed';
 import AppLayout from '@/layouts/app-layout';
@@ -12,18 +12,27 @@ import type { BreadcrumbItem } from '@/types';
 
 interface Service {
     id: number;
+    key: string;
     name: string;
     description: string | null;
-    price: number | null;
     is_active: boolean;
+    web_path: string | null;
+    api_base_path: string | null;
+    endpoint_count: number;
     created_at: string;
+}
+
+interface OrganizationSummary {
+    total: number;
+    active: number;
+    with_credentials: number;
 }
 
 interface AdminStats {
     total_services: number;
     active_services: number;
     total_users?: number;
-    total_orders?: number;
+    total_organizations?: number;
 }
 
 interface UserSummary {
@@ -38,6 +47,7 @@ interface PageProps extends Record<string, unknown> {
     services: Service[];
     stats: AdminStats;
     user_summary: UserSummary;
+    organization_summary: OrganizationSummary;
     activity_logs: ActivityEntry[];
     auth: { user: { name: string } };
 }
@@ -118,13 +128,13 @@ function UserSummaryCard({ summary }: { summary: UserSummary }) {
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function AdminDashboard() {
-    const { services, stats, user_summary, activity_logs, auth } = usePage<PageProps>().props;
+    const { services, stats, user_summary, organization_summary, activity_logs, auth } = usePage<PageProps>().props;
 
     const overviewCards = [
-        { title: 'Total Services',  value: stats.total_services,  sub: `${stats.active_services} active`,                                icon: Package,     color: 'bg-primary'    },
-        { title: 'Active Services', value: stats.active_services, sub: `${stats.total_services - stats.active_services} inactive`,       icon: ToggleRight, color: 'bg-green-500'  },
-        { title: 'Total Users',     value: stats.total_users ?? '—', sub: 'registered accounts',                                        icon: Users,       color: 'bg-blue-500'   },
-        { title: 'Total Orders',    value: stats.total_orders ?? '—', sub: 'all time',                                                   icon: ShoppingCart,color: 'bg-purple-500' },
+        { title: 'Total Services', value: stats.total_services, sub: `${stats.active_services} active`, icon: Package, color: 'bg-primary' },
+        { title: 'Companies', value: stats.total_organizations ?? organization_summary.total, sub: `${organization_summary.with_credentials} with API keys`, icon: Building2, color: 'bg-blue-500' },
+        { title: 'Total Users', value: stats.total_users ?? '—', sub: 'registered accounts', icon: Users, color: 'bg-green-500' },
+        { title: 'Active Companies', value: organization_summary.active, sub: 'organizations active', icon: ToggleRight, color: 'bg-purple-500' },
     ];
 
     return (
@@ -136,7 +146,7 @@ export default function AdminDashboard() {
                 {/* Header */}
                 <div className="flex items-center justify-between">
                     <div>
-                        <h1 className="text-2xl font-bold tracking-tight">Admin Dashboard</h1>
+                        <h1 className="text-2xl font-bold tracking-tight">Super Admin Dashboard</h1>
                         <p className="text-muted-foreground">
                             Welcome back, {auth.user.name}. Here's what's happening.
                         </p>
@@ -196,7 +206,7 @@ export default function AdminDashboard() {
                             <div className="flex flex-col items-center justify-center gap-3 p-12 text-center">
                                 <Package className="h-10 w-10 text-muted-foreground/30" />
                                 <p className="font-medium">No services yet</p>
-                                <Link href="//admin/services"
+                                <Link href="/admin/services"
                                     className="mt-1 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition hover:opacity-90">
                                     Create Service
                                 </Link>
@@ -206,7 +216,7 @@ export default function AdminDashboard() {
                                 <table className="w-full text-sm">
                                     <thead>
                                         <tr className="border-b text-left">
-                                            {['Name', 'Description', 'Price', 'Status', 'Created', ''].map(h => (
+                                        {['Name', 'API', 'Status', 'Created', ''].map(h => (
                                                 <th key={h} className="px-6 pb-3 pt-4 font-medium text-muted-foreground">{h}</th>
                                             ))}
                                         </tr>
@@ -216,8 +226,10 @@ export default function AdminDashboard() {
                                             <tr key={svc.id}
                                                 className="border-b last:border-0 transition hover:bg-muted/30">
                                                 <td className="px-6 py-3 font-medium">{svc.name}</td>
-                                                <td className="max-w-[180px] truncate px-6 py-3 text-muted-foreground">{svc.description ?? '—'}</td>
-                                                <td className="px-6 py-3 font-mono">{fmtPrice(svc.price)}</td>
+                                                <td className="px-6 py-3 text-xs text-muted-foreground">
+                                                    {svc.api_base_path ?? '—'}
+                                                    <span className="block">{svc.endpoint_count} endpoints</span>
+                                                </td>
                                                 <td className="px-6 py-3">
                                                     {svc.is_active
                                                         ? <span className="flex items-center gap-1 text-green-600 dark:text-green-400"><CheckCircle2 className="h-3.5 w-3.5" />Active</span>
@@ -256,12 +268,12 @@ export default function AdminDashboard() {
                             </div>
                             <div className="space-y-1 p-4">
                                 {[
-                                    { icon: Package,      label: 'Manage service', href: '/admin/services' },
-                                    { icon: Users,        label: 'Manage users',       href: '/admin/users' },
-                                    { icon: Shield,       label: 'Secure DB',          href: '/admin/secure-db' },
-                                    { icon: ShoppingCart, label: 'View all orders',    href: '/orders' },
-                                    { icon: TrendingUp,   label: 'View reports',       href: '/reports' },
-                                    { icon: Settings,     label: 'System settings',    href: '/settings/profile' },
+                                    { icon: Package, label: 'Manage services', href: '/admin/services' },
+                                    { icon: Users, label: 'Manage users', href: '/admin/users' },
+                                    { icon: Building2, label: 'Manage companies', href: '/admin/organizations' },
+                                    { icon: Shield, label: 'Secure DB', href: '/admin/secure-db' },
+                                    { icon: TrendingUp, label: 'View reports', href: '/reports' },
+                                    { icon: Settings, label: 'System settings', href: '/settings/profile' },
                                 ].map(({ icon: Icon, label, href }) => (
                                     <Link key={label} href={href}
                                         className="flex w-full items-center gap-3 rounded-lg p-2.5 transition hover:bg-accent/50">
