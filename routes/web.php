@@ -12,13 +12,88 @@ use Illuminate\Support\Facades\Broadcast;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
 use Laravel\Fortify\Features;
+use App\Http\Controllers\AudioCallController;
+use App\Http\Controllers\RegisteredUsersController;
+use App\Http\Controllers\DocsController;
+use App\Http\Controllers\WebRtcHealthController;
 
+use App\Http\Controllers\OrganizationController;
+
+// or 'auth' if using session
 Route::get('/', function () {
-    // return Inertia::render('welcome', [
-    //     'canRegister' => Features::enabled(Features::registration()),
-    // ]);
-    return Inertia::render('auth/login');
+    return Inertia::render('welcome', [
+        'canRegister' => Features::enabled(Features::registration()),
+    ]);
+    // return Inertia::render('auth/login');
 })->name('home');
+
+
+
+
+Route::middleware('guest')->group(function () {
+    Route::get('register', [RegisteredUsersController::class, 'create'])->name('register');
+    Route::post('register', [RegisteredUsersController::class, 'store'])->name('register.store');
+});
+
+// Organization search endpoint (accessible to guests during registration)
+Route::get('organizations/search', [OrganizationController::class, 'search'])
+    ->name('organizations.search')
+    ->middleware('guest');
+
+
+
+
+Broadcast::routes(['middleware' => ['auth']]);
+
+Route::post('/broadcasting/auth', function (Illuminate\Http\Request $request) {
+    $channelName = $request->input('channel_name', '');
+    $peerId = $request->input('peer_id', '');
+
+    // ── Authenticated users: use standard Broadcast::auth() ──────────────────
+    if ($request->user()) {
+        return Broadcast::auth($request);
+    }
+
+    // ── Guests: validate via session admission token ──────────────────────────
+    // Only handle meet presence channels: presence-meet.{uid}
+    if (!preg_match('/^presence-meet\.([a-zA-Z0-9\-]+)$/', $channelName, $m)) {
+        abort(403, 'Unauthenticated');
+    }
+
+    $room = App\Models\MeetRoom::where('uid', $m[1])->first();
+    if (!$room || $room->isEnded()) {
+        abort(403, 'Room not found');
+    }
+
+    $guestSession = $request->session()->get("meet_guest_{$room->id}");
+    if (empty($guestSession['admitted'])) {
+        abort(403, 'Guest not admitted');
+    }
+
+    // Manually sign the Pusher/Reverb presence auth response.
+    // This is exactly what Broadcast::auth() does internally —
+    // we just supply guest-specific member data instead of auth()->user().
+    $appKey = config('broadcasting.connections.reverb.key');
+    $appSecret = config('broadcasting.connections.reverb.secret');
+    $socketId = $request->input('socket_id');
+
+    $channelData = json_encode([
+        'user_id' => $peerId,
+        'user_info' => [
+            'peer_id' => $peerId,
+            'display_name' => $guestSession['name'] ?? 'Guest',
+            'role' => 'participant',
+        ],
+    ]);
+
+    $signature = hash_hmac('sha256', "{$socketId}:{$channelName}:{$channelData}", $appSecret);
+
+    return response()->json([
+        'auth' => "{$appKey}:{$signature}",
+        'channel_data' => $channelData,
+    ]);
+})->middleware('web');   // session only — no 'auth' guard
+
 
 /*
 |--------------------------------------------------------------------------
@@ -36,6 +111,8 @@ Route::prefix('')->middleware(['auth'])->group(function () {
     // route to generate access token for apiClients
     Route::get('access-token', [ProfileController::class, 'accessToken']);
     Route::post('generate-access-token', [ProfileController::class, 'genAccessToken']);
+
+    Route::get('/docs/sdk', [DocsController::class, 'sdk'])->name('docs.sdk');
 
     // route for the vault service
     Route::get('/services/vault', [VaultController::class, 'index']);
@@ -111,57 +188,7 @@ Route::prefix('')->middleware(['auth'])->group(function () {
 
     // Route::get('/services/translator', [ServiceController::class, 'translator'])->name('translator');
     Route::get('/services/{key}', [ServiceController::class, 'serviceDetails'])->name('services.details')->middleware('auth');
-
 });
-
-
-
-// // Room page — controller decides view based on auth state + session
-// Route::get('/meet/{uid}', [MeetController::class, 'room'])->name('meet.room');
-
-// // Guest form submit (display_name + optional password)
-// Route::post('/meet/{uid}/guest', [MeetController::class, 'guestJoin'])->name('meet.guest.join');
-
-// // Participant JSON actions — auth optional, guests use peer_id from session
-// Route::post('/meet/{uid}/join', [MeetController::class, 'join'])->name('meet.join');
-// Route::patch('/meet/{uid}/end', [MeetController::class, 'end'])->name('end');
-// Route::post('/meet/{uid}/leave', [MeetController::class, 'leave'])->name('meet.leave');
-// Route::post('/meet/{uid}/signal', [MeetController::class, 'signal'])->name('meet.signal');
-
-// // ─────────────────────────────────────────────────────────────────────────────
-// // AUTH REQUIRED
-// // ─────────────────────────────────────────────────────────────────────────────
-
-// Route::middleware(['auth'])->prefix('meet')->name('meet.')->group(function () {
-//     Route::get('/', [MeetController::class, 'index'])->name('index');
-//     Route::post('/rooms', [MeetController::class, 'create'])->name('create');
-
-//     Route::post('/{uid}/password', [MeetController::class, 'unlock'])->name('unlock');
-//     // Route::patch('/{uid}/end', [MeetController::class, 'end'])->name('end');
-//     Route::patch('/{uid}/admit/{peerId}', [MeetController::class, 'admit'])->name('admit');
-//     Route::patch('/{uid}/kick/{peerId}', [MeetController::class, 'kick'])->name('kick');
-
-// });
-
-
-// ── Recording chunk upload (public — validated by recording ownership) ────────
-Route::post(
-    '/meet/{uid}/recording/{recordingId}/chunk',
-    [MeetController::class, 'recordingChunk']
-)->name('meet.recording.chunk');
-
-// ── Media state update (public — no auth, guests update too) ─────────────────
-Route::post(
-    '/meet/{uid}/media-state',
-    [MeetController::class, 'updateMediaState']
-)->name('meet.media-state');
-
-Route::post('meet/{uid}/recording/start', [MeetController::class, 'startRecording'])->name('recording.start');
-Route::post('meet/{uid}/recording/{id}/stop', [MeetController::class, 'stopRecording'])->name('recording.stop');
-Route::get('meet/{uid}/recordings', [MeetController::class, 'listRecordings'])->name('recordings.list');
-Route::get('meet/recording/{id}/download', [MeetController::class, 'downloadRecording'])->name('meet.recording.download');
-
-
 
 // ── PUBLIC — no auth required ─────────────────────────────────────────────────
 // Room page: controller decides view based on auth state + session
@@ -171,6 +198,7 @@ Route::get('/meet/{uid}', [MeetController::class, 'room'])->name('meet.room');
 Route::post('/meet/{uid}/guest', [MeetController::class, 'guestJoin'])->name('meet.guest.join');
 
 // Participant actions — auth OPTIONAL (guests call these too via peer_id)
+Route::get('/meet/{uid}/participants', [MeetController::class, 'participants'])->name('meet.participants');
 Route::post('/meet/{uid}/join', [MeetController::class, 'join'])->name('meet.join');
 Route::post('/meet/{uid}/leave', [MeetController::class, 'leave'])->name('meet.leave');
 Route::post('/meet/{uid}/signal', [MeetController::class, 'signal'])->name('meet.signal');
@@ -196,59 +224,51 @@ Route::middleware(['auth'])->prefix('meet')->name('meet.')->group(function () {
 
 
 
+// ─────────────────────────────────────────────────────────────────────────────
+// PUBLIC (web middleware from web.php include)
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Participant answer / join (axios from call room — no auth needed for guests,
+// but for now all calls are between authenticated users; keep open for SDK ext)
+Route::post('/calls/{uid}/answer', [AudioCallController::class, 'answer'])->name('calls.answer');
+Route::post('/calls/{uid}/leave', [AudioCallController::class, 'leave'])->name('calls.leave');
+Route::post('/calls/{uid}/signal', [AudioCallController::class, 'signal'])->name('calls.signal');
+Route::post('/calls/{uid}/audio-state', [AudioCallController::class, 'audioState'])->name('calls.audio-state');
+Route::post('/calls/{uid}/decline', [AudioCallController::class, 'decline'])->name('calls.decline');
+Route::patch('/calls/{uid}/kick/{peerId}', [AudioCallController::class, 'kick'])->name('calls.kick');
+
+// ─────────────────────────────────────────────────────────────────────────────
+// AUTH REQUIRED
+// ─────────────────────────────────────────────────────────────────────────────
+
+Route::middleware(['auth'])->group(function () {
+    // Pages
+    Route::get('/calls', [AudioCallController::class, 'index'])->name('calls.index');
+    Route::get('/calls/{uid}', [AudioCallController::class, 'room'])->name('calls.room');
+
+    // Call management
+    Route::post('/calls', [AudioCallController::class, 'create'])->name('calls.create');
+    Route::patch('/calls/{uid}/end', [AudioCallController::class, 'end'])->name('calls.end');
+    Route::patch('/calls/{uid}/hold', [AudioCallController::class, 'hold'])->name('calls.hold');
+    Route::patch('/calls/{uid}/resume', [AudioCallController::class, 'resume'])->name('calls.resume');
+    Route::patch('/calls/{uid}/priority', [AudioCallController::class, 'changePriority'])->name('calls.priority');
+    Route::patch('/calls/{uid}/admit/{peerId}', [AudioCallController::class, 'admit'])->name('calls.admit');
+    Route::patch('/calls/{uid}/mute/{peerId}', [AudioCallController::class, 'muteParticipant'])->name('calls.mute');
+});
+
+
+Route::get('meet-test', function () {
+
+    return Inertia::render('test-app');
+})->middleware('auth');
+
+Route::get('/webrtc-health', WebRtcHealthController::class)
+    ->middleware('auth')
+    ->name('webrtc.health');
 
 
 
-Route::post('/broadcasting/auth', function (Illuminate\Http\Request $request) {
-    $channelName = $request->input('channel_name', '');
-    $peerId      = $request->input('peer_id', '');
 
-    // ── Authenticated users: use standard Broadcast::auth() ──────────────────
-    if ($request->user()) {
-        return Broadcast::auth($request);
-    }
-
-    // ── Guests: validate via session admission token ──────────────────────────
-    // Only handle meet presence channels: presence-meet.{uid}
-    if (!preg_match('/^presence-meet\.([a-zA-Z0-9\-]+)$/', $channelName, $m)) {
-        abort(403, 'Unauthenticated');
-    }
-
-    $room = App\Models\MeetRoom::where('uid', $m[1])->first();
-    if (!$room || $room->isEnded()) {
-        abort(403, 'Room not found');
-    }
-
-    $guestSession = $request->session()->get("meet_guest_{$room->id}");
-    if (empty($guestSession['admitted'])) {
-        abort(403, 'Guest not admitted');
-    }
-
-    // Manually sign the Pusher/Reverb presence auth response.
-    // This is exactly what Broadcast::auth() does internally —
-    // we just supply guest-specific member data instead of auth()->user().
-    $appKey    = config('broadcasting.connections.reverb.key');
-    $appSecret = config('broadcasting.connections.reverb.secret');
-    $socketId  = $request->input('socket_id');
-
-    $channelData = json_encode([
-        'user_id'   => $peerId,
-        'user_info' => [
-            'peer_id'      => $peerId,
-            'display_name' => $guestSession['name'] ?? 'Guest',
-            'role'         => 'participant',
-        ],
-    ]);
-
-    $signature = hash_hmac('sha256', "{$socketId}:{$channelName}:{$channelData}", $appSecret);
-
-    return response()->json([
-        'auth'         => "{$appKey}:{$signature}",
-        'channel_data' => $channelData,
-    ]);
-})->middleware('web');   // session only — no 'auth' guard
-
- 
 //
 // Audio server is used for routing to play audio
 //
@@ -259,9 +279,5 @@ Route::fallback(
         return Inertia::render('error');
     }
 );
-
-Broadcast::routes([
-    'middleware' => ['web'], // allows session (IMPORTANT for your guest logic)
-]);
 
 require __DIR__ . '/settings.php';

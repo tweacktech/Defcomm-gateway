@@ -7,12 +7,12 @@ use App\Models\MeetParticipant;
 use App\Models\MeetRoom;
 use Illuminate\Broadcasting\InteractsWithSockets;
 use Illuminate\Broadcasting\PresenceChannel;
-use Illuminate\Contracts\Broadcasting\ShouldBroadcast;
+use Illuminate\Contracts\Broadcasting\ShouldBroadcastNow;
 use Illuminate\Foundation\Events\Dispatchable;
 use Illuminate\Support\Facades\Log;
 
 
-class ParticipantKicked implements ShouldBroadcast
+class ParticipantKicked implements ShouldBroadcastNow
 {
     public function __construct(
         public readonly string $roomUid,

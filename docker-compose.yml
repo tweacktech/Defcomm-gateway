@@ -1,0 +1,146 @@
+# version: "3.9"
+
+# services:
+#   coturn:
+#     image: coturn/coturn:latest
+#     container_name: defcomm_turn
+#     restart: unless-stopped
+#     ports:
+#       - "3478:3478/udp"
+#       - "3478:3478/tcp"
+#       - "49152-49300:49152-49300/udp"
+#     volumes:
+#       - ./coturn/turnserver.local.conf:/etc/coturn/turnserver.conf:ro
+#     command: ["-c", "/etc/coturn/turnserver.conf"]
+#     healthcheck:
+#       test: ["CMD-SHELL", "nc -zu 127.0.0.1 3478 && echo ok"]
+#       interval: 20s
+#       timeout: 5s
+#       retries: 5
+#       start_period: 5s
+# docker-compose.yml - Minimal Setup (CoTURN + Reverb only)
+#
+# This assumes:
+# - Laravel app runs locally on your machine (not in Docker)
+# - Only Docker services: TURN relay server + WebSocket broadcaster
+
+
+
+version: "3.9"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Local WebRTC development stack
+#
+# Services:
+#   coturn  — STUN/TURN relay (required for WebRTC even on LAN)
+#   reverb  — Laravel Reverb WebSocket broadcaster (presence channels / signalling)
+#
+# Prerequisites:
+#   1. Copy .env.example → .env and fill in APP_KEY, DB_*, REVERB_* values.
+#   2. Set DOCKER_HOST_IP in your .env (or shell) to your machine's LAN IP,
+#      e.g. DOCKER_HOST_IP=192.168.1.50
+#      127.0.0.1 will NOT work — browsers cannot reach a TURN server on loopback.
+#   3. Run: docker compose up -d
+# ─────────────────────────────────────────────────────────────────────────────
+
+services:
+
+  # ── CoTURN STUN / TURN relay ────────────────────────────────────────────────
+  coturn:
+    image: coturn/coturn:latest
+    container_name: defcomm_turn
+    restart: unless-stopped
+
+    # FIX: Bind to 0.0.0.0 (all interfaces), NOT 127.0.0.1.
+    #      Browsers negotiate ICE candidates over your LAN IP; they cannot reach
+    #      a server that is only listening on the loopback interface.
+    ports:
+      - "0.0.0.0:3478:3478/udp"
+      - "0.0.0.0:3478:3478/tcp"
+      - "0.0.0.0:5349:5349/udp"
+      - "0.0.0.0:5349:5349/tcp"
+      - "0.0.0.0:49152-49300:49152-49300/udp"
+
+    volumes:
+      - ./coturn/turnserver.conf:/etc/coturn/turnserver.conf:ro
+
+    command: ["-c", "/etc/coturn/turnserver.conf"]
+
+    # FIX: The original healthcheck had a misplaced quote that made the shell
+    #      command unparseable — it always reported "unhealthy".
+    #      Use nc (netcat) with a TCP probe; coturn ships with it.
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z 127.0.0.1 3478 || exit 1"]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ── Laravel Reverb WebSocket server ─────────────────────────────────────────
+  reverb:
+    image: php:8.3-cli
+    container_name: defcomm_reverb
+    restart: unless-stopped
+
+    # Reverb must start after CoTURN is healthy so the full stack is available
+    # before the first WebSocket client connects.
+    depends_on:
+      coturn:
+        condition: service_healthy
+
+    ports:
+      - "${REVERB_PORT:-8080}:8080"
+
+    environment:
+      # Core Laravel bootstrap — reverb:start loads the framework
+      APP_ENV: ${APP_ENV:-local}
+      APP_DEBUG: ${APP_DEBUG:-true}
+      APP_KEY: ${APP_KEY}          # Required — must be set in .env
+
+      # Database (Laravel bootstraps DB connection even for Reverb)
+      DB_CONNECTION: ${DB_CONNECTION:-mysql}
+      DB_HOST: ${DB_HOST:-host.docker.internal}   # Points to host machine's DB
+      DB_PORT: ${DB_PORT:-3306}
+      DB_DATABASE: ${DB_DATABASE}
+      DB_USERNAME: ${DB_USERNAME}
+      DB_PASSWORD: ${DB_PASSWORD}
+
+      # Reverb configuration
+      REVERB_APP_ID: ${REVERB_APP_ID:-reverb-app}
+      REVERB_APP_KEY: ${REVERB_APP_KEY:-reverb-key}
+      REVERB_APP_SECRET: ${REVERB_APP_SECRET:-reverb-secret}
+      REVERB_HOST: "0.0.0.0"
+      REVERB_PORT: "8080"
+      REVERB_USE_TLS: ${REVERB_USE_TLS:-false}
+
+      LOG_CHANNEL: stderr
+
+    working_dir: /app
+
+    volumes:
+      # Mount the Laravel application
+      - .:/app
+      # FIX: Remove the anonymous `/app/vendor` volume override.
+      #      The original config shadowed the vendor/ directory that Composer
+      #      installed during the image build, causing "Class not found" fatals
+      #      when php artisan tried to bootstrap the framework.
+      #      If vendor/ is not committed (standard practice), install it on the
+      #      host first: `composer install`, then let the bind mount carry it in.
+
+    command: ["php", "artisan", "reverb:start", "--host=0.0.0.0", "--port=8080", "--debug"]
+
+    # Allow connecting back to host machine services (MySQL, Redis, etc.)
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"

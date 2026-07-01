@@ -25,24 +25,26 @@ Schedule::call(function () {
 
 Schedule::call(function () {
     SecureDbProject::where('status', 'active')->where('rotation_interval', 'hourly')->each(
-        fn ($p) => RotateKeysJob::dispatch($p)
+        fn($p) => RotateKeysJob::dispatch($p)
     );
 })->hourly();
 
 Schedule::call(function () {
     SecureDbProject::where('status', 'active')->where('rotation_interval', 'daily')->each(
-        fn ($p) => RotateKeysJob::dispatch($p)
+        fn($p) => RotateKeysJob::dispatch($p)
     );
 })->daily();
 
 Schedule::call(function () {
     SecureDbProject::where('status', 'active')->where('rotation_interval', 'weekly')->each(
-        fn ($p) => RotateKeysJob::dispatch($p)
+        fn($p) => RotateKeysJob::dispatch($p)
     );
 })->weekly();
 
 Schedule::call(function () {
     SecureDbProject::where('status', 'active')->where('rotation_interval', 'custom')
         ->whereNotNull('rotation_cron')
-        ->each(fn ($p) => RotateKeysJob::dispatch($p));
+        ->each(fn($p) => RotateKeysJob::dispatch($p));
 })->everyMinute();
+
+Schedule::command('meet:send-reminders --minutes=10')->everyMinute();

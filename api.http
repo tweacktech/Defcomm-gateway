@@ -1,19 +1,91 @@
-GET url HTTP/1.1
-get(url: 'http://127.0.0.1:8000/api/run-python')
+### Losode Vendor API - Complete REST Client Tests
+### Base URL: http://127.0.0.1:8000/api
+### All endpoints for testing with VS Code REST Client or similar
 
-###
-POST url HTTP/1.1
-post(
-  url: 'http://127.0.0.1:8000/api/run-python',
-  headers: {
-    'Authorization': 'Bearer your_access_token',
-    'Content-Type': 'application/json'
-  }
-),
-  body: {
+@baseUrl = http://127.0.0.1:8000
+@vendorToken =7|qK5igDJWxiduiYCnCPYCwu8WAaU532Z9DzSxdWVz68697687
+@UserToken =10|1g4hyuMO4wPT7CFlH3eG3hWRznszAzxo8zEFmx2tcc83b0f8
+@userId = 1GET url HTTP/1.1
+################################################################################
+# PYTHON TEST
+################################################################################
+
+### 1.  Test python
+POST {{baseUrl}}/run-python
+Content-Type: application/json
+
+{
     "code": "print('Hello, World!')"
-  }
-)
+}
 
-###
+
+### 2..List All Accessible Files
+GET {{baseUrl}}/files?user_id=1&page=1&per_page=15"
+# Authorization: Bearer {{vendorToken}}
+
+####
+curl -X POST {{baseUrl}}/files \
+  -F "user_id=1" \
+  -F "file=@document.pdf" \
+  -F "name=Q3 Report" \
+  -F "description=Quarterly financials" \
+  -F "visibility=private"
+
+
+
+### . Share File with Another User
+curl -X POST {{baseUrl}}/files/5/share \
+  -H "Content-Type: application/json" \
+  -d '{
+    "user_id": 1,
+    "share_with_user_id": 3,
+    "permission": "download",
+    "expires_at": "2024-02-15T23:59:59Z"
+  }'
+
+
+  ### Download file
+curl -X GET "{{baseUrl}}/files/5/download?user_id=1" \
+  --output document.pdf
+
+
+  ### Preview File Content (base64)
+
+curl -X GET "{{baseUrl}}/files/5/preview?user_id=1"
+
+### Get All Shares for a File
+
+curl -X GET "{{baseUrl}}/files/5/shares?user_id=1"
+
+
+### Update Share Permission
+curl -X PATCH {{baseUrl}}/shares/1 \
+  -H "Content-Type: application/json" \
+  -d '{
+    "user_id": 1,
+    "permission": "edit",
+    "expires_at": "2024-03-15T23:59:59Z"
+  }'
+
+  ### Revoke Share
+curl -X DELETE "{{baseUrl}}/shares/1?user_id=1"
+
+### Get My Files
+curl -X GET "{{baseUrl}}/my-files?user_id=1&page=1"
+
+ ### Get Files Shared With Me
+curl -X GET "{{baseUrl}}/shared-with-me?user_id=1"
+
+### Update File Metadata
+curl -X PUT {{baseUrl}}/files/5 \
+  -H "Content-Type: application/json" \
+  -d '{
+    "user_id": 1,
+    "name": "Updated Report Title",
+    "description": "Updated description",
+    "visibility": "shared"
+  }'
+
+  ### Delete File
+curl -X DELETE "{{baseUrl}}/files/5?user_id=1"
 

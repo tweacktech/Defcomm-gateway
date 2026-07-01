@@ -1,0 +1,6 @@
+# speech.py — TTS / STT / translation
+# (Microphone STT needs PyAudio + portaudio; not installed in Docker — use --file from PHP API.)
+gTTS>=2.5.0
+SpeechRecognition>=3.10.0
+deep-translator>=1.11.0
+pyttsx3>=2.90

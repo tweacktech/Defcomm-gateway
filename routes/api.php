@@ -5,6 +5,11 @@ use App\Http\Controllers\Api\MeetApiController;
 use App\Http\Controllers\Api\PythonController;
 use App\Http\Controllers\Api\VaultApiController;
 use Illuminate\Http\Request;
+
+use App\Http\Controllers\Api\FileShareController;
+
+use App\Http\Controllers\Api\AudioCallApiController;
+use App\Http\Controllers\TurnCredentialController;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/user', function (Request $request) {
@@ -114,3 +119,44 @@ Route::middleware(['auth:sanctum'])->prefix('api/meet')->name('api.meet.')->grou
     Route::delete('/rooms/{uid}', [MeetApiController::class, 'endRoom'])->name('rooms.end');
     Route::post('/rooms/{uid}/token', [MeetApiController::class, 'issueToken'])->name('rooms.token');
 });
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SDK REST API — Sanctum token
+// ─────────────────────────────────────────────────────────────────────────────
+
+Route::middleware(['auth:sanctum'])->prefix('api/calls')->name('api.calls.')->group(function () {
+    Route::get('/',                               [AudioCallApiController::class, 'list'])->name('index');
+    Route::post('/',                              [AudioCallApiController::class, 'create'])->name('create');
+    Route::get('/{uid}',                          [AudioCallApiController::class, 'show'])->name('show');
+    Route::delete('/{uid}',                       [AudioCallApiController::class, 'end'])->name('end');
+    Route::post('/{uid}/token',                   [AudioCallApiController::class, 'issueToken'])->name('token');
+    Route::get('/{uid}/participants',             [AudioCallApiController::class, 'participants'])->name('participants');
+    Route::delete('/{uid}/participants/{peerId}', [AudioCallApiController::class, 'kick'])->name('participants.kick');
+    Route::post('/{uid}/participants/{peerId}/admit', [AudioCallApiController::class, 'admit'])->name('participants.admit');
+    Route::patch('/{uid}/priority',               [AudioCallApiController::class, 'changePriority'])->name('priority');
+});
+
+
+ # Add to routes/api.php
+ Route::get('/turn-credentials', TurnCredentialController::class);
+
+
+
+// File CRUD operations - NO AUTH MIDDLEWARE, user_id passed as parameter
+Route::apiResource('files', FileShareController::class);
+
+// File-specific operations
+Route::get('files/{file}/download', [FileShareController::class, 'download'])->name('files.download');
+Route::get('files/{file}/preview', [FileShareController::class, 'preview'])->name('files.preview');
+Route::get('files/{file}/shares', [FileShareController::class, 'getShares'])->name('files.shares.index');
+Route::post('files/{file}/share', [FileShareController::class, 'shareWith'])->name('files.share');
+
+// Share management
+Route::patch('shares/{share}', [FileShareController::class, 'updateShare'])->name('shares.update');
+Route::delete('shares/{share}', [FileShareController::class, 'revokeShare'])->name('shares.destroy');
+
+// User-centric views
+Route::get('my-files', [FileShareController::class, 'myFiles'])->name('files.my');
+Route::get('shared-with-me', [FileShareController::class, 'sharedWithMe'])->name('files.shared-with-me');
+

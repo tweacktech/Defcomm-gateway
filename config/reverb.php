@@ -93,4 +93,9 @@ return [
 
     ],
 
+    // 'middleware' => [
+    //     'web', // Keep web middleware
+    //     // Remove 'auth' middleware temporarily
+    // ],
+
 ];

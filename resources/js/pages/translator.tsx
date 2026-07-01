@@ -269,8 +269,8 @@ export default function Translator() {
                                 onChange={(e) => setText(e.target.value)}
                                 rows={5}
                                 className={cn(
-                                    'border-input placeholder:text-muted-foreground flex w-full rounded-md border bg-transparent px-3 py-2 text-sm shadow-xs transition-[color,box-shadow] outline-none',
-                                    'focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px]',
+                                    'flex w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs transition-[color,box-shadow] outline-none placeholder:text-muted-foreground',
+                                    'focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50',
                                 )}
                             />
                         </div>
@@ -301,7 +301,7 @@ export default function Translator() {
                         </div>
                     </div>
 
-                    <div className="space-y-4 rounded-xl border border-sidebar-border/70 bg-card p-6">
+                    {/* <div className="space-y-4 rounded-xl border border-sidebar-border/70 bg-card p-6">
                         <h2 className="text-lg font-semibold">
                             Audio file → translate
                         </h2>
@@ -334,6 +334,75 @@ export default function Translator() {
                             )}
                             Translate audio
                         </Button>
+                    </div> */}
+
+                    <div className="space-y-4 rounded-xl border border-sidebar-border/70 bg-card p-6">
+                        <h2 className="text-lg font-semibold">
+                            Audio file → translate
+                        </h2>
+                        <p className="text-sm text-muted-foreground">
+                            Upload WAV, MP3, OGG, or MP4. The backend runs{' '}
+                            <code className="text-xs">speech.py</code> with{' '}
+                            <code className="text-xs">--file</code> and returns
+                            translated text plus optional TTS audio.
+                        </p>
+
+                        {/* Add language inputs for audio section */}
+                        <div className="grid gap-4 sm:grid-cols-2">
+                            <div className="space-y-2">
+                                <Label htmlFor="audio-src">
+                                    Source language
+                                </Label>
+                                <Input
+                                    id="audio-src"
+                                    value={sourceLang}
+                                    onChange={(e) =>
+                                        setSourceLang(e.target.value.trim())
+                                    }
+                                    placeholder="english"
+                                    autoComplete="off"
+                                />
+                            </div>
+                            <div className="space-y-2">
+                                <Label htmlFor="audio-tgt">
+                                    Target language
+                                </Label>
+                                <Input
+                                    id="audio-tgt"
+                                    value={targetLang}
+                                    onChange={(e) =>
+                                        setTargetLang(e.target.value.trim())
+                                    }
+                                    placeholder="hausa"
+                                    autoComplete="off"
+                                />
+                            </div>
+                        </div>
+
+                        <div className="space-y-2">
+                            <Label htmlFor="audio">Audio file</Label>
+                            <Input
+                                id="audio"
+                                type="file"
+                                accept=".wav,.mp3,.ogg,.mp4,audio/*"
+                                onChange={(e) =>
+                                    setAudioFile(e.target.files?.[0] ?? null)
+                                }
+                            />
+                        </div>
+
+                        <Button
+                            type="button"
+                            onClick={runAudioTranslate}
+                            disabled={loading !== null || !audioFile}
+                        >
+                            {loading === 'audio' ? (
+                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                            ) : (
+                                <Mic className="mr-2 h-4 w-4" />
+                            )}
+                            Translate audio
+                        </Button>
                     </div>
                 </div>
 
@@ -343,7 +412,7 @@ export default function Translator() {
                         {textOut ? (
                             <div className="space-y-2">
                                 <Label>Output</Label>
-                                <pre className="max-h-64 overflow-auto whitespace-pre-wrap rounded-lg border border-border bg-muted/40 p-4 text-sm">
+                                <pre className="max-h-64 overflow-auto rounded-lg border border-border bg-muted/40 p-4 text-sm whitespace-pre-wrap">
                                     {textOut}
                                 </pre>
                             </div>

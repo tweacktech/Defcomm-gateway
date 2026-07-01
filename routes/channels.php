@@ -14,74 +14,128 @@
 use App\Models\MeetRoom;
 use Illuminate\Support\Facades\Broadcast;
 use Illuminate\Support\Str;
+use App\Models\AudioCall;
 
 // Broadcast::channel('meet.{uid}', function ($user, string $uid) {
-//     $room = MeetRoom::where('uid', $uid)->first();
-
-//     if (!$room) {
+//     $room = App\Models\MeetRoom::where('uid', $uid)->first();
+//     if (!$room || $room->isEnded())
 //         return false;
+
+//     // Use peer_id as the primary ID for Reverb presence channel
+//     // This ensures Reverb tracks users by peer_id, not user_id
+//     $peerId = request()->input('peer_id', '');
+//     if (empty($peerId)) {
+//         $peerId = (string) \Illuminate\Support\Str::uuid();
 //     }
 
-//     // Accept ended rooms too — participants still need to receive room-ended event
-//     // (don't block on isEnded here)
-
-//     // peer_id is sent by the React authorizer in the POST body
-//     $peerId = request()->input('peer_id') ?: (string) Str::uuid();
-
-//     // ── (a) Authenticated user ────────────────────────────────────────────────
 //     if ($user) {
 //         return [
-//             'id'           => $user->id,          // Reverb uses this for dedup
-//             'peer_id'      => $peerId,
+//             'id' => $peerId,                    // ← CRITICAL: Use peer_id as id
+//             'peer_id' => $peerId,              // ← Same value
 //             'display_name' => $user->name,
-//             'role'         => $room->owner_id === $user->id ? 'host' : 'participant',
+//             'role' => $room->owner_id === $user->id ? 'host' : 'participant',
+//             'user_id' => $user->id,            // ← Keep original user_id if needed
 //         ];
 //     }
 
-//     // ── (b) Guest — check session ─────────────────────────────────────────────
-//     // MeetController::guestJoin() stores ['name'=>..., 'admitted'=>true] in session.
-//     $guestData = request()->session()->get("meet_guest_{$room->id}");
+//     // Guest path
+//     $guestSession = request()->session()->get("meet_guest_{$room->id}");
+//     if (empty($guestSession['admitted']))
+//         return false;
 
-//     if ($guestData && ($guestData['admitted'] ?? false)) {
-//         // Use session ID suffix as a stable unique ID for this guest
-//         $guestId = 'g_' . Str::substr(session()->getId(), 0, 16);
-//         return [
-//             'id'           => $guestId,
-//             'peer_id'      => $peerId,
-//             'display_name' => $guestData['name'],
-//             'role'         => 'participant',
-//         ];
-//     }
-
-//     // Not admitted — deny channel authorization
-//     return false;
+//     return [
+//         'id' => $peerId,                       // ← CRITICAL: Use peer_id as id
+//         'peer_id' => $peerId,                  // ← Same value
+//         'display_name' => $guestSession['name'] ?? 'Guest',
+//         'role' => 'participant',
+//     ];
 // });
 
 
 
 
-Broadcast::channel('meet.{uid}', function ($user, string $uid) {
-    $room = App\Models\MeetRoom::where('uid', $uid)->first();
-    if (!$room || $room->isEnded()) return false;
 
+
+Broadcast::channel('meet.{uid}', function ($user, string $uid) {
+    $room = MeetRoom::where('uid', $uid)->first();
+
+    if (!$room || $room->isEnded()) {
+        return false;
+    }
+
+    // peer_id is passed by Echo as a query param during channel auth.
+    // It MUST be the presence member `id` so Reverb tracks members by
+    // peer_id — not user_id. This is what prevents a user who rejoins
+    // (same user_id, new peer_id) from appearing as the old peer.
+    $peerId = request()->input('peer_id', '');
+    if (empty($peerId)) {
+        $peerId = (string) Str::uuid();
+    }
+
+    // ── Authenticated user ────────────────────────────────────────────────────
     if ($user) {
         return [
-            'id'           => $user->id,
-            'peer_id'      => request()->input('peer_id', ''),
+            'id' => $peerId,      // Reverb presence key — MUST be peer_id
+            'peer_id' => $peerId,
             'display_name' => $user->name,
-            'role'         => $room->owner_id === $user->id ? 'host' : 'participant',
+            'role' => $room->owner_id === $user->id ? 'host' : 'participant',
+            'user_id' => $user->id,
         ];
     }
 
-    // Guest path — session was already validated by the route above.
+    // ── Unauthenticated guest ─────────────────────────────────────────────────
     $guestSession = request()->session()->get("meet_guest_{$room->id}");
-    if (empty($guestSession['admitted'])) return false;
+    if (empty($guestSession['admitted'])) {
+        return false;
+    }
 
-    $peerId = request()->input('peer_id', '');
     return [
-        'id'           => $peerId,
-        'peer_id'      => $peerId,
+        'id' => $peerId,
+        'peer_id' => $peerId,
         'display_name' => $guestSession['name'] ?? 'Guest',
-        'role'         => 'participant',
+        'role' => 'participant',
     ];
+}, ['middleware' => ['web']]);
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ADD to this file to define more channels for other features (e.g. audio calls).
+// ─────────────────────────────────────────────────────────────────────────────
+
+Broadcast::channel('call.{uid}', function ($user, string $uid) {
+    $call = AudioCall::where('uid', $uid)->first();
+    if (!$call)
+        return false;
+
+    $peerId = request()->input('peer_id') ?: (string) \Illuminate\Support\Str::uuid();
+
+    if ($user) {
+        $isParticipant = $call->initiator_id === $user->id
+            || $call->callee_id === $user->id
+            || $call->participants()->where('user_id', $user->id)->exists();
+
+        if (!$isParticipant)
+            return false;
+
+        return [
+            'id' => $peerId,
+            'peer_id' => $peerId,
+            'display_name' => $user->name,
+            'role' => $call->initiator_id === $user->id ? 'host' : 'participant',
+            'user_id' => $user->id,
+        ];
+    }
+
+    return false; // audio calls are auth-only for now
 });
+
+// Personal notification channel — used to ring a user when called
+Broadcast::channel('user.{id}', function ($user, $id) {
+    return (int) $user->id === (int) $id;
+});
+
+
+// Broadcast::channel('meet.{roomId}', function ($user = null, $roomId) {
+//     // Always return true for development
+//     return true;
+// });

@@ -35,4 +35,8 @@ return [
         ],
     ],
 
+// getting data from defcomm websocket
+    'user_api' => [
+    'url' => env('USER_API_URL','https://backend.defcomm.ng/api') ,
+],
 ];

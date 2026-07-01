@@ -17,10 +17,11 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Inertia\Inertia;
 use Inertia\Response;
-use Storage;
 
 class MeetController extends Controller
 {
@@ -40,12 +41,39 @@ class MeetController extends Controller
         $rooms = MeetRoom::where('owner_id', $userId)
             ->withCount('activeParticipants')
             ->orderBy('created_at', 'desc')
-            ->take(10)
-            ->get()
-            ->map(fn($r) => $this->roomResource($r));
+            ->paginate(perPage: 10, pageName: 'page')
+            ->through(fn($r) => $this->roomResource($r));
+
+        $roomCounts = [
+            'all' => MeetRoom::where('owner_id', $userId)->count(),
+            'active' => MeetRoom::where('owner_id', $userId)->where('status', 'active')->count(),
+            'scheduled' => MeetRoom::where('owner_id', $userId)->where('status', 'scheduled')->count(),
+            'ended' => MeetRoom::where('owner_id', $userId)->where('status', 'ended')->count(),
+        ];
+
+        $recordings = MeetRecording::query()
+            ->whereHas('room', fn($q) => $q->where('owner_id', $userId))
+            ->with(['room:id,uid,name'])
+            ->orderByDesc('started_at')
+            ->paginate(perPage: 10, pageName: 'recordings_page')
+            ->through(function (MeetRecording $r): array {
+                return [
+                    'id' => $r->id,
+                    'room_uid' => $r->room?->uid,
+                    'room_name' => $r->room?->name,
+                    'status' => $r->status,
+                    'size' => $r->size,
+                    'duration_seconds' => $r->duration_seconds,
+                    'started_at' => $r->started_at?->toIso8601String(),
+                    'ended_at' => $r->ended_at?->toIso8601String(),
+                    'download_url' => $r->isReady() ? $r->downloadUrl() : null,
+                ];
+            });
 
         return Inertia::render('meet/meet-index', [
             'rooms' => $rooms,
+            'room_counts' => $roomCounts,
+            'recordings' => $recordings,
         ]);
     }
 
@@ -120,12 +148,13 @@ class MeetController extends Controller
             'is_owner' => !$isGuest && $room->owner_id === $request->user()?->id,
             'is_guest' => $isGuest,
             'reverb_key' => config('broadcasting.connections.reverb.key'),
-            'reverb_host' => config('broadcasting.connections.reverb.options.host'),
-            'reverb_port' => config('broadcasting.connections.reverb.options.port'),
-            'stun_servers' => config('meet.stun_servers', [
-                ['urls' => 'stun:stun.l.google.com:19302'],
-                ['urls' => 'stun:stun1.l.google.com:19302'],
-            ]),
+            'reverb_host' => env('VITE_REVERB_HOST', env('REVERB_HOST')),
+            'reverb_port' => (int) env('VITE_REVERB_PORT', env('REVERB_PORT', 8080)),
+            'reverb_use_tls' => (bool) config(
+                'broadcasting.connections.reverb.options.useTLS',
+                env('REVERB_SCHEME', 'http') === 'https',
+            ),
+            'stun_servers' => config('meet.stun_servers'),
         ]);
     }
 
@@ -187,7 +216,7 @@ class MeetController extends Controller
 
             return response()->json(['status' => 'ended']);
         } catch (\Exception $e) {
-            \Log::error('Error in end: ' . $e->getMessage());
+            Log::error('Error in end: ' . $e->getMessage());
             return response()->json(['error' => 'Failed to end room'], 500);
         }
     }
@@ -256,6 +285,34 @@ class MeetController extends Controller
     // =========================================================================
 
     /**
+     * GET /meet/{uid}/participants
+     * Used by the client to bootstrap the current participant list without relying on
+     * Reverb/Pusher internal presence state (especially after waiting-room promotion).
+     */
+    public function participants(Request $request, string $uid): JsonResponse
+    {
+        $room = MeetRoom::where('uid', $uid)->firstOrFail();
+
+        $peerId = (string) $request->query('peer_id', '');
+
+        $participants = $room->activeParticipants()
+            ->orderBy('joined_at')
+            ->get()
+            ->map(fn(MeetParticipant $p) => $this->participantResource($p))
+            ->values();
+
+        if ($peerId !== '') {
+            $participants = $participants->filter(fn(array $p) => ($p['peer_id'] ?? null) !== $peerId)->values();
+        }
+
+        return response()->json([
+            'room_uid' => $room->uid,
+            'participants' => $participants,
+            'count' => $participants->count(),
+        ]);
+    }
+
+    /**
      * POST /meet/{uid}/join
      * Works for both authenticated users and guests (user_id nullable).
      */
@@ -294,22 +351,31 @@ class MeetController extends Controller
         //     return redirect()->back()->with('error', 'User already Joined');
         // }
 
+        // If the same authenticated user reconnects with a new peer_id, close
+        // stale active rows first to avoid duplicate participants in the room.
+        if ($userId) {
+            MeetParticipant::where('room_id', $room->id)
+                ->where('user_id', $userId)
+                ->whereNull('left_at')
+                ->where('peer_id', '!=', $validated['peer_id'])
+                ->get()
+                ->each(fn(MeetParticipant $p) => $p->leave());
+        }
+
         $participant = MeetParticipant::updateOrCreate(
             [
                 'room_id' => $room->id,
-                'user_id' => $userId,
-                'display_name' => $validated['display_name'],
                 'peer_id' => $validated['peer_id'],
             ],
             [
                 'user_id' => $userId,
                 'display_name' => $validated['display_name'],
-                'peer_id' => $validated['peer_id'],
                 'role' => $isOwner ? 'host' : 'participant',
                 'is_admitted' => $isOwner || !$room->waiting_room,
                 'video_on' => $validated['video_on'] ?? false,
                 'audio_on' => $validated['audio_on'] ?? false,
                 'joined_at' => now(),
+                'left_at' => null,
             ]
         );
 
@@ -369,13 +435,16 @@ class MeetController extends Controller
 
             return response()->json(['status' => 'left']);
         } catch (\Exception $e) {
-            \Log::error('Error in leave: ' . $e->getMessage());
+            Log::error('Error in leave: ' . $e->getMessage());
             return response()->json(['error' => 'Failed to leave room'], 500);
         }
     }
 
     /**
-     * POST /meet/{uid}/signal — relay WebRTC signal to a specific peer
+     * POST /meet/{uid}/signal — relay WebRTC signal to a SPECIFIC peer only
+     *
+     * FIXED: Changed to use PrivateChannel routing instead of broadcast to all.
+     * Removes ->toOthers() since the SignalSent event now targets only the recipient.
      */
     public function signal(Request $request, string $uid): JsonResponse
     {
@@ -388,13 +457,15 @@ class MeetController extends Controller
             'from_peer_id' => ['required', 'string'],
         ]);
 
+        // Broadcast ONLY to the target peer via private channel
+        // No ->toOthers() needed — the event's PrivateChannel handles targeting
         broadcast(new SignalSent(
             roomUid: $room->uid,
             from: $validated['from_peer_id'],
             to: $validated['to'],
             type: $validated['type'],
             payload: $validated['payload'],
-        ))->toOthers();
+        ));
 
         return response()->json(['status' => 'sent']);
     }
@@ -425,7 +496,7 @@ class MeetController extends Controller
 
             return response()->json(['status' => 'admitted']);
         } catch (\Exception $e) {
-            \Log::error('Error in admit: ' . $e->getMessage());
+            Log::error('Error in admit: ' . $e->getMessage());
             return response()->json(['error' => 'Failed to admit participant'], 500);
         }
     }
@@ -569,7 +640,7 @@ class MeetController extends Controller
             return response()->json(['status' => 'ok', 'size' => $size]);
 
         } catch (\Exception $e) {
-            \Log::error('Error in recordingChunk: ' . $e->getMessage());
+            Log::error('Error in recordingChunk: ' . $e->getMessage());
             return response()->json(['error' => 'Failed to process chunk'], 500);
         }
     }
@@ -650,7 +721,10 @@ class MeetController extends Controller
 
         abort_unless($recording->isReady() && $recording->path, 404);
 
-        return Storage::disk($recording->disk)->download(
+        /** @var \Illuminate\Filesystem\FilesystemAdapter $disk */
+        $disk = Storage::disk($recording->disk);
+
+        return $disk->download(
             $recording->path,
             "meeting-{$room->uid}-recording-{$recording->id}.webm"
         );

@@ -146,6 +146,8 @@ class MeetRoom extends Model
             ? now()->diffInSeconds($this->started_at)
             : 0;
 
+            \Log::error('',['MeetRoom doration'=>$duration]);
+
         $this->update([
             'status'           => 'ended',
             'ended_at'         => now(),

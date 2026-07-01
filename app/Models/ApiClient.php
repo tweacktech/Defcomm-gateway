@@ -15,6 +15,7 @@ class ApiClient extends Model
      */
     protected $fillable = [
         'user_id',
+        'company_id',
         'name',
         'client_id',
         'client_secret',
