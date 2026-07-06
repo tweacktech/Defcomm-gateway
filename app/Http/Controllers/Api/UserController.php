@@ -226,7 +226,7 @@ class UserController extends Controller
         $file_name = $file_time . $file->hashName() . '.enc';
 
         $originalPath = $file->storeAs('secure/uploads', $file_time . $file->getClientOriginalName());
-        $encryptHelperedPath = $file->storeAs('secure/encryptHelpered',  $file_name);
+        $encryptHelperedPath = $file->storeAs('secure/encryptHelpered', $file_name);
 
         $encryptor = new FileEncryptorService();
         $encryptor->processAndencrypt(
@@ -532,6 +532,14 @@ class UserController extends Controller
             "commentApp" => $user->commentApp,
             "encryptorkey" => $user->encryptorkey,
             "plan_id" => $user->plan_id,
+            "role_label" => $user->roleLabel(),
+            "permissions" => $user->permissions(),
+            "subscription" => [
+                "plan_name" => $user->plan?->name,
+                "plan_status" => $user->plan?->status,
+                "subscription_active" => $user->subscription_active,
+                "subscription_status" => $user->subscriptionStatus(),
+            ],
         ];
         return response()->json(
             [
@@ -550,117 +558,117 @@ class UserController extends Controller
     // and status codes in case of validation failures or other exceptions.
     public function profileUpload(Request $request)
     {
-        try{
+        try {
 
-        $validate = validator($request->all(), [
-            'avatar' => 'nullable|image|mimes:jpeg,png,jpg,gif,pdf|max:2048',
-            'encryptorkey' => 'nullable|string',
-            'name' => 'nullable|string|max:255',
-            'recover_mail' => 'nullable|email|max:255',
-            'phone' => 'nullable|string|max:20',
-            'address' => 'nullable|string|max:500',
-            'enable_2fa' => 'nullable|boolean',
-            'device_token' => 'nullable|string|max:255',
-            'device_type' => 'nullable|string|max:50',
-            'pin' => 'nullable|string|max:10',
-            'onboarding_stage' => 'nullable|string|max:50',
-            'username' => 'nullable|string|max:255',
-            // 'username' => 'nullable|string|max:255|unique:users,username,' . auth()->user()->id,
-        ]);
-        if ($validate->fails()) {
-            return response()->json(
-                [
-                    'status' => '400',
-                    'message' => 'Validation error',
-                    'errors' => $validate->errors(),
-                    'data' => null
-                ],
-                400
-            );
-        }
-
-        $user = User::find(auth()->user()->id);
-
-        if ($request->avatar) {
-            $file = $request->file('avatar');
-            $file_name = time() . "avatar." . $file->getClientOriginalExtension();
-            $file->move(public_path('avatar'), $file_name);
-
-            if ($user->avatar) {
-                try {
-                    unlink(public_path($user->avatar));
-                } catch (\Exception $e) {
-                    // Optionally log the error
-                }
+            $validate = validator($request->all(), [
+                'avatar' => 'nullable|image|mimes:jpeg,png,jpg,gif,pdf|max:2048',
+                'encryptorkey' => 'nullable|string',
+                'name' => 'nullable|string|max:255',
+                'recover_mail' => 'nullable|email|max:255',
+                'phone' => 'nullable|string|max:20',
+                'address' => 'nullable|string|max:500',
+                'enable_2fa' => 'nullable|boolean',
+                'device_token' => 'nullable|string|max:255',
+                'device_type' => 'nullable|string|max:50',
+                'pin' => 'nullable|string|max:10',
+                'onboarding_stage' => 'nullable|string|max:50',
+                'username' => 'nullable|string|max:255',
+                // 'username' => 'nullable|string|max:255|unique:users,username,' . auth()->user()->id,
+            ]);
+            if ($validate->fails()) {
+                return response()->json(
+                    [
+                        'status' => '400',
+                        'message' => 'Validation error',
+                        'errors' => $validate->errors(),
+                        'data' => null
+                    ],
+                    400
+                );
             }
 
-            $user->update([
-                'avatar' => 'avatar/' . $file_name,
-            ]);
-        }
+            $user = User::find(auth()->user()->id);
 
-        if ($request->encryptorkey) {
-            $user->update(['encryptorkey' => encryptHelper($request->encryptorkey)]);
-        }
+            if ($request->avatar) {
+                $file = $request->file('avatar');
+                $file_name = time() . "avatar." . $file->getClientOriginalExtension();
+                $file->move(public_path('avatar'), $file_name);
 
-        if ($request->name) {
-            $user->update(['name' => $request->name]);
-        }
+                if ($user->avatar) {
+                    try {
+                        unlink(public_path($user->avatar));
+                    } catch (\Exception $e) {
+                        // Optionally log the error
+                    }
+                }
 
-        if ($request->recover_mail) {
-            $user->update(['recover_mail' => $request->recover_mail]);
-        }
+                $user->update([
+                    'avatar' => 'avatar/' . $file_name,
+                ]);
+            }
 
-        if ($request->phone) {
-            $user->update(['phone' => $request->phone]);
-        }
+            if ($request->encryptorkey) {
+                $user->update(['encryptorkey' => encryptHelper($request->encryptorkey)]);
+            }
 
-        if ($request->address) {
-            $user->update(['address' => $request->address]);
-        }
+            if ($request->name) {
+                $user->update(['name' => $request->name]);
+            }
 
-        if ($request->enable_2fa) {
-            $user->update(['enable_2fa' => $request->enable_2fa]);
-        }
+            if ($request->recover_mail) {
+                $user->update(['recover_mail' => $request->recover_mail]);
+            }
 
-        if ($request->device_token) {
-            $user->update(['device_token' => $request->device_token]);
-        }
+            if ($request->phone) {
+                $user->update(['phone' => $request->phone]);
+            }
 
-        if ($request->device_type) {
-            $user->update(['device_type' => $request->device_type]);
-        }
+            if ($request->address) {
+                $user->update(['address' => $request->address]);
+            }
 
-        if ($request->pin) {
-            $user->update(['pin' => encryptHelper($request->pin)]);
-        }
+            if ($request->enable_2fa) {
+                $user->update(['enable_2fa' => $request->enable_2fa]);
+            }
 
-        if ($request->onboarding_stage) {
-            $user->update(['onboarding_stage' => $request->onboarding_stage]);
-        }
+            if ($request->device_token) {
+                $user->update(['device_token' => $request->device_token]);
+            }
 
-        if ($request->username) {
-            $user->update(['username' => $request->username]);
-        }
+            if ($request->device_type) {
+                $user->update(['device_type' => $request->device_type]);
+            }
 
-        return response()->json(
-            [
-                'status' => '200',
-                'message' => 'Profile updated successfully',
-                'data' => null
-            ],
-            201
-        );
-    }catch(\Exception $e){
-        return response()->json(
-            [
-                'status' => '500',
-                'message' => 'An error occurred while updating the profile',
-                'error' => $e->getMessage(),
-                'data' => null
-            ],
-            500
-        );
+            if ($request->pin) {
+                $user->update(['pin' => encryptHelper($request->pin)]);
+            }
+
+            if ($request->onboarding_stage) {
+                $user->update(['onboarding_stage' => $request->onboarding_stage]);
+            }
+
+            if ($request->username) {
+                $user->update(['username' => $request->username]);
+            }
+
+            return response()->json(
+                [
+                    'status' => '200',
+                    'message' => 'Profile updated successfully',
+                    'data' => null
+                ],
+                201
+            );
+        } catch (\Exception $e) {
+            return response()->json(
+                [
+                    'status' => '500',
+                    'message' => 'An error occurred while updating the profile',
+                    'error' => $e->getMessage(),
+                    'data' => null
+                ],
+                500
+            );
         }
     }
 
@@ -1709,68 +1717,68 @@ class UserController extends Controller
 
 
     public function groupMember($id)
-{
-    try {
-        $idUser = decryptHelper($id);
-        $authUserId = auth()->user()->id;
+    {
+        try {
+            $idUser = decryptHelper($id);
+            $authUserId = auth()->user()->id;
 
-        // ── Verify auth user belongs to this group ──────────────────────────
-        $isMember = CompanyGroupUser::where('group_id', $idUser)
-            ->where('user_id', $authUserId)
-            ->where('status', 'joined')
-            ->exists();
+            // ── Verify auth user belongs to this group ──────────────────────────
+            $isMember = CompanyGroupUser::where('group_id', $idUser)
+                ->where('user_id', $authUserId)
+                ->where('status', 'joined')
+                ->exists();
 
-        if (!$isMember) {
+            if (!$isMember) {
+                return response()->json([
+                    'status' => '403',
+                    'message' => 'You are not a member of this group',
+                    'data' => null,
+                ], 403);
+            }
+
+            // ── Fetch all members (excluding self) ──────────────────────────────
+            $record = CompanyGroupUser::where('group_id', $idUser)
+                ->where('user_id', '!=', $authUserId)
+                ->where('status', 'joined')
+                ->get();
+
+            $group = CompanyGroup::find($idUser);
+
+            $data = [];
+            foreach ($record as $key => $dt) {
+                $data[$key] = [
+                    'id' => encryptHelper($dt->id),
+                    'join_date' => $dt->join_date,
+                    'hide_member_detail' => $dt->hide,
+                    'member_id_encrpt' => encryptHelper($dt->user_id),
+                    'member_id' => $dt->user_id,
+                    'member_name' => $dt->user->name,
+                ];
+            }
+
             return response()->json([
-                'status'  => '403',
-                'message' => 'You are not a member of this group',
-                'data'    => null,
-            ], 403);
+                'status' => '200',
+                'message' => 'Record listed',
+                'group_meta' => [
+                    'id' => encryptHelper($group->id),
+                    'company_id' => encryptHelper($group->company_id),
+                    'name' => $group->name,
+                    'decription' => $group->decription,
+                    'created_at' => $group->created_at,
+                    'updated_at' => $group->updated_at,
+                    'avatar' => $group->avatar,
+                ],
+                'data' => $data,
+            ], 200);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'status' => '400',
+                'message' => 'Invalid group ID',
+                'data' => null,
+            ], 400);
         }
-
-        // ── Fetch all members (excluding self) ──────────────────────────────
-        $record = CompanyGroupUser::where('group_id', $idUser)
-            ->where('user_id', '!=', $authUserId)
-            ->where('status', 'joined')
-            ->get();
-
-        $group = CompanyGroup::find($idUser);
-
-        $data = [];
-        foreach ($record as $key => $dt) {
-            $data[$key] = [
-                'id'                 => encryptHelper($dt->id),
-                'join_date'          => $dt->join_date,
-                'hide_member_detail' => $dt->hide,
-                'member_id_encrpt'   => encryptHelper($dt->user_id),
-                'member_id'          => $dt->user_id,
-                'member_name'        => $dt->user->name,
-            ];
-        }
-
-        return response()->json([
-            'status'     => '200',
-            'message'    => 'Record listed',
-            'group_meta' => [
-                'id'         => encryptHelper($group->id),
-                'company_id' => encryptHelper($group->company_id),
-                'name'       => $group->name,
-                'decription' => $group->decription,
-                'created_at' => $group->created_at,
-                'updated_at' => $group->updated_at,
-                'avatar'     => $group->avatar,
-            ],
-            'data' => $data,
-        ], 200);
-
-    } catch (\Exception $e) {
-        return response()->json([
-            'status'  => '400',
-            'message' => 'Invalid group ID',
-            'data'    => null,
-        ], 400);
     }
-}
 
     public function notification()
     {
@@ -2285,30 +2293,30 @@ class UserController extends Controller
             $certData = [];
             foreach ($certs as $cert) {
                 $certData[] = [
-                    'id'         => encrypt($cert->id),
-                    'name'       => $cert->certificate->name,
-                    'is_collected'     => $cert->is_collected,
-                    'is_sent'     => $cert->is_sent,
+                    'id' => encrypt($cert->id),
+                    'name' => $cert->certificate->name,
+                    'is_collected' => $cert->is_collected,
+                    'is_sent' => $cert->is_sent,
                     'created_at' => $cert->created_at,
                 ];
             }
 
             $data[] = [
                 'registration_id' => encrypt($dt->id),
-                'event_id'        => encrypt($dt->form->id),
-                'event_name'      => $dt->form->name,
-                'certificates'    => $certData,
+                'event_id' => encrypt($dt->form->id),
+                'event_name' => $dt->form->name,
+                'certificates' => $certData,
             ];
         }
 
         return response()->json([
-            'status'  => '200',
+            'status' => '200',
             'message' => 'Record listed',
-            'data'    => $data
+            'data' => $data
         ], 201);
     }
 
-    public function eventSouvenir($eventId = "") 
+    public function eventSouvenir($eventId = "")
     {
         // fetch registrations for the authenticated user
         $query = EventRegistration::where('user_id', auth()->user()->id);
@@ -2328,26 +2336,26 @@ class UserController extends Controller
             $souvData = [];
             foreach ($souvenir as $souv) {
                 $souvData[] = [
-                    'id'         => encrypt($souv->id),
-                    'name'       => $souv->souvenir->name,
-                    'image'     => $souv->souvenir->image ? url('/') . '/souvenirs/' . $souv->souvenir->image : null,
-                    'is_collected'     => $souv->is_collected,
+                    'id' => encrypt($souv->id),
+                    'name' => $souv->souvenir->name,
+                    'image' => $souv->souvenir->image ? url('/') . '/souvenirs/' . $souv->souvenir->image : null,
+                    'is_collected' => $souv->is_collected,
                     'created_at' => $souv->created_at,
                 ];
             }
 
             $data[] = [
                 'registration_id' => encrypt($dt->id),
-                'event_id'        => encrypt($dt->form->id),
-                'event_name'      => $dt->form->name,
-                'souvenir'    => $souvData,
+                'event_id' => encrypt($dt->form->id),
+                'event_name' => $dt->form->name,
+                'souvenir' => $souvData,
             ];
         }
 
         return response()->json([
-            'status'  => '200',
+            'status' => '200',
             'message' => 'Record listed',
-            'data'    => $data
+            'data' => $data
         ], 201);
     }
 

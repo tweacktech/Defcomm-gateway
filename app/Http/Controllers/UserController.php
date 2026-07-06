@@ -119,6 +119,40 @@ class UserController extends Controller
     }
 
     /**
+     * PATCH /admin/users/{user}/subscription
+     * Enable or disable subscription access for a user.
+     */
+    public function setSubscription(Request $request, User $user): RedirectResponse
+    {
+        $this->requireAdmin($request);
+
+        if ((int) $user->id === (int) $request->user()->id) {
+            return redirect()->back()->withErrors([
+                'subscription' => 'You cannot change your own subscription state.',
+            ]);
+        }
+
+        $validated = $request->validate([
+            'subscription_active' => ['required', 'boolean'],
+            'plan_id' => ['nullable', 'integer', 'exists:user_plans,id'],
+        ]);
+
+        $user->update([
+            'subscription_active' => $validated['subscription_active'],
+            'plan_id' => $validated['plan_id'],
+        ]);
+
+        $this->log(
+            'subscription_changed',
+            "User {$user->email} subscription_active changed to {$validated['subscription_active']} and plan_id set to {$validated['plan_id']}",
+            'auth',
+            $user
+        );
+
+        return redirect()->back()->with('success', "{$user->name}'s subscription settings were updated.");
+    }
+
+    /**
      * PATCH /admin/users/{user}/status
      * Set status: active | inactive | suspended.
      */
