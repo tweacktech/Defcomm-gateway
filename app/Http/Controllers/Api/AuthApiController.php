@@ -53,7 +53,16 @@ class AuthApiController extends Controller
                 'name' => $user->name,
                 'email' => $user->email,
                 'role' => $user->role,
+                'role_label' => $user->roleLabel(),
                 'organization_id' => $user->organization_id,
+                'permissions' => $user->permissions(),
+                'subscription' => [
+                    'plan_id' => $user->plan_id,
+                    'plan_name' => $user->plan?->name,
+                    'plan_status' => $user->plan?->status,
+                    'subscription_active' => $user->subscription_active,
+                    'subscription_status' => $user->subscriptionStatus(),
+                ],
             ],
             'organization' => [
                 'id' => $organization->id,
@@ -91,6 +100,14 @@ class AuthApiController extends Controller
                 'role' => $user->role,
                 'role_label' => $user->roleLabel(),
                 'organization_id' => $user->organization_id,
+                'permissions' => $user->permissions(),
+                'subscription' => [
+                    'plan_id' => $user->plan_id,
+                    'plan_name' => $user->plan?->name,
+                    'plan_status' => $user->plan?->status,
+                    'subscription_active' => $user->subscription_active,
+                    'subscription_status' => $user->subscriptionStatus(),
+                ],
             ],
             'organization' => $user->organization ? [
                 'id' => $user->organization->id,
