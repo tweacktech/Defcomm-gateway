@@ -676,7 +676,12 @@ function ContextMenu({ state, allItems, view, onClose, onRename, onMove, onShare
                 <MenuItem icon={<Download className="h-3.5 w-3.5 text-primary" />} label="Download"
                     onClick={() => action(() => window.open(`/drive/items/${item.id}/download`, '_blank'))} />
             )}
+            {item.type === 'file' && (
+                <MenuItem icon={<Eye className="h-3.5 w-3.5 text-primary" />} label="View Details"
+                    onClick={() => action(() => router.get(`/drive/items/${item.id}/shares`))} />
+            )}
             <MenuItem icon={<Pencil className="h-3.5 w-3.5" />} label="Rename"
+
                 onClick={() => action(() => onRename(item))} />
             <MenuItem icon={<Move className="h-3.5 w-3.5" />} label="Move to…"
                 onClick={() => action(() => onMove(item))} />
