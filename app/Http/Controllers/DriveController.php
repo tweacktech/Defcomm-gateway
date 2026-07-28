@@ -45,8 +45,17 @@ class DriveController extends Controller
             ->orderByRaw("CASE WHEN type = 'folder' THEN 0 ELSE 1 END")
             ->orderBy('name')
             ->get([
-                'id', 'parent_id', 'type', 'name', 'mime_type', 'size',
-                'extension', 'is_starred', 'visibility', 'created_at', 'updated_at',
+                'id',
+                'parent_id',
+                'type',
+                'name',
+                'mime_type',
+                'size',
+                'extension',
+                'is_starred',
+                'visibility',
+                'created_at',
+                'updated_at',
             ]);
 
         return Inertia::render('drive/drive', [
@@ -71,8 +80,17 @@ class DriveController extends Controller
             ->orderByRaw("CASE WHEN type = 'folder' THEN 0 ELSE 1 END")
             ->orderBy('name')
             ->get([
-                'id', 'parent_id', 'type', 'name', 'mime_type', 'size',
-                'extension', 'is_starred', 'visibility', 'created_at', 'updated_at',
+                'id',
+                'parent_id',
+                'type',
+                'name',
+                'mime_type',
+                'size',
+                'extension',
+                'is_starred',
+                'visibility',
+                'created_at',
+                'updated_at',
             ]);
 
         $this->log(
@@ -102,8 +120,16 @@ class DriveController extends Controller
             ->forUser($userId)
             ->orderBy('deleted_at', 'desc')
             ->get([
-                'id', 'parent_id', 'type', 'name', 'mime_type', 'size',
-                'extension', 'is_starred', 'visibility', 'deleted_at',
+                'id',
+                'parent_id',
+                'type',
+                'name',
+                'mime_type',
+                'size',
+                'extension',
+                'is_starred',
+                'visibility',
+                'deleted_at',
             ]);
 
         $this->log(
@@ -163,7 +189,7 @@ class DriveController extends Controller
 
             return redirect()->back()->with('success', 'Folder created.');
         } catch (\Exception $e) {
-            return redirect()->back()->with('error', ''.$e->getMessage());
+            return redirect()->back()->with('error', '' . $e->getMessage());
         }
     }
 
@@ -207,7 +233,7 @@ class DriveController extends Controller
             // ── Quota check ───────────────────────────────────────────────────
             $limit = $this->storageLimit($request->user());
             $used = $this->storageUsage($userId);
-            $incoming = collect($request->file('files'))->sum(fn ($f) => $f->getSize());
+            $incoming = collect($request->file('files'))->sum(fn($f) => $f->getSize());
 
             if (($used + $incoming) > $limit) {
                 $limitHuman = $this->formatBytes($limit);
@@ -498,7 +524,7 @@ class DriveController extends Controller
             ->with('recipient:id,name,email')
             ->orderBy('created_at', 'desc')
             ->get()
-            ->map(fn ($s) => $this->shareResource($s));
+            ->map(fn($s) => $this->shareResource($s));
 
         return Inertia::render('drive/shares', [
             'item' => [
@@ -523,6 +549,53 @@ class DriveController extends Controller
         $share->update(['is_active' => false]);
 
         return redirect()->back()->with('success', 'Share revoked.');
+    }
+
+    // =========================================================================
+    // SHARE ANALYTICS
+    // =========================================================================
+
+    /**
+     * Get access statistics for a shared link.
+     *
+     * GET /drive/shares/{share}/analytics
+     */
+    public function shareAnalytics(Request $request, DriveShare $share): Response
+    {
+        $this->authorizeShareOwner($request, $share);
+
+        $stats = $share->getStatistics();
+        $logs = $share->getAccessLogs(20);
+
+        return Inertia::render('drive/share-analytics', [
+            'share' => $share,
+            'item' => $share->driveItem,
+            'statistics' => $stats,
+            'access_logs' => $logs,
+        ]);
+    }
+
+    /**
+     * Get access logs for a shared link (API endpoint).
+     *
+     * GET /api/drive/shares/{share}/logs
+     */
+    public function getShareLogs(Request $request, DriveShare $share)
+    {
+        $this->authorizeShareOwner($request, $share);
+
+        $perPage = $request->query('per_page', 50);
+        $logs = $share->getAccessLogs($perPage);
+
+        return response()->json([
+            'data' => $logs->items(),
+            'pagination' => [
+                'total' => $logs->total(),
+                'per_page' => $logs->perPage(),
+                'current_page' => $logs->currentPage(),
+                'last_page' => $logs->lastPage(),
+            ],
+        ]);
     }
 
     // =========================================================================
@@ -551,7 +624,7 @@ class DriveController extends Controller
 
         $unlockedKey = "share_unlocked_{$share->id}";
         $needsPassword = $share->hasPassword()
-                      && !$request->session()->get($unlockedKey);
+            && !$request->session()->get($unlockedKey);
 
         return Inertia::render('drive/drive-shares-public', [
             'share' => [
@@ -622,8 +695,10 @@ class DriveController extends Controller
             abort(410, 'This share link has expired or been revoked.');
         }
 
-        if ($share->hasPassword()
-            && !$request->session()->get("share_unlocked_{$share->id}")) {
+        if (
+            $share->hasPassword()
+            && !$request->session()->get("share_unlocked_{$share->id}")
+        ) {
             return redirect()->route('drive.share.access', $token);
         }
 
@@ -741,7 +816,7 @@ class DriveController extends Controller
             ])
             ->orderBy('created_at', 'desc')
             ->get()
-            ->map(fn ($s) => $this->transferResource($s));
+            ->map(fn($s) => $this->transferResource($s));
 
         // Transfers sent TO this user (recipient perspective)
         $incoming = DriveShare::where('type', 'transfer')
@@ -752,7 +827,7 @@ class DriveController extends Controller
             ])
             ->orderBy('created_at', 'desc')
             ->get()
-            ->map(fn ($s) => $this->transferResource($s));
+            ->map(fn($s) => $this->transferResource($s));
 
         return Inertia::render('drive/drive-transfers', [
             'incoming' => $incoming,
@@ -993,6 +1068,6 @@ class DriveController extends Controller
         $units = ['B', 'KB', 'MB', 'GB', 'TB'];
         $i = min((int) floor(log($bytes, 1024)), count($units) - 1);
 
-        return round($bytes / (1024 ** $i), 1).' '.$units[$i];
+        return round($bytes / (1024 ** $i), 1) . ' ' . $units[$i];
     }
 }

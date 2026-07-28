@@ -12,7 +12,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Storage;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
-class FileShareController extends Controller
+class FileSharesController extends Controller
 {
     protected FileEncryptionService $encryptionService;
 
@@ -61,7 +61,7 @@ class FileShareController extends Controller
             ->paginate($perPage);
 
         return response()->json([
-            'data' => $files->map(fn ($file) => $this->fileResource($file, $user)),
+            'data' => $files->map(fn($file) => $this->fileResource($file, $user)),
             'pagination' => [
                 'total' => $files->total(),
                 'per_page' => $files->perPage(),
@@ -439,7 +439,7 @@ class FileShareController extends Controller
             ->get();
 
         return response()->json([
-            'data' => $shares->map(fn ($share) => $this->shareResource($share)),
+            'data' => $shares->map(fn($share) => $this->shareResource($share)),
         ]);
     }
 
@@ -522,7 +522,7 @@ class FileShareController extends Controller
             ->paginate($perPage);
 
         return response()->json([
-            'data' => $files->map(fn ($file) => $this->fileResource($file, $user)),
+            'data' => $files->map(fn($file) => $this->fileResource($file, $user)),
             'pagination' => [
                 'total' => $files->total(),
                 'per_page' => $files->perPage(),
@@ -552,7 +552,7 @@ class FileShareController extends Controller
             ->paginate($perPage);
 
         return response()->json([
-            'data' => $files->map(fn ($file) => $this->fileResource($file, $user)),
+            'data' => $files->map(fn($file) => $this->fileResource($file, $user)),
             'pagination' => [
                 'total' => $files->total(),
                 'per_page' => $files->perPage(),
