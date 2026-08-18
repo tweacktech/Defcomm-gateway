@@ -676,8 +676,13 @@ function ContextMenu({ state, allItems, view, onClose, onRename, onMove, onShare
                 <MenuItem icon={<Download className="h-3.5 w-3.5 text-primary" />} label="Download"
                     onClick={() => action(() => window.open(`/drive/items/${item.id}/download`, '_blank'))} />
             )}
+            {item.type === 'file' && (
+                <MenuItem icon={<Eye className="h-3.5 w-3.5 text-primary" />} label="View Details"
+                    onClick={() => action(() => router.get(`/drive/items/${item.id}/shares`))} />
+            )}
             <MenuItem icon={<Pencil className="h-3.5 w-3.5" />} label="Rename"
                 onClick={() => action(() => onRename(item))} />
+
             <MenuItem icon={<Move className="h-3.5 w-3.5" />} label="Move to…"
                 onClick={() => action(() => onMove(item))} />
             <MenuItem
@@ -737,11 +742,19 @@ function GridItem({ item, view, onContextMenu, onDragStart, onDrop, onShare }: {
             {/* Hover quick actions */}
             {view !== 'trash' && (
                 <div className="absolute top-1.5 right-1.5 hidden items-center gap-0.5 group-hover:flex">
+                    {item.type === 'file' && (
+                        <button className="rounded p-1 hover:bg-accent/80"
+                            onClick={e => { e.stopPropagation(); router.get(`/drive/items/${item.id}/shares`); }}
+                            title="View details">
+                            <Eye className="h-3 w-3 text-muted-foreground" />
+                        </button>
+                    )}
                     <button className="rounded p-1 hover:bg-accent/80"
                         onClick={e => { e.stopPropagation(); onShare(item); }}
                         title="Share & visibility">
                         <Share2 className="h-3 w-3 text-muted-foreground" />
                     </button>
+
                     <button className="rounded p-1 hover:bg-accent/80"
                         onClick={e => { e.stopPropagation();
                             router.patch(`/drive/items/${item.id}/star`, {}, { preserveScroll: true }); }}>
@@ -799,12 +812,19 @@ function ListRow({ item, view, onContextMenu, onDragStart, onDrop, onShare }: {
 
             {/* Row actions (visible on hover) */}
             <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition group-hover:opacity-100">
+                {view !== 'trash' && item.type === 'file' && (
+                    <button onClick={e => { e.stopPropagation(); router.get(`/drive/items/${item.id}/shares`); }}
+                        className="rounded p-1.5 hover:bg-accent/80" title="View details">
+                        <Eye className="h-3.5 w-3.5 text-muted-foreground" />
+                    </button>
+                )}
                 {view !== 'trash' && (
                     <button onClick={e => { e.stopPropagation(); onShare(item); }}
                         className="rounded p-1.5 hover:bg-accent/80" title="Share & visibility">
                         <Share2 className="h-3.5 w-3.5 text-muted-foreground" />
                     </button>
                 )}
+
                 <button
                     onClick={e => { e.stopPropagation();
                         view === 'trash'

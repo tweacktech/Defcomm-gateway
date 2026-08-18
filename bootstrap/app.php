@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Middleware\ApiTokenAuth;
 use App\Http\Middleware\ClientCredentialsMiddleware;
 use App\Http\Middleware\EnsureCompanyAdmin;
 use App\Http\Middleware\EnsureSuperAdmin;
@@ -28,7 +29,12 @@ return Application::configure(basePath: dirname(__DIR__))
             AddLinkHeadersForPreloadedAssets::class,
         ]);
 
+        $middleware->validateCsrfTokens(except: [
+            'auth/token',
+        ]);
+
         $middleware->alias([
+            'api.token' => ApiTokenAuth::class,
             'service.auth' => ServiceAuthMiddleware::class,
             'client.credentials' => ClientCredentialsMiddleware::class,
             'super.admin' => EnsureSuperAdmin::class,

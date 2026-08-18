@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Str;
 
@@ -41,6 +42,11 @@ class DriveShare extends Model
     public function recipient(): BelongsTo
     {
         return $this->belongsTo(User::class, 'recipient_id');
+    }
+
+    public function accessLogs(): HasMany
+    {
+        return $this->hasMany(AccessLog::class);
     }
 
     // ── Factories ─────────────────────────────────────────────────────────────
@@ -122,10 +128,14 @@ class DriveShare extends Model
 
     /**
      * Increment use count and persist.
+     * Also record detailed access information.
      */
     public function recordAccess(): void
     {
-        $this->increment('use_count');
+        \DB::transaction(function () {
+            $this->increment('use_count');
+            AccessLog::recordAccess($this);
+        });
     }
 
     /**
@@ -157,5 +167,40 @@ class DriveShare extends Model
             'transfer_status' => 'declined',
             'is_active' => false,
         ]);
+    }
+
+    // ── Access Statistics ─────────────────────────────────────────────────────
+
+    /**
+     * Get summary statistics for this share link.
+     */
+    public function getStatistics(): array
+    {
+        $logs = $this->accessLogs()->get();
+
+        return [
+            'total_accesses' => $this->use_count,
+            'unique_ips' => $logs->pluck('ip_address')->unique()->count(),
+            'unique_browsers' => $logs->pluck('browser')->unique()->count(),
+            'browsers' => $logs->groupBy('browser')->map->count(),
+            'devices' => $logs->groupBy('device')->map->count(),
+            'operating_systems' => $logs->groupBy('os')->map->count(),
+            'first_accessed' => $logs->first()?->created_at,
+            'last_accessed' => $logs->last()?->created_at,
+            'top_countries' => $logs->groupBy('country_code')->sortByDesc(function ($group) {
+                return $group->count();
+            })->take(5)->map->count(),
+            'latest_accesses' => $logs->sortByDesc('created_at')->take(10)->values(),
+        ];
+    }
+
+    /**
+     * Get all access logs for this share link with pagination.
+     */
+    public function getAccessLogs(int $perPage = 50)
+    {
+        return $this->accessLogs()
+                    ->orderByDesc('created_at')
+                    ->paginate($perPage);
     }
 }

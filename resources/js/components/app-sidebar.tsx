@@ -36,6 +36,7 @@ const servicesNavItem: NavItem = {
         { title: 'Access Translator', href: '/services/translator', icon: Mic },
         { title: 'Access Encryption', href: '/services/encryption', icon: ScissorsSquareIcon },
         { title: 'Access Meeting', href: '/meet', icon: Video },
+                { title: 'Secure DB', href: '/admin/secure-db', icon: Shield },
     ],
 };
 
