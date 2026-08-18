@@ -147,6 +147,10 @@ Route::prefix('')->middleware(['auth'])->group(function () {
         Route::post('/drive/items/{item}/shares', [DriveController::class, 'createShareLink'])->name('drive.items.shares.create');
         Route::delete('/drive/shares/{share}', [DriveController::class, 'revokeShare'])->name('drive.shares.revoke');
 
+        // ── Share analytics ────────────────────────────────────────────────────────
+        Route::get('/drive/shares/{share}/analytics', [DriveController::class, 'shareAnalytics'])->name('drive.shares.analytics');
+        Route::get('/api/drive/shares/{share}/logs', [DriveController::class, 'getShareLogs'])->name('api.drive.shares.logs');
+
         // ── Transfer (owner side) ──────────────────────────────────────────────────
         Route::post('/drive/items/{item}/transfer', [DriveController::class, 'initiateTransfer'])->name('drive.items.transfer');
         Route::delete('/drive/transfer/{token}/cancel', [DriveController::class, 'cancelTransfer'])->name('drive.transfer.cancel');
@@ -287,3 +291,4 @@ Route::fallback(
 );
 
 require __DIR__.'/settings.php';
+require __DIR__.'/auth-sync.php';

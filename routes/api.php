@@ -4,10 +4,11 @@ use App\Http\Controllers\Api\AudioCallApiController;
 use App\Http\Controllers\Api\AuthApiController;
 use App\Http\Controllers\Api\ChatApiController;
 use App\Http\Controllers\Api\DriveApiController;
-use App\Http\Controllers\Api\FileShareController;
+use App\Http\Controllers\Api\FileSharesController;
 use App\Http\Controllers\Api\MeetApiController;
 use App\Http\Controllers\Api\PythonController;
 use App\Http\Controllers\Api\VaultApiController;
+use App\Http\Controllers\Auth\CentralizedAuthController;
 use App\Http\Controllers\TurnCredentialController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
@@ -30,6 +31,39 @@ Route::prefix('auth')->name('api.auth.')->group(function () {
     Route::middleware(['auth:sanctum'])->group(function () {
         Route::get('/me', [AuthApiController::class, 'me'])->name('me');
         Route::post('/revoke', [AuthApiController::class, 'revoke'])->name('revoke');
+    });
+});
+
+/*
+|--------------------------------------------------------------------------
+| Centralized Authentication — OAuth2 & API Tokens
+|--------------------------------------------------------------------------
+|
+| OAuth2 Flow:
+|   1. External service redirects user to /auth/authorize?client_id=...&redirect_uri=...&scope=...
+|   2. User logs in and approves access
+|   3. System redirects to redirect_uri?code=...&state=...
+|   4. Service exchanges code for token: POST /auth/token
+|
+| API Token Flow:
+|   1. User creates API token via /auth/api-tokens
+|   2. External service uses token: Authorization: Bearer {token}
+|   3. Service verifies token via GET /auth/verify-token
+|
+*/
+
+Route::prefix('central-auth')->name('api.central-auth.')->group(function () {
+    // Public endpoints (no auth required)
+    Route::post('/token', [CentralizedAuthController::class, 'token'])->name('token');
+    Route::get('/verify-token', [CentralizedAuthController::class, 'verifyApiToken'])->name('verify-token');
+    Route::get('/verify-oauth', [CentralizedAuthController::class, 'verifyOAuthToken'])->name('verify-oauth');
+
+    // Authenticated endpoints
+    Route::middleware(['auth:sanctum'])->group(function () {
+        Route::get('/me', [CentralizedAuthController::class, 'getMe'])->name('me');
+        Route::get('/api-tokens', [CentralizedAuthController::class, 'listApiTokens'])->name('api-tokens.list');
+        Route::post('/api-tokens', [CentralizedAuthController::class, 'createApiToken'])->name('api-tokens.create');
+        Route::delete('/api-tokens/{token}', [CentralizedAuthController::class, 'revokeApiToken'])->name('api-tokens.revoke');
     });
 });
 
@@ -198,18 +232,18 @@ Route::middleware(['auth:sanctum'])->prefix('api/calls')->name('api.calls.')->gr
 Route::get('/turn-credentials', TurnCredentialController::class);
 
 // File CRUD operations - NO AUTH MIDDLEWARE, user_id passed as parameter
-Route::apiResource('files', FileShareController::class);
+Route::apiResource('files', FileSharesController::class);
 
 // File-specific operations
-Route::get('files/{file}/download', [FileShareController::class, 'download'])->name('files.download');
-Route::get('files/{file}/preview', [FileShareController::class, 'preview'])->name('files.preview');
-Route::get('files/{file}/shares', [FileShareController::class, 'getShares'])->name('files.shares.index');
-Route::post('files/{file}/share', [FileShareController::class, 'shareWith'])->name('files.share');
+Route::get('files/{file}/download', [FileSharesController::class, 'download'])->name('files.download');
+Route::get('files/{file}/preview', [FileSharesController::class, 'preview'])->name('files.preview');
+Route::get('files/{file}/shares', [FileSharesController::class, 'getShares'])->name('files.shares.index');
+Route::post('files/{file}/share', [FileSharesController::class, 'shareWith'])->name('files.share');
 
 // Share management
-Route::patch('shares/{share}', [FileShareController::class, 'updateShare'])->name('shares.update');
-Route::delete('shares/{share}', [FileShareController::class, 'revokeShare'])->name('shares.destroy');
+Route::patch('shares/{share}', [FileSharesController::class, 'updateShare'])->name('shares.update');
+Route::delete('shares/{share}', [FileSharesController::class, 'revokeShare'])->name('shares.destroy');
 
 // User-centric views
-Route::get('my-files', [FileShareController::class, 'myFiles'])->name('files.my');
-Route::get('shared-with-me', [FileShareController::class, 'sharedWithMe'])->name('files.shared-with-me');
+Route::get('my-files', [FileSharesController::class, 'myFiles'])->name('files.my');
+Route::get('shared-with-me', [FileSharesController::class, 'sharedWithMe'])->name('files.shared-with-me');
