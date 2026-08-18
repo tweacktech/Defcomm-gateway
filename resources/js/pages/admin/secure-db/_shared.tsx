@@ -1,7 +1,7 @@
 import type { LucideIcon } from 'lucide-react';
 import {
     LayoutDashboard, FolderKanban, Database, Shield, KeyRound,
-    MonitorSmartphone, ScrollText, Bell, BarChart3, Settings,
+    MonitorSmartphone, ScrollText, Bell, BarChart3, Settings, Puzzle,
 } from 'lucide-react';
 import type { BreadcrumbItem } from '@/types';
 
@@ -9,6 +9,7 @@ export const secureDbNavItems: { title: string; href: string; icon: LucideIcon }
     { title: 'Dashboard', href: '/admin/secure-db', icon: LayoutDashboard },
     { title: 'Projects', href: '/admin/secure-db/projects', icon: FolderKanban },
     { title: 'Connections', href: '/admin/secure-db/connections', icon: Database },
+    { title: 'Secure Widget', href: '/admin/secure-db/secure-widget', icon: Puzzle },
     { title: 'Policies', href: '/admin/secure-db/policies', icon: Shield },
     { title: 'Keys', href: '/admin/secure-db/keys', icon: KeyRound },
     { title: 'Devices', href: '/admin/secure-db/devices', icon: MonitorSmartphone },

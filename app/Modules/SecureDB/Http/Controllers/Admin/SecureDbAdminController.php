@@ -7,6 +7,7 @@ use App\Models\User;
 use App\Modules\SecureDB\Jobs\EncryptDatabaseJob;
 use App\Modules\SecureDB\Jobs\HealthCheckJob;
 use App\Modules\SecureDB\Jobs\RotateKeysJob;
+use App\Modules\SecureDB\Jobs\SyncConnectionSchemaJob;
 use App\Modules\SecureDB\Models\SecureDbAuditLog;
 use App\Modules\SecureDB\Models\SecureDbConnection;
 use App\Modules\SecureDB\Models\SecureDbDevice;
@@ -18,6 +19,7 @@ use App\Modules\SecureDB\Models\SecureDbSetting;
 use App\Modules\SecureDB\Models\SecureDbWebhook;
 use App\Modules\SecureDB\Services\AuditService;
 use App\Modules\SecureDB\Services\ConnectionService;
+use App\Modules\SecureDB\Services\DatabaseEncryptionService;
 use App\Modules\SecureDB\Services\KeyManagementService;
 use App\Modules\SecureDB\Services\MonitoringService;
 use App\Modules\SecureDB\Services\ReportService;
@@ -183,6 +185,14 @@ class SecureDbAdminController extends Controller
             'connections' => $query->paginate(15)->withQueryString(),
             'projects' => SecureDbProject::select('id', 'name', 'uuid')->orderBy('name')->get(),
             'filters' => $request->only(['project_id']),
+            'summary' => [
+                'total' => SecureDbConnection::count(),
+                'online' => SecureDbConnection::where('health_status', 'healthy')->count(),
+                'offline' => SecureDbConnection::whereIn('health_status', ['unhealthy', 'degraded'])->count(),
+                'tables' => SecureDbConnection::sum('table_count'),
+                'records' => SecureDbConnection::sum('record_count_estimate'),
+            ],
+            'algorithms' => DatabaseEncryptionService::supportedAlgorithms(),
         ]);
     }
 
@@ -195,42 +205,139 @@ class SecureDbAdminController extends Controller
             'database_type' => 'required|in:mysql,postgresql,sqlserver,mariadb,mongodb,redis',
             'host' => 'required|string|max:255',
             'port' => 'required|integer|min:1|max:65535',
-            'database_name' => 'required|string|max:255',
-            'username' => 'required|string|max:255',
-            'password' => 'required|string',
+            'database_name' => 'required_unless:database_type,redis|string|max:255|nullable',
+            'username' => 'nullable|string|max:255',
+            'password' => 'nullable|string',
             'ssl_enabled' => 'boolean',
             'ssh_tunnel_enabled' => 'boolean',
             'auto_reconnect' => 'boolean',
+            'connection_timeout' => 'nullable|integer|min:1|max:120',
+            'charset' => 'nullable|string|max:64',
+            'collation' => 'nullable|string|max:64',
+            'redis_database' => 'nullable|integer|min:0|max:15',
         ]);
 
-        $encrypted = $this->connections->encryptCredentials($data['username'], $data['password']);
+        $encrypted = $this->connections->encryptCredentials(
+            $data['username'] ?? '',
+            $data['password'] ?? '',
+        );
+
         $connection = SecureDbConnection::create([
             'project_id' => $data['project_id'],
             'name' => $data['name'],
             'database_type' => $data['database_type'],
             'host' => $data['host'],
-            'port' => $data['port'],
-            'database_name' => $data['database_name'],
+            'port' => $data['port'] ?: $this->connections->defaultPort($data['database_type']),
+            'database_name' => $data['database_name'] ?? ($data['database_type'] === 'redis' ? '0' : ''),
             ...$encrypted,
             'ssl_enabled' => $data['ssl_enabled'] ?? false,
             'ssh_tunnel_enabled' => $data['ssh_tunnel_enabled'] ?? false,
             'auto_reconnect' => $data['auto_reconnect'] ?? true,
+            'connection_timeout' => $data['connection_timeout'] ?? 10,
+            'charset' => $data['charset'] ?? null,
+            'collation' => $data['collation'] ?? null,
+            'redis_database' => $data['redis_database'] ?? 0,
             'created_by' => $request->user()->id,
         ]);
 
-        $this->connections->testConnection($connection);
+        $test = $this->connections->testConnectionDetailed($connection);
+        if ($test->success) {
+            SyncConnectionSchemaJob::dispatch($connection);
+        }
         $this->audit->log($connection->project, 'connection_change', "Connection {$connection->name} created", $request->user(), $request);
 
-        return redirect()->back();
+        $redirect = redirect()->back()->with('connection_test', $test->toArray());
+
+        if ($test->success) {
+            return $redirect->with('success', 'Connection saved and verified successfully.');
+        }
+
+        return $redirect;
+    }
+
+    public function updateConnection(Request $request, SecureDbConnection $connection)
+    {
+        $this->requireAdmin($request);
+        $data = $request->validate([
+            'project_id' => 'required|exists:secure_db_projects,id',
+            'name' => 'required|string|max:255',
+            'database_type' => 'required|in:mysql,postgresql,sqlserver,mariadb,mongodb,redis',
+            'host' => 'required|string|max:255',
+            'port' => 'required|integer|min:1|max:65535',
+            'database_name' => 'required_unless:database_type,redis|string|max:255|nullable',
+            'username' => 'nullable|string|max:255',
+            'password' => 'nullable|string',
+            'ssl_enabled' => 'boolean',
+            'ssh_tunnel_enabled' => 'boolean',
+            'auto_reconnect' => 'boolean',
+            'connection_timeout' => 'nullable|integer|min:1|max:120',
+            'charset' => 'nullable|string|max:64',
+            'collation' => 'nullable|string|max:64',
+            'redis_database' => 'nullable|integer|min:0|max:15',
+        ]);
+
+        $updates = [
+            'project_id' => $data['project_id'],
+            'name' => $data['name'],
+            'database_type' => $data['database_type'],
+            'host' => $data['host'],
+            'port' => $data['port'] ?: $this->connections->defaultPort($data['database_type']),
+            'database_name' => $data['database_name'] ?? ($data['database_type'] === 'redis' ? '0' : ''),
+            'ssl_enabled' => $data['ssl_enabled'] ?? false,
+            'ssh_tunnel_enabled' => $data['ssh_tunnel_enabled'] ?? false,
+            'auto_reconnect' => $data['auto_reconnect'] ?? true,
+            'connection_timeout' => $data['connection_timeout'] ?? 10,
+            'charset' => $data['charset'] ?? null,
+            'collation' => $data['collation'] ?? null,
+            'redis_database' => $data['redis_database'] ?? 0,
+            'updated_by' => $request->user()->id,
+        ];
+
+        if (array_key_exists('username', $data) && $data['username'] !== null && $data['username'] !== '') {
+            $encrypted = $this->connections->encryptCredentials(
+                $data['username'],
+                $data['password'] ?? '',
+            );
+            $updates['username_encrypted'] = $encrypted['username_encrypted'];
+            if (! empty($data['password'])) {
+                $updates['password_encrypted'] = $encrypted['password_encrypted'];
+            }
+        } elseif (! empty($data['password'])) {
+            $creds = $this->connections->decryptCredentials($connection);
+            $encrypted = $this->connections->encryptCredentials($creds['username'], $data['password']);
+            $updates['password_encrypted'] = $encrypted['password_encrypted'];
+        }
+
+        $connection->update($updates);
+
+        $test = $this->connections->testConnectionDetailed($connection->fresh());
+        if ($test->success) {
+            SyncConnectionSchemaJob::dispatch($connection);
+        }
+        $this->audit->log($connection->project, 'connection_change', "Connection {$connection->name} updated", $request->user(), $request);
+
+        $redirect = redirect()->back()->with('connection_test', $test->toArray());
+
+        if ($test->success) {
+            return $redirect->with('success', 'Connection updated and verified successfully.');
+        }
+
+        return $redirect;
     }
 
     public function testConnection(Request $request, SecureDbConnection $connection)
     {
         $this->requireAdmin($request);
-        $ok = $this->connections->testConnection($connection);
+        $result = $this->connections->testConnectionDetailed($connection);
+
+        if ($request->wantsJson()) {
+            return response()->json($result->toArray());
+        }
 
         return redirect()->back()->with('flash', [
-            $ok ? 'success' : 'error' => $ok ? 'Connection successful.' : 'Connection failed.',
+            $result->success ? 'success' : 'error' => $result->success
+                ? 'Connection successful. Ping: ' . ($result->pingMs ?? 0) . 'ms'
+                : ($result->message ?? 'Connection failed.'),
         ]);
     }
 

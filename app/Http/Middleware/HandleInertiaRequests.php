@@ -52,6 +52,9 @@ class HandleInertiaRequests extends Middleware
                 'info' => session('info'),
                 'warning' => session('warning'),
                 'share_url' => session('share_url'),  // for Drive share links
+                'connection_test' => session('connection_test'),
+                'widget_created' => session('widget_created'),
+                'widget_secret' => session('widget_secret'),
             ],
             'sidebarOpen' => ! $request->hasCookie('sidebar_state') || $request->cookie('sidebar_state') === 'true',
         ];

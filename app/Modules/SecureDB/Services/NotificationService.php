@@ -3,6 +3,7 @@
 namespace App\Modules\SecureDB\Services;
 
 use App\Models\User;
+use App\Modules\SecureDB\Models\SecureDbConnection;
 use App\Modules\SecureDB\Models\SecureDbNotification;
 use App\Modules\SecureDB\Models\SecureDbProject;
 use App\Modules\SecureDB\Models\SecureDbSetting;
@@ -61,6 +62,45 @@ class NotificationService
     {
         $channels = SecureDbSetting::getValue('notification_channels', ['in_app', 'email']);
         $this->notify('rotation_failure', 'Key Rotation Failed', $error, $project, null, $channels);
+    }
+
+    public function alertEncryptionCompleted(
+        SecureDbConnection $connection,
+        ?User $user,
+        string $scope,
+        array $result,
+    ): void {
+        $title = 'Database Encryption Completed';
+        $message = sprintf(
+            "Encryption finished for connection \"%s\" (%s scope).\n\nProcessed: %d value(s)\nTables: %d\nAlgorithm: %s\nFields: %s",
+            $connection->name,
+            $scope,
+            $result['processed'] ?? 0,
+            $result['tables'] ?? 0,
+            $result['algorithm'] ?? 'n/a',
+            implode(', ', $result['fields'] ?? []) ?: '—',
+        );
+
+        $channels = SecureDbSetting::getValue('notification_channels', ['in_app', 'email']);
+        $this->notify('encryption_completed', $title, $message, $connection->project, $user, $channels, $result);
+    }
+
+    public function alertEncryptionFailed(
+        SecureDbConnection $connection,
+        ?User $user,
+        string $scope,
+        string $error,
+    ): void {
+        $title = 'Database Encryption Failed';
+        $message = sprintf(
+            "Encryption failed for connection \"%s\" (%s scope).\n\nError: %s",
+            $connection->name,
+            $scope,
+            $error,
+        );
+
+        $channels = SecureDbSetting::getValue('notification_channels', ['in_app', 'email']);
+        $this->notify('encryption_failed', $title, $message, $connection->project, $user, $channels);
     }
 
     protected function sendEmail(?User $user, string $title, string $message): void

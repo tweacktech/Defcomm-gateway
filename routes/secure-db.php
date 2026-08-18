@@ -1,6 +1,7 @@
 <?php
 
 use App\Modules\SecureDB\Http\Controllers\Admin\SecureDbAdminController;
+use App\Modules\SecureDB\Http\Controllers\Admin\SecureDbConnectionController;
 use App\Modules\SecureDB\Middleware\EnsureSecureDbAdmin;
 use Illuminate\Support\Facades\Route;
 
@@ -20,8 +21,27 @@ Route::prefix('secure-db')
 
         Route::get('/connections', [SecureDbAdminController::class, 'connections'])->name('connections');
         Route::post('/connections', [SecureDbAdminController::class, 'storeConnection'])->name('connections.store');
+        Route::patch('/connections/{connection}', [SecureDbAdminController::class, 'updateConnection'])->name('connections.update');
         Route::post('/connections/{connection}/test', [SecureDbAdminController::class, 'testConnection'])->name('connections.test');
         Route::delete('/connections/{connection}', [SecureDbAdminController::class, 'destroyConnection'])->name('connections.destroy');
+
+        Route::get('/connections/{connection}/explorer', [SecureDbConnectionController::class, 'explorer'])->name('connections.explorer');
+        Route::post('/connections/{connection}/api/test', [SecureDbConnectionController::class, 'test'])->name('connections.api.test');
+        Route::post('/connections/{connection}/api/sync', [SecureDbConnectionController::class, 'sync'])->name('connections.api.sync');
+        Route::get('/connections/{connection}/api/schema', [SecureDbConnectionController::class, 'schema'])->name('connections.api.schema');
+        Route::get('/connections/{connection}/api/objects/{object}/metadata', [SecureDbConnectionController::class, 'metadata'])->name('connections.api.metadata');
+        Route::get('/connections/{connection}/api/objects/{object}/browse', [SecureDbConnectionController::class, 'browse'])->name('connections.api.browse');
+        Route::get('/connections/{connection}/api/objects/{object}/export', [SecureDbConnectionController::class, 'export'])->name('connections.api.export');
+        Route::get('/connections/{connection}/api/encryption-targets', [SecureDbConnectionController::class, 'encryptionTargets'])->name('connections.api.encryption-targets');
+        Route::post('/connections/{connection}/api/encrypt', [SecureDbConnectionController::class, 'encrypt'])->name('connections.api.encrypt');
+        Route::get('/connections/{connection}/api/encryption-jobs', [SecureDbConnectionController::class, 'encryptionJobs'])->name('connections.api.encryption-jobs');
+
+        Route::get('/secure-widget', [\App\Modules\SecureDB\Http\Controllers\Admin\SecureDbWidgetController::class, 'index'])->name('secure-widget');
+        Route::post('/widgets', [\App\Modules\SecureDB\Http\Controllers\Admin\SecureDbWidgetController::class, 'store'])->name('widgets.store');
+        Route::post('/widgets/{widget}/regenerate-secret', [\App\Modules\SecureDB\Http\Controllers\Admin\SecureDbWidgetController::class, 'regenerateSecret'])->name('widgets.regenerate-secret');
+        Route::get('/widgets/{widget}/embed-code', [\App\Modules\SecureDB\Http\Controllers\Admin\SecureDbWidgetController::class, 'embedCode'])->name('widgets.embed-code');
+        Route::patch('/widgets/{widget}/toggle', [\App\Modules\SecureDB\Http\Controllers\Admin\SecureDbWidgetController::class, 'toggle'])->name('widgets.toggle');
+        Route::delete('/widgets/{widget}', [\App\Modules\SecureDB\Http\Controllers\Admin\SecureDbWidgetController::class, 'destroy'])->name('widgets.destroy');
 
         Route::get('/policies', [SecureDbAdminController::class, 'policies'])->name('policies');
         Route::post('/policies', [SecureDbAdminController::class, 'storePolicy'])->name('policies.store');

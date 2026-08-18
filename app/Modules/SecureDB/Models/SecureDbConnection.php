@@ -20,6 +20,8 @@ class SecureDbConnection extends Model
         'host', 'port', 'database_name', 'username_encrypted', 'password_encrypted',
         'ssl_enabled', 'ssh_tunnel_enabled', 'ssh_config_encrypted', 'health_status',
         'last_health_check_at', 'last_connected_at', 'last_error', 'auto_reconnect',
+        'connection_timeout', 'charset', 'collation', 'redis_database',
+        'connection_metadata', 'last_sync_at', 'table_count', 'record_count_estimate', 'database_size_bytes',
     ];
 
     protected $hidden = ['username_encrypted', 'password_encrypted', 'ssh_config_encrypted'];
@@ -30,9 +32,16 @@ class SecureDbConnection extends Model
             'ssl_enabled' => 'boolean',
             'ssh_tunnel_enabled' => 'boolean',
             'auto_reconnect' => 'boolean',
+            'connection_metadata' => 'array',
             'last_health_check_at' => 'datetime',
             'last_connected_at' => 'datetime',
+            'last_sync_at' => 'datetime',
         ];
+    }
+
+    public function schemaObjects(): \Illuminate\Database\Eloquent\Relations\HasMany
+    {
+        return $this->hasMany(SecureDbConnectionSchema::class, 'connection_id');
     }
 
     public function project(): BelongsTo

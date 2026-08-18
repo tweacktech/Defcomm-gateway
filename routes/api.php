@@ -146,6 +146,30 @@ Route::middleware([\App\Modules\SecureDB\Middleware\SecureDbApiAuth::class])
         Route::get('/status', [\App\Modules\SecureDB\Http\Controllers\Api\SecureDbApiController::class, 'status'])->name('status');
     });
 
+Route::prefix('secure-db/widget')
+    ->name('api.secure-db.widget.')
+    ->group(function () {
+        Route::options('/{any?}', function () {
+            return response('', 204)
+                ->header('Access-Control-Allow-Origin', '*')
+                ->header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
+                ->header('Access-Control-Allow-Headers', 'Content-Type, X-Widget-Token');
+        })->where('any', '.*');
+
+        Route::post('/authenticate', [\App\Modules\SecureDB\Http\Controllers\Api\SecureDbWidgetApiController::class, 'authenticate'])->name('authenticate');
+
+        Route::middleware([\App\Modules\SecureDB\Middleware\SecureDbWidgetSession::class])->group(function () {
+            Route::get('/config', [\App\Modules\SecureDB\Http\Controllers\Api\SecureDbWidgetApiController::class, 'config'])->name('config');
+            Route::get('/connection-status', [\App\Modules\SecureDB\Http\Controllers\Api\SecureDbWidgetApiController::class, 'connectionStatus'])->name('connection-status');
+            Route::post('/connect', [\App\Modules\SecureDB\Http\Controllers\Api\SecureDbWidgetApiController::class, 'connectDatabase'])->name('connect');
+            Route::post('/disconnect', [\App\Modules\SecureDB\Http\Controllers\Api\SecureDbWidgetApiController::class, 'disconnectDatabase'])->name('disconnect');
+            Route::post('/encrypt', [\App\Modules\SecureDB\Http\Controllers\Api\SecureDbWidgetApiController::class, 'encryptValue'])->name('encrypt');
+            Route::post('/encrypt-database', [\App\Modules\SecureDB\Http\Controllers\Api\SecureDbWidgetApiController::class, 'queueDatabaseEncryption'])->name('encrypt-database');
+            Route::get('/audit-logs', [\App\Modules\SecureDB\Http\Controllers\Api\SecureDbWidgetApiController::class, 'auditLogs'])->name('audit-logs');
+            Route::post('/logout', [\App\Modules\SecureDB\Http\Controllers\Api\SecureDbWidgetApiController::class, 'logout'])->name('logout');
+        });
+    });
+
 Route::middleware(['auth:sanctum'])->prefix('api/meet')->name('api.meet.')->group(function () {
     Route::get('/rooms', [MeetApiController::class, 'listRooms'])->name('rooms.index');
     Route::post('/rooms', [MeetApiController::class, 'createRoom'])->name('rooms.create');

@@ -16,6 +16,12 @@ Schedule::job(new HealthCheckJob)->everyFiveMinutes();
 Schedule::job(new DeviceMonitoringJob)->hourly();
 
 Schedule::call(function () {
+    \App\Modules\SecureDB\Models\SecureDbConnection::where('health_status', 'healthy')->each(
+        fn ($c) => \App\Modules\SecureDB\Jobs\SyncConnectionSchemaJob::dispatch($c)
+    );
+})->hourly();
+
+Schedule::call(function () {
     SecureDbProject::where('status', 'active')->each(function ($project) {
         if ($project->rotation_interval === '5_minutes') {
             RotateKeysJob::dispatch($project);
