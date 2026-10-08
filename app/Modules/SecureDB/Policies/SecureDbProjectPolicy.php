@@ -12,7 +12,7 @@ class SecureDbProjectPolicy
 
     public function viewAny(User $user): bool
     {
-        return $user->role === 'admin';
+        return $user->isSuperAdmin() && $user->canAccessPlatform('secure_db');
     }
 
     public function view(User $user, SecureDbProject $project): bool
@@ -22,7 +22,7 @@ class SecureDbProjectPolicy
 
     public function create(User $user): bool
     {
-        return $user->role === 'admin';
+        return $user->isSuperAdmin() && $user->canAccessPlatform('secure_db');
     }
 
     public function update(User $user, SecureDbProject $project): bool

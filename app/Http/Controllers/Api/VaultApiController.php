@@ -36,10 +36,10 @@ class VaultApiController extends Controller
      * Show a single vault item, decrypting its value.
      * Only the owner may view the plaintext value.
      */
-    public function show(Request $request, VaultItem $vaultItem): JsonResponse
+    public function show(Request $request, int $id): JsonResponse
     {
         try {
-            $this->authorizeOwner($request, $vaultItem);
+            $vaultItem = $this->findOwnedOrFail($request, $id);
 
             return response()->json([
                 'data' => [
@@ -99,10 +99,10 @@ class VaultApiController extends Controller
      * Update an existing vault item.
      * Value is re-encrypted on every update.
      */
-    public function update(Request $request, VaultItem $vaultItem): JsonResponse
+    public function update(Request $request, int $id): JsonResponse
     {
         try {
-            $this->authorizeOwner($request, $vaultItem);
+            $vaultItem = $this->findOwnedOrFail($request, $id);
 
             $validated = $request->validate([
                 'name' => ['sometimes', 'required', 'string', 'max:255'],
@@ -137,10 +137,10 @@ class VaultApiController extends Controller
     /**
      * Delete a vault item permanently.
      */
-    public function destroy(Request $request, VaultItem $vaultItem): JsonResponse
+    public function destroy(Request $request, int $id): JsonResponse
     {
         try {
-            $this->authorizeOwner($request, $vaultItem);
+            $vaultItem = $this->findOwnedOrFail($request, $id);
 
             $vaultItem->delete();
 
@@ -152,21 +152,14 @@ class VaultApiController extends Controller
         }
     }
 
-    // -------------------------------------------------------------------------
-    // Helpers
-    // -------------------------------------------------------------------------
-
-    /**
-     * Abort with 403 if the vault item does not belong to the requesting user.
-     */
-    private function authorizeOwner(Request $request, VaultItem $vaultItem): void
+    private function findOwnedOrFail(Request $request, int $id): VaultItem
     {
-        try {
-            if ($vaultItem->user_id !== $request->user()->id) {
-                abort(403, 'You do not have permission to access this vault item.');
-            }
-        } catch (\Exception $e) {
+        $vaultItem = VaultItem::query()->findOrFail($id);
+
+        if ((int) $vaultItem->user_id !== (int) $request->user()->id) {
             abort(403, 'You do not have permission to access this vault item.');
         }
+
+        return $vaultItem;
     }
 }

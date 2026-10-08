@@ -38,6 +38,7 @@ Route::prefix('secure-db')
 
         Route::get('/secure-widget', [\App\Modules\SecureDB\Http\Controllers\Admin\SecureDbWidgetController::class, 'index'])->name('secure-widget');
         Route::post('/widgets', [\App\Modules\SecureDB\Http\Controllers\Admin\SecureDbWidgetController::class, 'store'])->name('widgets.store');
+        Route::patch('/widgets/{widget}', [\App\Modules\SecureDB\Http\Controllers\Admin\SecureDbWidgetController::class, 'update'])->name('widgets.update');
         Route::post('/widgets/{widget}/regenerate-secret', [\App\Modules\SecureDB\Http\Controllers\Admin\SecureDbWidgetController::class, 'regenerateSecret'])->name('widgets.regenerate-secret');
         Route::get('/widgets/{widget}/embed-code', [\App\Modules\SecureDB\Http\Controllers\Admin\SecureDbWidgetController::class, 'embedCode'])->name('widgets.embed-code');
         Route::patch('/widgets/{widget}/toggle', [\App\Modules\SecureDB\Http\Controllers\Admin\SecureDbWidgetController::class, 'toggle'])->name('widgets.toggle');

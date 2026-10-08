@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "Defcomm Gateway API",
-    "description": "Postman collection for the main API routes defined in routes/api.php. Set {{baseUrl}}, {{clientId}}, {{clientSecret}}, and {{bearerToken}} before sending requests.",
+    "description": "Postman collection for the main API routes defined in routes/api.php. Set {{baseUrl}}, {{clientId}}, {{clientSecret}}, and {{bearerToken}} before sending requests.\n\n## Service keys (gateway)\nService APIs require header X-Service-Key: sdsk_... in addition to X-Client-Id, X-Client-Secret, and Authorization Bearer. Generate keys at /company/credentials. Request/response bodies are unchanged.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [

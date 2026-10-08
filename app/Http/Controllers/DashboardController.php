@@ -43,13 +43,27 @@ class DashboardController extends Controller
             ]);
         }
 
+        if ($user->isCompanyAdmin() && $user->organization_id) {
+            $organization = Organization::query()->findOrFail($user->organization_id);
+
+            return Inertia::render('dashboard', [
+                'services' => $services,
+                'organization' => [
+                    'id' => $organization->id,
+                    'name' => $organization->name,
+                ],
+                'org_summary' => $this->companyOrgSummary($organization->id),
+                'activity_logs' => $this->organizationActivity($organization->id),
+            ]);
+        }
+
         return Inertia::render('dashboard', [
             'services' => $services,
+            'organization' => null,
+            'org_summary' => null,
             'activity_logs' => $this->userActivity($user->id),
         ]);
     }
-
-    // ── Private helpers ───────────────────────────────────────────────────────
 
     private function adminStats(): array
     {
@@ -70,17 +84,56 @@ class DashboardController extends Controller
         ];
     }
 
+    private function companyOrgSummary(int $organizationId): array
+    {
+        $base = User::query()->where('organization_id', $organizationId);
+
+        return [
+            'total_users' => (clone $base)->count(),
+            'active_users' => (clone $base)->where('status', 'active')->count(),
+            'pending_users' => (clone $base)->where('status', 'pending')->count(),
+            'admins' => (clone $base)->where('role', 'admin')->count(),
+            'users' => (clone $base)->where('role', 'user')->count(),
+        ];
+    }
+
     private function userSummary(): array
     {
         return [
             'total' => User::count(),
             'active' => User::where('status', 'active')->count(),
-            'inactive' => User::where('status', 'inactive')->count(),
-            'admins' => User::whereIn('role', ['admin', 'company_admin'])->count(),
-            'super_admins' => User::where('role', 'admin')->count(),
-            'company_admins' => User::where('role', 'company_admin')->count(),
+            'pending' => User::where('status', 'pending')->count(),
+            'block' => User::where('status', 'block')->count(),
+            'admins' => User::where('role', 'admin')->count(),
+            'supers' => User::where('role', 'super')->count(),
+            'users' => User::where('role', 'user')->count(),
             'new_this_week' => User::where('created_at', '>=', now()->subWeek())->count(),
         ];
+    }
+
+    private function mapActivity(ActivityLog $log, bool $withCauser = false): array
+    {
+        $row = [
+            'id' => $log->id,
+            'event' => $log->event,
+            'description' => $log->description,
+            'module' => $log->module,
+            'organization_id' => $log->organization_id,
+            'icon' => $log->iconName(),
+            'color' => $log->colorClass(),
+            'created_at' => $log->created_at->toIso8601String(),
+            'time_ago' => $log->created_at->diffForHumans(),
+        ];
+
+        if ($withCauser) {
+            $row['causer'] = $log->causer ? [
+                'id' => $log->causer->id,
+                'name' => $log->causer->name,
+                'email' => $log->causer->email,
+            ] : null;
+        }
+
+        return $row;
     }
 
     private function userActivity(int $userId): array
@@ -88,17 +141,19 @@ class DashboardController extends Controller
         return ActivityLog::forUser($userId)
             ->latest('created_at')
             ->limit(20)
-            ->get(['id', 'event', 'description', 'module', 'created_at'])
-            ->map(fn ($log) => [
-                'id' => $log->id,
-                'event' => $log->event,
-                'description' => $log->description,
-                'module' => $log->module,
-                'icon' => $log->iconName(),
-                'color' => $log->colorClass(),
-                'created_at' => $log->created_at->toIso8601String(),
-                'time_ago' => $log->created_at->diffForHumans(),
-            ])
+            ->get(['id', 'event', 'description', 'module', 'organization_id', 'created_at'])
+            ->map(fn ($log) => $this->mapActivity($log))
+            ->toArray();
+    }
+
+    private function organizationActivity(int $organizationId): array
+    {
+        return ActivityLog::forOrganization($organizationId)
+            ->with('causer:id,name,email')
+            ->latest('created_at')
+            ->limit(30)
+            ->get(['id', 'causer_id', 'causer_type', 'event', 'description', 'module', 'organization_id', 'created_at'])
+            ->map(fn ($log) => $this->mapActivity($log, true))
             ->toArray();
     }
 
@@ -107,22 +162,8 @@ class DashboardController extends Controller
         return ActivityLog::with('causer:id,name,email')
             ->latest('created_at')
             ->limit(50)
-            ->get(['id', 'causer_id', 'causer_type', 'event', 'description', 'module', 'created_at'])
-            ->map(fn ($log) => [
-                'id' => $log->id,
-                'event' => $log->event,
-                'description' => $log->description,
-                'module' => $log->module,
-                'icon' => $log->iconName(),
-                'color' => $log->colorClass(),
-                'created_at' => $log->created_at->toIso8601String(),
-                'time_ago' => $log->created_at->diffForHumans(),
-                'causer' => $log->causer ? [
-                    'id' => $log->causer->id,
-                    'name' => $log->causer->name,
-                    'email' => $log->causer->email,
-                ] : null,
-            ])
+            ->get(['id', 'causer_id', 'causer_type', 'event', 'description', 'module', 'organization_id', 'created_at'])
+            ->map(fn ($log) => $this->mapActivity($log, true))
             ->toArray();
     }
 }

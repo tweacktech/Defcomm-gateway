@@ -29,21 +29,21 @@ class SecureDbAdminTest extends TestCase
     #[Test]
     public function non_admin_users_are_forbidden(): void
     {
-        $user = User::factory()->create(['role' => 'client']);
+        $user = User::factory()->create(['role' => 'user']);
         $this->actingAs($user)->get('/admin/secure-db')->assertForbidden();
     }
 
     #[Test]
     public function admin_can_view_secure_db_dashboard(): void
     {
-        $admin = User::factory()->create(['role' => 'admin']);
+        $admin = User::factory()->create(['role' => 'super']);
         $this->actingAs($admin)->get('/admin/secure-db')->assertOk();
     }
 
     #[Test]
     public function admin_can_create_project(): void
     {
-        $admin = User::factory()->create(['role' => 'admin']);
+        $admin = User::factory()->create(['role' => 'super']);
         $owner = User::factory()->create();
 
         $this->actingAs($admin)->post('/admin/secure-db/projects', [

@@ -66,13 +66,16 @@ function OrgForm({ initial, onSubmit, saving, errors, onClose }: {
     const [name, setName] = useState(initial?.name ?? '');
     const [email, setEmail] = useState(initial?.email ?? '');
     const [status, setStatus] = useState(initial?.status ?? 'active');
+    const [adminName, setAdminName] = useState('');
+    const [adminEmail, setAdminEmail] = useState('');
+    const isCreate = !initial?.id;
 
     return (
         <>
             <div className="fixed inset-0 z-40 bg-black/40 backdrop-blur-sm" onClick={onClose} />
             <div className="fixed right-0 top-0 z-50 flex h-full w-full max-w-md flex-col border-l bg-card shadow-2xl">
                 <div className="flex items-center justify-between border-b p-6">
-                    <h2 className="font-semibold">{initial?.id ? 'Edit Company' : 'New Company'}</h2>
+                    <h2 className="font-semibold">{isCreate ? 'New Company' : 'Edit Company'}</h2>
                     <Button size="sm" variant="ghost" className="h-8 w-8 p-0" onClick={onClose}><X className="h-4 w-4" /></Button>
                 </div>
                 <div className="flex-1 space-y-4 overflow-y-auto p-6">
@@ -82,7 +85,7 @@ function OrgForm({ initial, onSubmit, saving, errors, onClose }: {
                         {errors.name && <p className="mt-1 text-xs text-destructive">{errors.name}</p>}
                     </div>
                     <div>
-                        <Label className="mb-1 block text-xs">Email</Label>
+                        <Label className="mb-1 block text-xs">Company email</Label>
                         <Input type="email" value={email} onChange={e => setEmail(e.target.value)} className="h-9" />
                         {errors.email && <p className="mt-1 text-xs text-destructive">{errors.email}</p>}
                     </div>
@@ -98,13 +101,33 @@ function OrgForm({ initial, onSubmit, saving, errors, onClose }: {
                             <option value="suspended">Suspended</option>
                         </select>
                     </div>
+                    {isCreate && (
+                        <div className="space-y-3 rounded-lg border p-3">
+                            <p className="text-xs font-medium text-muted-foreground">Invite organization admin *</p>
+                            <div>
+                                <Label className="mb-1 block text-xs">Admin name *</Label>
+                                <Input value={adminName} onChange={e => setAdminName(e.target.value)} className="h-9" required />
+                                {errors.admin_name && <p className="mt-1 text-xs text-destructive">{errors.admin_name}</p>}
+                            </div>
+                            <div>
+                                <Label className="mb-1 block text-xs">Admin email *</Label>
+                                <Input type="email" value={adminEmail} onChange={e => setAdminEmail(e.target.value)} className="h-9" required />
+                                {errors.admin_email && <p className="mt-1 text-xs text-destructive">{errors.admin_email}</p>}
+                            </div>
+                        </div>
+                    )}
                     <Button
                         className="w-full gap-2"
-                        disabled={!name.trim() || saving}
-                        onClick={() => onSubmit({ name, email, status })}
+                        disabled={!name.trim() || (isCreate && (!adminName.trim() || !adminEmail.trim())) || saving}
+                        onClick={() => onSubmit({
+                            name,
+                            email,
+                            status,
+                            ...(isCreate ? { admin_name: adminName, admin_email: adminEmail } : {}),
+                        })}
                     >
                         {saving ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
-                        {initial?.id ? 'Save Changes' : 'Create Company'}
+                        {isCreate ? 'Create Company' : 'Save Changes'}
                     </Button>
                 </div>
             </div>

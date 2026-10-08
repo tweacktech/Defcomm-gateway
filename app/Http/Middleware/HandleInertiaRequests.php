@@ -44,6 +44,11 @@ class HandleInertiaRequests extends Middleware
                     'role_label' => $request->user()->roleLabel(),
                     'is_super_admin' => $request->user()->isSuperAdmin(),
                     'is_company_admin' => $request->user()->isCompanyAdmin(),
+                    'is_general_admin' => $request->user()->isGeneralAdmin(),
+                    'platform_role' => $request->user()->platform_role,
+                    'platform_permissions' => $request->user()->isSuperAdmin()
+                        ? ($request->user()->platformRole()?->areas() ?? [])
+                        : [],
                 ] : null,
             ],
             'flash' => [
@@ -55,6 +60,7 @@ class HandleInertiaRequests extends Middleware
                 'connection_test' => session('connection_test'),
                 'widget_created' => session('widget_created'),
                 'widget_secret' => session('widget_secret'),
+                'widget_updated' => session('widget_updated'),
             ],
             'sidebarOpen' => ! $request->hasCookie('sidebar_state') || $request->cookie('sidebar_state') === 'true',
         ];

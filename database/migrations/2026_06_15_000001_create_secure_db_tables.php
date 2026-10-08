@@ -87,7 +87,7 @@ return new class extends Migration
             $table->foreignId('created_by')->nullable()->constrained('users')->nullOnDelete();
             $table->foreignId('updated_by')->nullable()->constrained('users')->nullOnDelete();
             $table->string('name');
-            $table->enum('scope', ['field', 'row', 'collection', 'document'])->default('field');
+            $table->string('scope', 32)->default('field');
             $table->string('target_table')->nullable();
             $table->string('target_collection')->nullable();
             $table->json('sensitive_fields')->nullable();
@@ -212,10 +212,7 @@ return new class extends Migration
             $table->foreignId('project_id')->nullable()->constrained('secure_db_projects')->nullOnDelete();
             $table->foreignId('user_id')->nullable()->constrained('users')->nullOnDelete();
             $table->enum('channel', ['email', 'sms', 'in_app'])->default('in_app');
-            $table->enum('type', [
-                'failed_decryption', 'unauthorized_access', 'connection_failure',
-                'rotation_failure', 'rotation_success', 'encryption_complete', 'general',
-            ]);
+            $table->string('type', 64);
             $table->string('title');
             $table->text('message');
             $table->json('metadata')->nullable();
@@ -272,7 +269,7 @@ return new class extends Migration
             $table->string('collection_name')->nullable();
             $table->string('record_identifier', 64);
             $table->string('field_name', 64)->nullable();
-            $table->enum('encryption_scope', ['field', 'row', 'collection', 'document']);
+            $table->string('encryption_scope', 32);
             $table->string('algorithm');
             $table->string('key_version');
             $table->json('metadata')->nullable();

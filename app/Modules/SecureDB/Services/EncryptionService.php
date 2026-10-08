@@ -44,7 +44,7 @@ class EncryptionService
             throw new RuntimeException('Invalid encrypted field payload.');
         }
 
-        return $this->decrypt($payload, $key, $algorithm);
+        return $this->decrypt($payload, $key, $payload['algorithm'] ?? $algorithm);
     }
 
     public function encryptRow(array $row, array $fields, string $key, string $algorithm = self::AES_256_GCM): array

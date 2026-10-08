@@ -83,12 +83,44 @@ class SecureDbWidgetController extends Controller
         ]);
     }
 
+    public function update(Request $request, SecureDbWidget $widget)
+    {
+        $this->requireAdmin($request);
+
+        $data = $request->validate([
+            'project_id' => 'required|exists:secure_db_projects,id',
+            'name' => 'required|string|max:255',
+            'language' => 'required|string|in:' . implode(',', array_keys(WidgetService::LANGUAGES)),
+            'database_type' => 'required|string|in:' . implode(',', array_keys(WidgetService::DATABASE_MARKET)),
+            'allowed_origins' => 'nullable|array',
+            'allowed_origins.*' => 'string|max:255',
+        ]);
+
+        $widget = $this->widgets->update($widget, $data);
+
+        $this->audit->log($widget->project, 'project_change', "Secure widget updated: {$widget->name}", $request->user(), $request);
+
+        return redirect()->back()->with('widget_updated', [
+            'uuid' => $widget->uuid,
+            'name' => $widget->name,
+            'widget_key' => $widget->widget_key,
+            'embed_code' => $this->widgets->buildEmbedCode($widget),
+            'database_type' => $widget->database_type,
+        ]);
+    }
+
     public function embedCode(Request $request, SecureDbWidget $widget)
     {
         $this->requireAdmin($request);
 
+        $forSnippet = clone $widget;
+        $language = $request->query('language');
+        if (is_string($language) && array_key_exists($language, WidgetService::LANGUAGES)) {
+            $forSnippet->language = $language;
+        }
+
         return response()->json([
-            'embed_code' => $this->widgets->buildEmbedCode($widget),
+            'embed_code' => $this->widgets->buildEmbedCode($forSnippet),
         ]);
     }
 
@@ -110,7 +142,7 @@ class SecureDbWidgetController extends Controller
 
     protected function requireAdmin(Request $request): void
     {
-        if ($request->user()?->role !== 'admin') {
+        if ($request->user()?->role !== 'super') {
             abort(403);
         }
     }

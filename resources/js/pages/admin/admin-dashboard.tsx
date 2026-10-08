@@ -38,8 +38,11 @@ interface AdminStats {
 interface UserSummary {
     total: number;
     active: number;
-    inactive: number;
+    pending: number;
+    block: number;
     admins: number;
+    supers: number;
+    users: number;
     new_this_week: number;
 }
 
@@ -65,7 +68,7 @@ const breadcrumbs: BreadcrumbItem[] = [{ title: 'Dashboard', href: '/dashboard' 
 function UserSummaryCard({ summary }: { summary: UserSummary }) {
     const rows = [
         { label: 'Active accounts',   value: summary.active,        icon: UserCheck,   color: 'text-green-600 dark:text-green-400', bg: 'bg-green-500/10'  },
-        { label: 'Inactive accounts', value: summary.inactive,      icon: UserX,       color: 'text-red-500 dark:text-red-400',      bg: 'bg-red-500/10'    },
+        { label: 'Blocked accounts', value: summary.block, icon: UserX, color: 'text-red-500 dark:text-red-400', bg: 'bg-red-500/10' },
         { label: 'Admin users',       value: summary.admins,        icon: ShieldCheck, color: 'text-primary',                        bg: 'bg-primary/10'    },
         { label: 'New this week',     value: summary.new_this_week, icon: UserPlus,    color: 'text-blue-600 dark:text-blue-400',    bg: 'bg-blue-500/10'   },
     ];

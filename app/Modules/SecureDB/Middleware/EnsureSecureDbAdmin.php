@@ -10,7 +10,9 @@ class EnsureSecureDbAdmin
 {
     public function handle(Request $request, Closure $next): Response
     {
-        if ($request->user()?->role !== 'admin') {
+        $user = $request->user();
+
+        if (! $user?->isSuperAdmin() || ! $user->canAccessPlatform('secure_db')) {
             abort(403, 'Admin access required for Secure DB.');
         }
 

@@ -66,7 +66,7 @@ class WidgetService
             'secret_key_hash' => Hash::make($creds['secret_key']),
             'language' => $language,
             'database_type' => $databaseType,
-            'allowed_origins' => $allowedOrigins,
+            'allowed_origins' => $this->normalizeAllowedOrigins($allowedOrigins),
             'is_active' => true,
         ]);
 
@@ -86,6 +86,23 @@ class WidgetService
             'secret_key' => $secret,
             'embed_code' => $this->buildEmbedCode($widget, $secret),
         ];
+    }
+
+    public function update(SecureDbWidget $widget, array $data): SecureDbWidget
+    {
+        if (isset($data['database_type']) && ! array_key_exists($data['database_type'], self::DATABASE_MARKET)) {
+            throw new \InvalidArgumentException("Unsupported database type: {$data['database_type']}");
+        }
+
+        $widget->update([
+            'project_id' => $data['project_id'] ?? $widget->project_id,
+            'name' => $data['name'],
+            'language' => $data['language'],
+            'database_type' => $data['database_type'],
+            'allowed_origins' => $this->normalizeAllowedOrigins($data['allowed_origins'] ?? null),
+        ]);
+
+        return $widget->fresh(['project']) ?? $widget;
     }
 
     public function buildEmbedCode(SecureDbWidget $widget, ?string $secret = null): array
@@ -217,6 +234,176 @@ CS;
 <script th:src="@{|{$baseUrl}/secure-db/widget/embed.js|}"
         th:attr="data-widget-key='{$widgetKey}'" async></script>
 JAVA;
+    }
+
+    public function originIsAllowed(SecureDbWidget $widget, ?string $origin, ?string $referer = null): bool
+    {
+        $allowed = $this->normalizeAllowedOrigins($widget->allowed_origins);
+        if ($allowed === null) {
+            return true;
+        }
+
+        foreach ($allowed as $pattern) {
+            if ($pattern === '*') {
+                return true;
+            }
+        }
+
+        $candidates = [];
+        foreach ([$origin, $referer] as $value) {
+            $trimmed = is_string($value) ? trim($value) : '';
+            if ($trimmed !== '') {
+                $candidates[] = $trimmed;
+            }
+        }
+
+        if ($candidates === []) {
+            return true;
+        }
+
+        foreach ($allowed as $pattern) {
+            foreach ($candidates as $candidate) {
+                if ($this->originMatches($pattern, $candidate)) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    public function normalizeAllowedOrigins(?array $origins): ?array
+    {
+        if ($origins === null) {
+            return null;
+        }
+
+        $normalized = [];
+        foreach ($origins as $origin) {
+            if (! is_string($origin)) {
+                continue;
+            }
+            $origin = trim($origin);
+            if ($origin === '') {
+                continue;
+            }
+            $normalized[] = $origin;
+        }
+
+        return $normalized === [] ? null : array_values(array_unique($normalized));
+    }
+
+    protected function originMatches(string $pattern, string $candidate): bool
+    {
+        $pattern = trim($pattern);
+        $candidate = trim($candidate);
+
+        if ($pattern === '*' || $candidate === '*') {
+            return true;
+        }
+
+        $opaqueCandidate = $this->isOpaqueOrigin($candidate);
+        $patternParts = $this->parseOriginValue($pattern);
+        $candidateParts = $opaqueCandidate ? null : $this->parseOriginValue($candidate);
+
+        if (($patternParts['scheme'] ?? null) === 'file') {
+            return $opaqueCandidate
+                || ($candidateParts['scheme'] ?? null) === 'file'
+                || $this->isLoopbackHost($candidateParts['host'] ?? null);
+        }
+
+        if ($opaqueCandidate) {
+            return false;
+        }
+
+        if (! $patternParts || ! $candidateParts) {
+            return str_contains(strtolower($candidate), strtolower($pattern));
+        }
+
+        if (! $this->hostsMatch($patternParts['host'], $candidateParts['host'])) {
+            return false;
+        }
+
+        if ($patternParts['port_explicit'] && $patternParts['port'] !== $candidateParts['port']) {
+            return false;
+        }
+
+        if ($patternParts['scheme_explicit'] && $patternParts['scheme'] !== $candidateParts['scheme']) {
+            return false;
+        }
+
+        return true;
+    }
+
+    protected function isOpaqueOrigin(string $value): bool
+    {
+        return strtolower(trim($value)) === 'null';
+    }
+
+    protected function isLoopbackHost(?string $host): bool
+    {
+        $host = $this->canonicalHost($host ?? '');
+
+        return in_array($host, ['127.0.0.1', '::1'], true);
+    }
+
+    protected function hostsMatch(?string $patternHost, ?string $candidateHost): bool
+    {
+        return $this->canonicalHost($patternHost ?? '') === $this->canonicalHost($candidateHost ?? '')
+            && ($patternHost !== null && $patternHost !== '');
+    }
+
+    protected function canonicalHost(string $host): string
+    {
+        $host = strtolower(trim($host, '[]'));
+
+        return match ($host) {
+            'localhost', '127.0.0.1' => '127.0.0.1',
+            '::1', '0:0:0:0:0:0:0:1' => '::1',
+            default => $host,
+        };
+    }
+
+    /**
+     * @return array{scheme:?string,host:?string,port:?int,scheme_explicit:bool,port_explicit:bool}|null
+     */
+    protected function parseOriginValue(string $value): ?array
+    {
+        $value = trim($value);
+        if ($value === '' || $this->isOpaqueOrigin($value)) {
+            return null;
+        }
+
+        $schemeExplicit = (bool) preg_match('#^[a-z][a-z0-9+.-]*://#i', $value);
+        if (! $schemeExplicit) {
+            $value = 'http://'.$value;
+        }
+
+        $parts = parse_url($value);
+        if (! is_array($parts)) {
+            return null;
+        }
+
+        $scheme = strtolower($parts['scheme'] ?? 'http');
+        $host = isset($parts['host']) ? strtolower($parts['host']) : null;
+        if ($host === null && $scheme === 'file') {
+            $host = '';
+        }
+
+        $portExplicit = isset($parts['port']);
+        $port = $parts['port'] ?? match ($scheme) {
+            'https' => 443,
+            'http' => 80,
+            default => null,
+        };
+
+        return [
+            'scheme' => $scheme,
+            'host' => $host,
+            'port' => $port,
+            'scheme_explicit' => $schemeExplicit,
+            'port_explicit' => $portExplicit,
+        ];
     }
 
     public function verifySecret(SecureDbWidget $widget, string $secret): bool

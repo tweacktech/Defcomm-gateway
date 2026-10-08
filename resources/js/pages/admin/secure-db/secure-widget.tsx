@@ -1,26 +1,69 @@
 import { Head, router, usePage } from '@inertiajs/react';
-import { Copy, Plus, Trash2, RefreshCw, Puzzle, Check, Eye, EyeOff, Database } from 'lucide-react';
-import { useState } from 'react';
+import { Copy, Plus, Trash2, RefreshCw, Puzzle, Check, Eye, EyeOff, Database, Pencil } from 'lucide-react';
+import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
+import {
+    Dialog,
+    DialogContent,
+    DialogDescription,
+    DialogFooter,
+    DialogHeader,
+    DialogTitle,
+} from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import AppLayout from '@/layouts/app-layout';
 import { SecureDbNav, secureDbBreadcrumbs } from './_shared';
 
+interface EmbedCode {
+    universal: string;
+    snippet: string;
+    language: string;
+    gateway_url: string;
+}
 interface Widget {
-    uuid: string; name: string; widget_key: string; language: string;
-    database_type: string; is_active: boolean; access_count: number;
+    uuid: string;
+    name: string;
+    widget_key: string;
+    language: string;
+    database_type: string;
+    is_active: boolean;
+    access_count: number;
     last_used_at: string | null;
+    project_id?: number;
+    allowed_origins?: string[] | null;
     project?: { id: number; name: string };
 }
 interface Project { id: number; name: string; }
 interface DbMarketItem { label: string; port: number; icon: string; }
-interface WidgetCreated {
-    uuid: string; name: string; widget_key: string; secret_key: string;
+interface WidgetPayload {
+    uuid: string;
+    name: string;
+    widget_key: string;
+    secret_key?: string;
     database_type?: string;
-    embed_code: { universal: string; snippet: string; language: string; gateway_url: string };
+    embed_code: EmbedCode;
 }
-interface Flash { widget_created?: WidgetCreated; widget_secret?: Partial<WidgetCreated>; }
+interface Flash {
+    widget_created?: WidgetPayload;
+    widget_secret?: Partial<WidgetPayload>;
+    widget_updated?: WidgetPayload;
+}
+interface WidgetForm {
+    project_id: string;
+    name: string;
+    language: string;
+    database_type: string;
+    allowed_origins: string;
+}
+
+const emptyForm: WidgetForm = {
+    project_id: '',
+    name: '',
+    language: 'javascript',
+    database_type: 'mysql',
+    allowed_origins: '',
+};
 
 export default function SecureWidgetPage() {
     const { widgets, projects, languages, database_market, gateway_url, flash } = usePage<{
@@ -35,11 +78,21 @@ export default function SecureWidgetPage() {
     const [showForm, setShowForm] = useState(false);
     const [showSecret, setShowSecret] = useState(false);
     const [copied, setCopied] = useState<string | null>(null);
-    const [form, setForm] = useState({
-        project_id: '', name: '', language: 'javascript', database_type: 'mysql', allowed_origins: '',
-    });
+    const [form, setForm] = useState<WidgetForm>(emptyForm);
+    const [editing, setEditing] = useState<Widget | null>(null);
+    const [editForm, setEditForm] = useState<WidgetForm>(emptyForm);
+    const [editEmbed, setEditEmbed] = useState<EmbedCode | null>(null);
+    const [editSaved, setEditSaved] = useState(false);
+    const [savingEdit, setSavingEdit] = useState(false);
 
-    const created = flash?.widget_created ?? flash?.widget_secret;
+    const created = flash?.widget_created ?? flash?.widget_secret ?? flash?.widget_updated;
+
+    useEffect(() => {
+        if (flash?.widget_updated && editing?.uuid === flash.widget_updated.uuid) {
+            setEditEmbed(flash.widget_updated.embed_code);
+            setEditSaved(true);
+        }
+    }, [flash?.widget_updated, editing?.uuid]);
 
     const copyText = async (text: string, id: string) => {
         await navigator.clipboard.writeText(text);
@@ -47,13 +100,69 @@ export default function SecureWidgetPage() {
         setTimeout(() => setCopied(null), 2000);
     };
 
+    const originsFrom = (value: string) =>
+        value ? value.split(',').map(s => s.trim()).filter(Boolean) : [];
+
+    const loadSnippet = async (uuid: string, language?: string) => {
+        const qs = language ? `?language=${encodeURIComponent(language)}` : '';
+        const res = await fetch(`/admin/secure-db/widgets/${uuid}/embed-code${qs}`, {
+            headers: { Accept: 'application/json' },
+        });
+        if (!res.ok) return;
+        const data = await res.json();
+        setEditEmbed(data.embed_code);
+    };
+
+    const openEdit = (widget: Widget) => {
+        setEditing(widget);
+        setEditSaved(false);
+        setEditEmbed(null);
+        setEditForm({
+            project_id: String(widget.project_id ?? widget.project?.id ?? ''),
+            name: widget.name,
+            language: widget.language,
+            database_type: widget.database_type,
+            allowed_origins: (widget.allowed_origins ?? []).join(', '),
+        });
+        void loadSnippet(widget.uuid, widget.language);
+    };
+
+    const closeEdit = () => {
+        setEditing(null);
+        setEditSaved(false);
+        setEditEmbed(null);
+    };
+
+    const changeEditLanguage = (language: string) => {
+        setEditForm(current => ({ ...current, language }));
+        setEditSaved(false);
+        if (editing) void loadSnippet(editing.uuid, language);
+    };
+
     const submit = () => {
         router.post('/admin/secure-db/widgets', {
             ...form,
-            allowed_origins: form.allowed_origins
-                ? form.allowed_origins.split(',').map(s => s.trim()).filter(Boolean)
-                : [],
+            allowed_origins: originsFrom(form.allowed_origins),
         }, { onSuccess: () => setShowForm(false) });
+    };
+
+    const saveEdit = () => {
+        if (!editing) return;
+        setSavingEdit(true);
+        router.patch(`/admin/secure-db/widgets/${editing.uuid}`, {
+            ...editForm,
+            allowed_origins: originsFrom(editForm.allowed_origins),
+        }, {
+            onFinish: () => setSavingEdit(false),
+        });
+    };
+
+    const snippetText = (code?: EmbedCode | null) => code?.snippet || code?.universal || '';
+
+    const copyEditScript = () => {
+        const text = snippetText(editEmbed);
+        if (!text) return;
+        void copyText(text, 'edit-embed');
     };
 
     return (
@@ -78,9 +187,17 @@ export default function SecureWidgetPage() {
 
                 {created && (
                     <div className="rounded-xl border border-green-500/40 bg-green-500/10 p-5 space-y-4">
-                        <h2 className="font-semibold text-green-700 dark:text-green-400">Widget Created — Save Your Credentials</h2>
+                        <h2 className="font-semibold text-green-700 dark:text-green-400">
+                            {flash?.widget_updated
+                                ? 'Widget Updated — Copy the Install Snippet'
+                                : flash?.widget_secret
+                                    ? 'Secret Regenerated — Save Your Credentials'
+                                    : 'Widget Created — Save Your Credentials'}
+                        </h2>
                         <p className="text-sm text-muted-foreground">
-                            Share the secret key with your client. They enter it in the widget, then connect their own {created.database_type ?? 'database'} from their admin portal.
+                            {flash?.widget_updated
+                                ? 'Parameters were saved. Recopy the snippet if the language or install target changed.'
+                                : `Share the secret key with your client. They enter it in the widget, then connect their own ${created.database_type ?? 'database'} from their admin portal.`}
                         </p>
                         <div className="grid gap-3 sm:grid-cols-2">
                             <div>
@@ -111,9 +228,9 @@ export default function SecureWidgetPage() {
                             <div className="space-y-2">
                                 <Label className="text-xs">Install Snippet ({created.embed_code.language})</Label>
                                 <pre className="rounded-lg bg-muted p-3 text-xs overflow-x-auto font-mono whitespace-pre-wrap">
-                                    {created.embed_code.snippet || created.embed_code.universal}
+                                    {snippetText(created.embed_code)}
                                 </pre>
-                                <Button size="sm" variant="outline" onClick={() => copyText(created.embed_code!.snippet || created.embed_code!.universal, 'embed')}>
+                                <Button size="sm" variant="outline" onClick={() => copyText(snippetText(created.embed_code), 'embed')}>
                                     {copied === 'embed' ? <Check className="h-4 w-4 mr-1" /> : <Copy className="h-4 w-4 mr-1" />}
                                     Copy Embed Code
                                 </Button>
@@ -159,7 +276,8 @@ export default function SecureWidgetPage() {
                         </div>
                         <div className="sm:col-span-2">
                             <Label>Allowed Origins (optional, comma-separated)</Label>
-                            <Input value={form.allowed_origins} onChange={e => setForm({ ...form, allowed_origins: e.target.value })} placeholder="https://client-admin.com" />
+                            <Input value={form.allowed_origins} onChange={e => setForm({ ...form, allowed_origins: e.target.value })} placeholder="http://127.0.0.1:3301, http://localhost:3301" />
+                            <p className="text-xs text-muted-foreground mt-1">Leave blank to allow any site. localhost and 127.0.0.1 are treated as the same. Use * to allow all.</p>
                         </div>
                         <div className="sm:col-span-2 flex gap-2">
                             <Button onClick={submit} disabled={!form.project_id || !form.name}>Generate Widget & Secret Key</Button>
@@ -203,6 +321,9 @@ export default function SecureWidgetPage() {
                                     <td className="px-4 py-3 text-muted-foreground">{w.access_count}</td>
                                     <td className="px-4 py-3">
                                         <div className="flex gap-1">
+                                            <button title="Edit parameters" onClick={() => openEdit(w)} className="p-1 hover:text-primary">
+                                                <Pencil className="h-4 w-4" />
+                                            </button>
                                             <button title="Copy widget key" onClick={() => copyText(w.widget_key, w.uuid)} className="p-1 hover:text-primary">
                                                 {copied === w.uuid ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
                                             </button>
@@ -226,6 +347,83 @@ export default function SecureWidgetPage() {
                     </table>
                 </div>
             </div>
+
+            <Dialog open={!!editing} onOpenChange={(open) => { if (!open) closeEdit(); }}>
+                <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
+                    <DialogHeader>
+                        <DialogTitle>Edit Secure Widget</DialogTitle>
+                        <DialogDescription>
+                            Update widget parameters, then recopy the install snippet for the client portal.
+                        </DialogDescription>
+                    </DialogHeader>
+
+                    <div className="grid gap-4 sm:grid-cols-2">
+                        <div>
+                            <Label>Project</Label>
+                            <select className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm mt-1" value={editForm.project_id} onChange={e => setEditForm({ ...editForm, project_id: e.target.value })}>
+                                <option value="">Select project</option>
+                                {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                            </select>
+                        </div>
+                        <div>
+                            <Label>Widget Name</Label>
+                            <Input value={editForm.name} onChange={e => setEditForm({ ...editForm, name: e.target.value })} />
+                        </div>
+                        <div>
+                            <Label>Development Language</Label>
+                            <select className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm mt-1" value={editForm.language} onChange={e => changeEditLanguage(e.target.value)}>
+                                {Object.entries(languages).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                            </select>
+                        </div>
+                        <div>
+                            <Label>Widget Key</Label>
+                            <Input readOnly value={editing?.widget_key ?? ''} className="font-mono text-xs mt-1" />
+                        </div>
+                        <div className="sm:col-span-2">
+                            <Label>Database Type (Market)</Label>
+                            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 mt-2">
+                                {Object.entries(database_market).map(([key, db]) => (
+                                    <button
+                                        key={key}
+                                        type="button"
+                                        onClick={() => setEditForm({ ...editForm, database_type: key })}
+                                        className={`rounded-lg border p-3 text-left transition-colors ${editForm.database_type === key ? 'border-primary bg-primary/10 ring-1 ring-primary' : 'border-sidebar-border/70 hover:bg-muted/50'}`}
+                                    >
+                                        <Database className="h-4 w-4 mb-1 text-primary" />
+                                        <div className="font-medium text-sm">{db.label}</div>
+                                        <div className="text-xs text-muted-foreground">:{db.port}</div>
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+                        <div className="sm:col-span-2">
+                            <Label>Allowed Origins (optional, comma-separated)</Label>
+                            <Input value={editForm.allowed_origins} onChange={e => setEditForm({ ...editForm, allowed_origins: e.target.value })} placeholder="http://127.0.0.1:3301, http://localhost:3301" />
+                            <p className="text-xs text-muted-foreground mt-1">Leave blank to allow any site. localhost and 127.0.0.1 are treated as the same. Use * to allow all.</p>
+                        </div>
+                        <div className="sm:col-span-2 space-y-2">
+                            <Label>Install Snippet ({editEmbed?.language ?? editForm.language})</Label>
+                            {editSaved && (
+                                <p className="text-xs text-green-600 dark:text-green-400">Parameters saved. Recopy the snippet below if you changed language.</p>
+                            )}
+                            <pre className="rounded-lg bg-muted p-3 text-xs overflow-x-auto font-mono whitespace-pre-wrap min-h-[4.5rem]">
+                                {snippetText(editEmbed) || 'Loading snippet…'}
+                            </pre>
+                            <Button size="sm" variant="outline" onClick={copyEditScript} disabled={!snippetText(editEmbed)}>
+                                {copied === 'edit-embed' ? <Check className="h-4 w-4 mr-1" /> : <Copy className="h-4 w-4 mr-1" />}
+                                Copy Embed Code
+                            </Button>
+                        </div>
+                    </div>
+
+                    <DialogFooter>
+                        <Button variant="outline" onClick={closeEdit}>Close</Button>
+                        <Button onClick={saveEdit} disabled={!editForm.project_id || !editForm.name || savingEdit}>
+                            {savingEdit ? 'Saving…' : 'Save Parameters'}
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
         </AppLayout>
     );
 }

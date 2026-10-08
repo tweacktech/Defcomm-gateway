@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="{{ str_replace('_', '-', app()->getLocale()) }}" @class([
-    'dark' => in_array($appearance ?? 'system', ['dark', 'green'], true),
-    'green' => ($appearance ?? 'system') === 'green',
+    'dark' => in_array($appearance ?? 'green', ['dark', 'green'], true),
+    'green' => ($appearance ?? 'green') === 'green',
 ])>
     <head>
         <meta charset="utf-8">
@@ -11,7 +11,7 @@
         {{-- Inline script to detect system dark mode preference and apply it immediately --}}
         <script>
             (function() {
-                const appearance = '{{ $appearance ?? "system" }}';
+                const appearance = '{{ $appearance ?? "green" }}';
 
                 if (appearance === 'system') {
                     const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;

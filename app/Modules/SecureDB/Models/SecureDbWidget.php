@@ -6,6 +6,7 @@ use App\Models\User;
 use App\Modules\SecureDB\Concerns\HasUuid;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
 class SecureDbWidget extends Model
@@ -46,5 +47,10 @@ class SecureDbWidget extends Model
     public function creator(): BelongsTo
     {
         return $this->belongsTo(User::class, 'created_by');
+    }
+
+    public function appKeys(): HasMany
+    {
+        return $this->hasMany(SecureDbWidgetAppKey::class, 'widget_id');
     }
 }

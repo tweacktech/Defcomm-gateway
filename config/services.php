@@ -35,8 +35,14 @@ return [
         ],
     ],
 
-// getting data from defcomm websocket
     'user_api' => [
-    'url' => env('USER_API_URL','https://backend.defcomm.ng/api') ,
-],
+        'url' => env('USER_API_URL', 'https://backend.defcomm.ng/api'),
+    ],
+
+    'firebase' => [
+        'enabled' => env('FCM_ENABLED', false),
+        'server_key' => env('FCM_SERVER_KEY'),
+        'project_id' => env('FCM_PROJECT_ID'),
+    ],
+
 ];

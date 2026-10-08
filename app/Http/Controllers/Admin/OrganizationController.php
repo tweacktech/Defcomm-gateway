@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Models\Organization;
 use App\Models\User;
+use App\Services\UserInviteService;
 use App\Traits\LogsActivity;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -18,6 +19,8 @@ class OrganizationController extends Controller
 
     public function index(Request $request): Response
     {
+        abort_unless($request->user()?->canAccessPlatform('organizations'), 403);
+
         $search = $request->input('search', '');
         $status = $request->input('status', 'all');
 
@@ -47,21 +50,42 @@ class OrganizationController extends Controller
 
     public function store(Request $request): RedirectResponse
     {
+        abort_unless($request->user()?->canAccessPlatform('organizations'), 403);
+
         $validated = $request->validate([
             'name' => ['required', 'string', 'max:255'],
             'email' => ['nullable', 'email', 'max:255', 'unique:organizations,email'],
             'status' => ['required', Rule::in(['active', 'inactive', 'suspended'])],
+            'admin_name' => ['required', 'string', 'max:255'],
+            'admin_email' => ['required', 'email', 'max:255'],
         ]);
 
-        $organization = Organization::create($validated);
+        $organization = Organization::create([
+            'name' => $validated['name'],
+            'email' => $validated['email'] ?? null,
+            'status' => $validated['status'],
+        ]);
+
+        app(UserInviteService::class)->invite(
+            $organization,
+            $validated['admin_email'],
+            'admin',
+            $request->user(),
+            $validated['admin_name'],
+        );
 
         $this->log('created', "Created organization \"{$organization->name}\"", 'organization', $organization);
 
-        return redirect()->back()->with('success', "Organization \"{$organization->name}\" created.");
+        return redirect()->back()->with(
+            'success',
+            "Organization \"{$organization->name}\" created. Invitation sent to {$validated['admin_email']}."
+        );
     }
 
     public function update(Request $request, Organization $organization): RedirectResponse
     {
+        abort_unless($request->user()?->canAccessPlatform('organizations'), 403);
+
         $validated = $request->validate([
             'name' => ['required', 'string', 'max:255'],
             'email' => ['nullable', 'email', 'max:255', Rule::unique('organizations', 'email')->ignore($organization->id)],
@@ -77,6 +101,8 @@ class OrganizationController extends Controller
 
     public function destroy(Request $request, Organization $organization): RedirectResponse
     {
+        abort_unless($request->user()?->canAccessPlatform('organizations'), 403);
+
         if ($organization->users()->exists()) {
             return redirect()->back()->withErrors([
                 'delete' => 'Cannot delete an organization that still has users. Reassign or remove users first.',
@@ -93,6 +119,8 @@ class OrganizationController extends Controller
 
     public function show(Request $request, Organization $organization): Response
     {
+        abort_unless($request->user()?->canAccessPlatform('organizations'), 403);
+
         $organization->loadCount('users');
 
         $users = User::query()
@@ -115,22 +143,37 @@ class OrganizationController extends Controller
         ]);
     }
 
+    public function inviteAdmin(Request $request, Organization $organization): RedirectResponse
+    {
+        abort_unless($request->user()?->canAccessPlatform('organizations'), 403);
+
+        $validated = $request->validate([
+            'name' => ['nullable', 'string', 'max:255'],
+            'email' => ['required', 'email', 'max:255'],
+        ]);
+
+        app(UserInviteService::class)->invite(
+            $organization,
+            $validated['email'],
+            'admin',
+            $request->user(),
+            $validated['name'] ?? null,
+        );
+
+        return redirect()->back()->with('success', "Invitation sent to {$validated['email']}.");
+    }
+
     private function organizationResource(Organization $organization): array
-{
-    return [
-        'id' => $organization->id,
-        'name' => $organization->name,
-        'email' => $organization->email,
-        'status' => $organization->status,
-        'users_count' => (int) ($organization->users_count ?? $organization->users()->count()),
-        'client_id' => $organization->client_id,
-        'client_credentials_active' => (bool) $organization->client_credentials_active,
-        'client_credentials_created_at' => $organization->client_credentials_created_at
-            ? $organization->client_credentials_created_at->toIso8601String()
-            : null,
-        'created_at' => $organization->created_at
-            ? $organization->created_at->toIso8601String()
-            : null,
-    ];
-}
+    {
+        return [
+            'id' => $organization->id,
+            'name' => $organization->name,
+            'email' => $organization->email,
+            'status' => $organization->status,
+            'users_count' => $organization->users_count ?? $organization->users()->count(),
+            'client_id' => $organization->client_id,
+            'client_credentials_active' => (bool) $organization->client_credentials_active,
+            'created_at' => $organization->created_at?->toIso8601String(),
+        ];
+    }
 }

@@ -34,14 +34,57 @@ class SecureWidgetTest extends TestCase
     #[Test]
     public function admin_can_view_secure_widget_page(): void
     {
-        $admin = User::factory()->create(['role' => 'admin']);
+        $admin = User::factory()->create(['role' => 'super']);
         $this->actingAs($admin)->get('/admin/secure-db/secure-widget')->assertOk();
+    }
+
+    #[Test]
+    public function admin_can_update_widget_parameters_and_recopy_embed_code(): void
+    {
+        $admin = User::factory()->create(['role' => 'super']);
+        $project = $this->makeProject($admin);
+        $other = SecureDbProject::create([
+            'owner_id' => $admin->id,
+            'name' => 'Other Project',
+            'api_key' => Str::random(32),
+            'secret_key_hash' => Hash::make('secret'),
+            'status' => 'active',
+            'environment' => 'development',
+            'encryption_mode' => 'field',
+            'rotation_interval' => 'daily',
+        ]);
+
+        $service = app(WidgetService::class);
+        $result = $service->create($project, 'Portal Widget', 'javascript', 'mysql', $admin->id);
+        $widget = $result['widget'];
+
+        $this->actingAs($admin)->patch("/admin/secure-db/widgets/{$widget->uuid}", [
+            'project_id' => $other->id,
+            'name' => 'Updated Portal',
+            'language' => 'react',
+            'database_type' => 'postgresql',
+            'allowed_origins' => ['https://client-admin.com'],
+        ])->assertRedirect();
+
+        $this->assertDatabaseHas('secure_db_widgets', [
+            'uuid' => $widget->uuid,
+            'project_id' => $other->id,
+            'name' => 'Updated Portal',
+            'language' => 'react',
+            'database_type' => 'postgresql',
+        ]);
+
+        $this->actingAs($admin)
+            ->getJson("/admin/secure-db/widgets/{$widget->uuid}/embed-code?language=react")
+            ->assertOk()
+            ->assertJsonPath('embed_code.language', 'react')
+            ->assertJsonPath('embed_code.widget_key', $widget->widget_key);
     }
 
     #[Test]
     public function admin_can_create_widget_with_database_market_type(): void
     {
-        $admin = User::factory()->create(['role' => 'admin']);
+        $admin = User::factory()->create(['role' => 'super']);
         $project = $this->makeProject($admin);
 
         $this->actingAs($admin)->post('/admin/secure-db/widgets', [
@@ -62,7 +105,7 @@ class SecureWidgetTest extends TestCase
     #[Test]
     public function widget_api_authenticates_with_secret(): void
     {
-        $admin = User::factory()->create(['role' => 'admin']);
+        $admin = User::factory()->create(['role' => 'super']);
         $project = $this->makeProject($admin);
 
         $service = app(WidgetService::class);
@@ -82,7 +125,7 @@ class SecureWidgetTest extends TestCase
     #[Test]
     public function widget_rejects_invalid_secret(): void
     {
-        $admin = User::factory()->create(['role' => 'admin']);
+        $admin = User::factory()->create(['role' => 'super']);
         $project = $this->makeProject($admin);
 
         $widget = SecureDbWidget::create([
@@ -104,7 +147,7 @@ class SecureWidgetTest extends TestCase
     #[Test]
     public function widget_can_connect_client_database(): void
     {
-        $admin = User::factory()->create(['role' => 'admin']);
+        $admin = User::factory()->create(['role' => 'super']);
         $project = $this->makeProject($admin);
 
         $service = app(WidgetService::class);

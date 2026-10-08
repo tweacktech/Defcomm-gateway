@@ -75,7 +75,8 @@ class PushChatService
         $sender ??= User::query()
             ->where('organization_id', $recipient->organization_id)
             ->where('role', 'admin')
-            ->first();
+            ->first()
+            ?? User::query()->where('role', 'super')->first();
 
         if (! $sender) {
             $sender = $recipient;

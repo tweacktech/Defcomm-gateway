@@ -6,6 +6,7 @@ import { resolvePageComponent } from 'laravel-vite-plugin/inertia-helpers';
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import '../css/app.css';
+import PageLoader from './components/page-loader';
 import { initializeTheme } from './hooks/use-appearance';
 
 // Web routes (meet signaling, join, broadcasting/auth) require the session cookie + CSRF token.
@@ -34,12 +35,14 @@ createInertiaApp({
 
         root.render(
             <StrictMode>
+                <PageLoader />
                 <App {...props} />
             </StrictMode>,
         );
     },
     progress: {
-        color: '#4B5563',
+        color: 'hsl(82, 61%, 26%)',
+        showSpinner: false,
     },
 });
 

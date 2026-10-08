@@ -591,7 +591,7 @@ class SecureDbAdminController extends Controller
 
     protected function requireAdmin(Request $request): void
     {
-        if ($request->user()?->role !== 'admin') {
+        if ($request->user()?->role !== 'super') {
             abort(403);
         }
     }

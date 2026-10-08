@@ -14,14 +14,16 @@ import type { BreadcrumbItem } from '@/types';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type UserRole   = 'admin' | 'company_admin' | 'client';
-type UserStatus = 'active' | 'inactive' | 'suspended';
+type UserRole   = 'super' | 'admin' | 'user';
+type UserStatus = 'pending' | 'active' | 'block';
 
 interface User {
     id: number;
     name: string;
     email: string;
     role: UserRole;
+    role_label?: string;
+    platform_role?: string | null;
     status: UserStatus;
     token_count: number;
     created_ago: string;
@@ -40,10 +42,11 @@ interface Paginator<T> {
 interface UserSummary {
     total: number;
     active: number;
-    inactive: number;
-    suspended: number;
+    pending: number;
+    block: number;
+    supers: number;
     admins: number;
-    clients: number;
+    users: number;
     new_this_week: number;
 }
 
@@ -53,7 +56,10 @@ interface PageProps extends Record<string, unknown> {
     status: string;
     role: string;
     summary: UserSummary;
+    organizations: { id: number; name: string }[];
+    can_invite_super: boolean;
     auth: { user: { id: number } };
+    errors?: Record<string, string>;
 }
 
 // ─── Breadcrumbs ──────────────────────────────────────────────────────────────
@@ -63,12 +69,138 @@ const breadcrumbs: BreadcrumbItem[] = [
     { title: 'Users',     href: '/admin/users' },
 ];
 
+const PLATFORM_SUB_ROLES: { value: string; label: string; access: string }[] = [
+    { value: 'general_admin', label: 'General Admin', access: 'Full platform access' },
+    { value: 'billing', label: 'Billing', access: 'Dashboard, companies, plans, users' },
+    { value: 'support', label: 'Support', access: 'Dashboard, support, notifications, languages, agreements, mail' },
+    { value: 'developer', label: 'Developer', access: 'Dashboard, services, Secure DB, store, bounty' },
+];
+
+function InviteUserDrawer({
+    organizations,
+    canInviteSuper,
+    onClose,
+}: {
+    organizations: { id: number; name: string }[];
+    canInviteSuper: boolean;
+    onClose: () => void;
+}) {
+    const [name, setName] = useState('');
+    const [email, setEmail] = useState('');
+    const [role, setRole] = useState<UserRole>(canInviteSuper ? 'super' : 'user');
+    const [platformRole, setPlatformRole] = useState('general_admin');
+    const [organizationId, setOrganizationId] = useState(organizations[0]?.id?.toString() ?? '');
+    const [saving, setSaving] = useState(false);
+    const [errors, setErrors] = useState<Record<string, string>>({});
+
+    const selectedSubRole = PLATFORM_SUB_ROLES.find((r) => r.value === platformRole);
+
+    const submit = () => {
+        setSaving(true);
+        setErrors({});
+        router.post('/admin/users/invite', {
+            name: name || undefined,
+            email,
+            role,
+            platform_role: role === 'super' ? platformRole : undefined,
+            organization_id: role === 'super' ? undefined : Number(organizationId),
+        }, {
+            preserveScroll: true,
+            onSuccess: () => { setSaving(false); onClose(); },
+            onError: (e) => { setSaving(false); setErrors(e as Record<string, string>); },
+        });
+    };
+
+    return (
+        <>
+            <div className="fixed inset-0 z-40 bg-black/40 backdrop-blur-sm" onClick={onClose} />
+            <div className="fixed right-0 top-0 z-50 flex h-full w-full max-w-md flex-col border-l bg-card shadow-2xl">
+                <div className="flex items-center justify-between border-b p-6">
+                    <h2 className="font-semibold">Invite User</h2>
+                    <Button size="sm" variant="ghost" className="h-8 w-8 p-0" onClick={onClose}>
+                        <X className="h-4 w-4" />
+                    </Button>
+                </div>
+                <div className="flex-1 space-y-4 overflow-y-auto p-6">
+                    <p className="text-sm text-muted-foreground">
+                        Send an email invitation so they can set up their account.
+                    </p>
+                    <div>
+                        <Label className="text-xs">Name</Label>
+                        <Input className="mt-1 h-9" value={name} onChange={(e) => setName(e.target.value)} />
+                    </div>
+                    <div>
+                        <Label className="text-xs">Email *</Label>
+                        <Input type="email" className="mt-1 h-9" value={email} onChange={(e) => setEmail(e.target.value)} />
+                        {errors.email && <p className="mt-1 text-xs text-destructive">{errors.email}</p>}
+                    </div>
+                    <div>
+                        <Label className="text-xs">Role *</Label>
+                        <select
+                            className="mt-1 h-9 w-full rounded-md border bg-background px-3 text-sm"
+                            value={role}
+                            onChange={(e) => setRole(e.target.value as UserRole)}
+                        >
+                            {canInviteSuper && <option value="super">Super</option>}
+                            <option value="admin">Admin</option>
+                            <option value="user">User</option>
+                        </select>
+                        {errors.role && <p className="mt-1 text-xs text-destructive">{errors.role}</p>}
+                    </div>
+                    {role === 'super' ? (
+                        <div>
+                            <Label className="text-xs">Sub-role *</Label>
+                            <select
+                                className="mt-1 h-9 w-full rounded-md border bg-background px-3 text-sm"
+                                value={platformRole}
+                                onChange={(e) => setPlatformRole(e.target.value)}
+                            >
+                                {PLATFORM_SUB_ROLES.map((r) => (
+                                    <option key={r.value} value={r.value}>{r.label}</option>
+                                ))}
+                            </select>
+                            {selectedSubRole && (
+                                <p className="mt-1.5 text-xs text-muted-foreground">
+                                    Access: {selectedSubRole.access}
+                                </p>
+                            )}
+                            {errors.platform_role && <p className="mt-1 text-xs text-destructive">{errors.platform_role}</p>}
+                        </div>
+                    ) : (
+                        <div>
+                            <Label className="text-xs">Organization *</Label>
+                            <select
+                                className="mt-1 h-9 w-full rounded-md border bg-background px-3 text-sm"
+                                value={organizationId}
+                                onChange={(e) => setOrganizationId(e.target.value)}
+                            >
+                                {organizations.length === 0 && <option value="">No organizations</option>}
+                                {organizations.map((o) => (
+                                    <option key={o.id} value={o.id}>{o.name}</option>
+                                ))}
+                            </select>
+                            {errors.organization_id && <p className="mt-1 text-xs text-destructive">{errors.organization_id}</p>}
+                        </div>
+                    )}
+                    <Button
+                        className="w-full gap-2"
+                        disabled={saving || !email || (role !== 'super' && !organizationId)}
+                        onClick={submit}
+                    >
+                        {saving ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+                        Send Invitation
+                    </Button>
+                </div>
+            </div>
+        </>
+    );
+}
 // ─── Badges ───────────────────────────────────────────────────────────────────
 
 const STATUS_MAP: Record<UserStatus, string> = {
-    active:    'bg-green-500/10 text-green-600 dark:text-green-400',
-    inactive:  'bg-muted/60 text-muted-foreground',
-    suspended: 'bg-red-500/10 text-red-600 dark:text-red-400',
+    pending: 'bg-yellow-500/10 text-yellow-700 dark:text-yellow-400',
+    active: 'bg-green-500/10 text-green-600 dark:text-green-400',
+    block: 'bg-red-500/10 text-red-600 dark:text-red-400',
 };
 
 function StatusBadge({ status }: { status: UserStatus }) {
@@ -79,18 +211,19 @@ function StatusBadge({ status }: { status: UserStatus }) {
     );
 }
 
-function RoleBadge({ role }: { role: UserRole }) {
-    if (role === 'admin') {
+function RoleBadge({ role, platformRole }: { role: UserRole; platformRole?: string | null }) {
+    if (role === 'super') {
+        const sub = PLATFORM_SUB_ROLES.find((r) => r.value === platformRole)?.label ?? 'Super';
         return (
             <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
-                <ShieldCheck className="h-3 w-3" />Super Admin
+                <ShieldCheck className="h-3 w-3" />{sub}
             </span>
         );
     }
-    if (role === 'company_admin') {
+    if (role === 'admin') {
         return (
             <span className="inline-flex items-center gap-1 rounded-full bg-blue-500/10 px-2 py-0.5 text-xs font-medium text-blue-600 dark:text-blue-400">
-                <ShieldCheck className="h-3 w-3" />Company Admin
+                <ShieldCheck className="h-3 w-3" />Admin
             </span>
         );
     }
@@ -136,16 +269,16 @@ function EditDrawer({ user, currentUserId, onClose }: {
 
     // ── Status options ───────────────────────────────────────────────────────
     const statusOptions: { value: UserStatus; icon: React.ReactNode; label: string; sub: string; activeColor: string }[] = [
-        { value: 'active',    icon: <CircleCheck className="h-4 w-4" />, label: 'Active',    sub: 'Full access',       activeColor: 'border-green-500 bg-green-500/10 text-green-600 dark:text-green-400' },
-        { value: 'inactive',  icon: <CircleOff   className="h-4 w-4" />, label: 'Inactive',  sub: 'Login disabled',    activeColor: 'border-sidebar-border/70 bg-muted/30 text-muted-foreground'           },
-        { value: 'suspended', icon: <ShieldAlert className="h-4 w-4" />, label: 'Suspended', sub: 'Blocked + flagged', activeColor: 'border-red-500 bg-red-500/10 text-red-600 dark:text-red-400'          },
+        { value: 'active', icon: <CircleCheck className="h-4 w-4" />, label: 'Active', sub: 'Full access', activeColor: 'border-green-500 bg-green-500/10 text-green-600 dark:text-green-400' },
+        { value: 'pending', icon: <CircleOff className="h-4 w-4" />, label: 'Pending', sub: 'Awaiting approval', activeColor: 'border-yellow-500 bg-yellow-500/10 text-yellow-700 dark:text-yellow-400' },
+        { value: 'block', icon: <ShieldAlert className="h-4 w-4" />, label: 'Block', sub: 'Access blocked', activeColor: 'border-red-500 bg-red-500/10 text-red-600 dark:text-red-400' },
     ];
 
     // ── Role options ─────────────────────────────────────────────────────────
     const roleOptions: { value: UserRole; icon: React.ReactNode; label: string; sub: string; activeColor: string }[] = [
-        { value: 'admin',         icon: <ShieldCheck className="h-4 w-4" />, label: 'Super Admin',   sub: 'Full platform access',    activeColor: 'border-primary bg-primary/10 text-primary'             },
-        { value: 'company_admin', icon: <ShieldCheck className="h-4 w-4" />, label: 'Company Admin', sub: 'Manage organization',     activeColor: 'border-blue-500 bg-blue-500/10 text-blue-600 dark:text-blue-400' },
-        { value: 'client',        icon: <UserCog     className="h-4 w-4" />, label: 'User',          sub: 'Standard access',         activeColor: 'border-sidebar-border/70 bg-muted/30 text-foreground'  },
+        { value: 'super', icon: <ShieldCheck className="h-4 w-4" />, label: 'Super', sub: 'Full platform access', activeColor: 'border-primary bg-primary/10 text-primary' },
+        { value: 'admin', icon: <ShieldCheck className="h-4 w-4" />, label: 'Admin', sub: 'Manage organization', activeColor: 'border-blue-500 bg-blue-500/10 text-blue-600 dark:text-blue-400' },
+        { value: 'user', icon: <UserCog className="h-4 w-4" />, label: 'User', sub: 'Standard access', activeColor: 'border-sidebar-border/70 bg-muted/30 text-foreground' },
     ];
 
     return (
@@ -175,7 +308,7 @@ function EditDrawer({ user, currentUserId, onClose }: {
                     {/* Current badges */}
                     <div className="flex items-center gap-2 flex-wrap">
                         <StatusBadge status={user.status} />
-                        <RoleBadge role={user.role} />
+                        <RoleBadge role={user.role} platformRole={user.platform_role} />
                         {user.token_count > 0 && (
                             <span className="inline-flex items-center gap-1 rounded-full bg-blue-500/10 px-2 py-0.5 text-xs font-medium text-blue-600 dark:text-blue-400">
                                 <KeyRound className="h-3 w-3" />{user.token_count} token{user.token_count !== 1 ? 's' : ''}
@@ -222,7 +355,12 @@ function EditDrawer({ user, currentUserId, onClose }: {
                                     disabled={isSelf}
                                     onClick={() => router.patch(
                                         `/admin/users/${user.id}/role`,
-                                        { role: opt.value },
+                                        {
+                                            role: opt.value,
+                                            platform_role: opt.value === 'super'
+                                                ? (user.platform_role || 'general_admin')
+                                                : undefined,
+                                        },
                                         { preserveScroll: true }
                                     )}
                                     className={`flex flex-col items-center gap-1 rounded-lg border p-3 text-center text-xs transition
@@ -235,6 +373,32 @@ function EditDrawer({ user, currentUserId, onClose }: {
                                 </button>
                             ))}
                         </div>
+                        {user.role === 'super' && !isSelf && (
+                            <div className="pt-2 space-y-2">
+                                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                                    Sub-role
+                                </p>
+                                <div className="grid grid-cols-2 gap-2">
+                                    {PLATFORM_SUB_ROLES.map((sub) => (
+                                        <button
+                                            key={sub.value}
+                                            onClick={() => router.patch(
+                                                `/admin/users/${user.id}/role`,
+                                                { role: 'super', platform_role: sub.value },
+                                                { preserveScroll: true }
+                                            )}
+                                            className={`rounded-lg border p-2.5 text-left text-xs transition
+                                                ${(user.platform_role || 'general_admin') === sub.value
+                                                    ? 'border-primary bg-primary/10 text-primary'
+                                                    : 'border-sidebar-border/50 hover:bg-accent/40'}`}
+                                        >
+                                            <span className="font-semibold block">{sub.label}</span>
+                                            <span className="text-muted-foreground leading-tight">{sub.access}</span>
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
                         {isSelf && (
                             <p className="text-xs text-muted-foreground">You cannot change your own role or status.</p>
                         )}
@@ -383,35 +547,35 @@ function RowMenu({ user, currentUserId, onEdit }: {
                                     <CircleCheck className="h-3.5 w-3.5" />Set Active
                                 </button>
                             )}
-                            {user.status !== 'inactive' && (
-                                <button onClick={() => act(() => setStatus('inactive'))}
-                                    className="flex w-full items-center gap-2 px-3 py-2 text-sm text-muted-foreground hover:bg-accent/50">
-                                    <CircleOff className="h-3.5 w-3.5" />Set Inactive
+                            {user.status !== 'pending' && (
+                                <button onClick={() => act(() => setStatus('pending'))}
+                                    className="flex w-full items-center gap-2 px-3 py-2 text-sm text-yellow-700 hover:bg-accent/50 dark:text-yellow-400">
+                                    <CircleOff className="h-3.5 w-3.5" />Set Pending
                                 </button>
                             )}
-                            {user.status !== 'suspended' && (
-                                <button onClick={() => act(() => setStatus('suspended'))}
+                            {user.status !== 'block' && (
+                                <button onClick={() => act(() => setStatus('block'))}
                                     className="flex w-full items-center gap-2 px-3 py-2 text-sm text-red-600 hover:bg-accent/50 dark:text-red-400">
-                                    <ShieldAlert className="h-3.5 w-3.5" />Suspend
+                                    <ShieldAlert className="h-3.5 w-3.5" />Block
                                 </button>
                             )}
 
                             {/* Role toggle */}
                             <div className="my-1 border-t border-sidebar-border/50" />
+                            {user.role !== 'super' && (
+                                <button onClick={() => act(() => setRole('super'))}
+                                    className="flex w-full items-center gap-2 px-3 py-2 text-sm text-primary hover:bg-accent/50">
+                                    <ShieldCheck className="h-3.5 w-3.5" />Make Super
+                                </button>
+                            )}
                             {user.role !== 'admin' && (
                                 <button onClick={() => act(() => setRole('admin'))}
-                                    className="flex w-full items-center gap-2 px-3 py-2 text-sm text-primary hover:bg-accent/50">
-                                    <ShieldCheck className="h-3.5 w-3.5" />Make Super Admin
-                                </button>
-                            )}
-                            {user.role !== 'company_admin' && (
-                                <button onClick={() => act(() => setRole('company_admin'))}
                                     className="flex w-full items-center gap-2 px-3 py-2 text-sm text-blue-600 hover:bg-accent/50 dark:text-blue-400">
-                                    <ShieldCheck className="h-3.5 w-3.5" />Make Company Admin
+                                    <ShieldCheck className="h-3.5 w-3.5" />Make Admin
                                 </button>
                             )}
-                            {user.role !== 'client' && (
-                                <button onClick={() => act(() => setRole('client'))}
+                            {user.role !== 'user' && (
+                                <button onClick={() => act(() => setRole('user'))}
                                     className="flex w-full items-center gap-2 px-3 py-2 text-sm text-muted-foreground hover:bg-accent/50">
                                     <UserCog className="h-3.5 w-3.5" />Make User
                                 </button>
@@ -442,11 +606,12 @@ function RowMenu({ user, currentUserId, onEdit }: {
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 export default function UsersIndex() {
-    const { users, search: initSearch, status: initStatus, role: initRole, summary, auth } =
+    const { users, search: initSearch, status: initStatus, role: initRole, summary, auth, organizations = [], can_invite_super = false } =
         usePage<PageProps>().props;
 
     const [search, setSearch]     = useState(initSearch);
     const [editUser, setEditUser] = useState<User | null>(null);
+    const [showInvite, setShowInvite] = useState(false);
 
     useEffect(() => {
         const t = setTimeout(() => {
@@ -464,13 +629,14 @@ export default function UsersIndex() {
     };
 
     const summaryCards = [
-        { label: 'Total',        value: summary.total,         color: 'text-foreground',                      bg: 'bg-muted/40'      },
-        { label: 'Active',       value: summary.active,        color: 'text-green-600 dark:text-green-400',   bg: 'bg-green-500/10'  },
-        { label: 'Inactive',     value: summary.inactive,      color: 'text-muted-foreground',                bg: 'bg-muted/60'      },
-        { label: 'Suspended',    value: summary.suspended,     color: 'text-red-600 dark:text-red-400',       bg: 'bg-red-500/10'    },
-        { label: 'Admins',       value: summary.admins,        color: 'text-primary',                         bg: 'bg-primary/10'    },
-        { label: 'Clients',      value: summary.clients,       color: 'text-blue-600 dark:text-blue-400',     bg: 'bg-blue-500/10'   },
-        { label: 'New this week',value: summary.new_this_week, color: 'text-foreground',                      bg: 'bg-muted/40'      },
+        { label: 'Total', value: summary.total, color: 'text-foreground', bg: 'bg-muted/40' },
+        { label: 'Active', value: summary.active, color: 'text-green-600 dark:text-green-400', bg: 'bg-green-500/10' },
+        { label: 'Pending', value: summary.pending, color: 'text-yellow-700 dark:text-yellow-400', bg: 'bg-yellow-500/10' },
+        { label: 'Block', value: summary.block, color: 'text-red-600 dark:text-red-400', bg: 'bg-red-500/10' },
+        { label: 'Super', value: summary.supers, color: 'text-primary', bg: 'bg-primary/10' },
+        { label: 'Admins', value: summary.admins, color: 'text-blue-600 dark:text-blue-400', bg: 'bg-blue-500/10' },
+        { label: 'Users', value: summary.users, color: 'text-foreground', bg: 'bg-muted/40' },
+        { label: 'New this week', value: summary.new_this_week, color: 'text-foreground', bg: 'bg-muted/40' },
     ];
 
     return (
@@ -485,6 +651,14 @@ export default function UsersIndex() {
                 />
             )}
 
+            {showInvite && (
+                <InviteUserDrawer
+                    organizations={organizations}
+                    canInviteSuper={can_invite_super}
+                    onClose={() => setShowInvite(false)}
+                />
+            )}
+
             <div className="flex flex-col gap-6 p-6">
 
                 {/* Header */}
@@ -493,7 +667,7 @@ export default function UsersIndex() {
                         <h1 className="text-2xl font-bold tracking-tight">User Management</h1>
                         <p className="text-muted-foreground">Manage accounts, roles, and API tokens.</p>
                     </div>
-                    <Button className="gap-2">
+                    <Button className="gap-2" onClick={() => setShowInvite(true)}>
                         <UserPlus className="h-4 w-4" />Invite User
                     </Button>
                 </div>
@@ -521,7 +695,7 @@ export default function UsersIndex() {
 
                         {/* Status tabs */}
                         <div className="flex overflow-hidden rounded-lg border border-sidebar-border/50">
-                            {(['all', 'active', 'inactive', 'suspended'] as const).map(s => (
+                            {(['all', 'active', 'pending', 'block'] as const).map(s => (
                                 <button key={s} onClick={() => applyFilter('status', s)}
                                     className={`px-3 py-1.5 text-xs font-medium capitalize transition
                                         ${initStatus === s ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-accent/50'}`}>
@@ -532,7 +706,7 @@ export default function UsersIndex() {
 
                         {/* Role tabs */}
                         <div className="flex overflow-hidden rounded-lg border border-sidebar-border/50">
-                            {(['all', 'admin', 'company_admin', 'client'] as const).map(r => (
+                            {(['all', 'super', 'admin', 'user'] as const).map(r => (
                                 <button key={r} onClick={() => applyFilter('role', r)}
                                     className={`px-3 py-1.5 text-xs font-medium capitalize transition
                                         ${initRole === r ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-accent/50'}`}>
@@ -578,7 +752,7 @@ export default function UsersIndex() {
                                                 </div>
                                             </div>
                                         </td>
-                                        <td className="px-5 py-3"><RoleBadge role={user.role} /></td>
+                                        <td className="px-5 py-3"><RoleBadge role={user.role} platformRole={user.platform_role} /></td>
                                         <td className="px-5 py-3"><StatusBadge status={user.status} /></td>
                                         <td className="px-5 py-3">
                                             {user.token_count > 0 ? (

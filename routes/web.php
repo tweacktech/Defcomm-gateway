@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Auth\InviteAcceptController;
 use App\Http\Controllers\Api\PythonController;
 use App\Http\Controllers\AudioCallController;
 use App\Http\Controllers\DashboardController;
@@ -8,6 +9,9 @@ use App\Http\Controllers\DriveController;
 use App\Http\Controllers\MeetController;
 use App\Http\Controllers\OrganizationAdminController;
 use App\Http\Controllers\OrganizationController;
+use App\Http\Controllers\Portal\CompanyPortalController;
+use App\Http\Controllers\Portal\SuperPortalController;
+use App\Http\Controllers\Portal\UserPortalController;
 use App\Http\Controllers\RegisteredUsersController;
 use App\Http\Controllers\ServiceController;
 use App\Http\Controllers\Settings\ProfileController;
@@ -30,6 +34,8 @@ Route::get('/', function () {
 Route::middleware('guest')->group(function () {
     Route::get('register', [RegisteredUsersController::class, 'create'])->name('register');
     Route::post('register', [RegisteredUsersController::class, 'store'])->name('register.store');
+    Route::get('invite/{token}', [InviteAcceptController::class, 'show'])->name('invite.show');
+    Route::post('invite/{token}', [InviteAcceptController::class, 'store'])->name('invite.store');
 });
 
 // Organization search endpoint (accessible to guests during registration)
@@ -165,28 +171,102 @@ Route::prefix('')->middleware(['auth'])->group(function () {
     Route::get('/document', [ProfileController::class, 'document']);
 
     Route::middleware(['auth', 'super.admin'])->prefix('admin')->name('admin.')->group(function () {
-        Route::get('/users', [UserController::class, 'index'])->name('users.index');
-        Route::patch('/users/{user}', [UserController::class, 'update'])->name('users.update');
-        Route::patch('/users/{user}/role', [UserController::class, 'setRole'])->name('users.role');
-        Route::patch('/users/{user}/status', [UserController::class, 'setStatus'])->name('users.status');
-        Route::patch('/users/{user}/subscription', [UserController::class, 'setSubscription'])->name('users.subscription');
-        Route::delete('/users/{user}/tokens', [UserController::class, 'revokeAllTokens'])->name('users.tokens.revoke-all');
-        Route::delete('/users/{user}/tokens/{clientId}', [UserController::class, 'revokeSingleToken'])->name('users.tokens.revoke');
-        Route::delete('/users/{user}', [UserController::class, 'destroy'])->name('users.destroy');
+        Route::middleware('platform:users')->group(function () {
+            Route::get('/users', [UserController::class, 'index'])->name('users.index');
+            Route::post('/users/invite', [UserController::class, 'invite'])->name('users.invite');
+            Route::patch('/users/{user}', [UserController::class, 'update'])->name('users.update');
+            Route::patch('/users/{user}/role', [UserController::class, 'setRole'])->name('users.role');
+            Route::patch('/users/{user}/status', [UserController::class, 'setStatus'])->name('users.status');
+            Route::patch('/users/{user}/subscription', [UserController::class, 'setSubscription'])->name('users.subscription');
+            Route::delete('/users/{user}/tokens', [UserController::class, 'revokeAllTokens'])->name('users.tokens.revoke-all');
+            Route::delete('/users/{user}/tokens/{clientId}', [UserController::class, 'revokeSingleToken'])->name('users.tokens.revoke');
+            Route::delete('/users/{user}', [UserController::class, 'destroy'])->name('users.destroy');
+        });
 
-        Route::get('/services', [ServiceController::class, 'index'])->name('services.index');
-        Route::post('/services', [ServiceController::class, 'store'])->name('services.store');
-        Route::patch('/services/{service}', [ServiceController::class, 'update'])->name('services.update');
-        Route::patch('/services/{service}/toggle', [ServiceController::class, 'toggle'])->name('services.toggle');
-        Route::delete('/services/{service}', [ServiceController::class, 'destroy'])->name('services.destroy');
+        Route::middleware('platform:services')->group(function () {
+            Route::get('/services', [ServiceController::class, 'index'])->name('services.index');
+            Route::post('/services', [ServiceController::class, 'store'])->name('services.store');
+            Route::patch('/services/{service}', [ServiceController::class, 'update'])->name('services.update');
+            Route::patch('/services/{service}/toggle', [ServiceController::class, 'toggle'])->name('services.toggle');
+            Route::delete('/services/{service}', [ServiceController::class, 'destroy'])->name('services.destroy');
+        });
 
-        Route::get('/organizations', [\App\Http\Controllers\Admin\OrganizationController::class, 'index'])->name('organizations.index');
-        Route::post('/organizations', [\App\Http\Controllers\Admin\OrganizationController::class, 'store'])->name('organizations.store');
-        Route::get('/organizations/{organization}', [\App\Http\Controllers\Admin\OrganizationController::class, 'show'])->name('organizations.show');
-        Route::patch('/organizations/{organization}', [\App\Http\Controllers\Admin\OrganizationController::class, 'update'])->name('organizations.update');
-        Route::delete('/organizations/{organization}', [\App\Http\Controllers\Admin\OrganizationController::class, 'destroy'])->name('organizations.destroy');
+        Route::middleware('platform:organizations')->group(function () {
+            Route::get('/organizations', [\App\Http\Controllers\Admin\OrganizationController::class, 'index'])->name('organizations.index');
+            Route::post('/organizations', [\App\Http\Controllers\Admin\OrganizationController::class, 'store'])->name('organizations.store');
+            Route::get('/organizations/{organization}', [\App\Http\Controllers\Admin\OrganizationController::class, 'show'])->name('organizations.show');
+            Route::patch('/organizations/{organization}', [\App\Http\Controllers\Admin\OrganizationController::class, 'update'])->name('organizations.update');
+            Route::delete('/organizations/{organization}', [\App\Http\Controllers\Admin\OrganizationController::class, 'destroy'])->name('organizations.destroy');
+            Route::post('/organizations/{organization}/invite', [\App\Http\Controllers\Admin\OrganizationController::class, 'inviteAdmin'])->name('organizations.invite');
+        });
 
-        require __DIR__.'/secure-db.php';
+        Route::middleware('platform:secure_db')->group(function () {
+            require __DIR__.'/secure-db.php';
+        });
+    });
+
+    // Super portal (socket-equivalent menus) — /super/*
+    Route::middleware(['auth', 'super.admin'])->prefix('super')->name('super.')->group(function () {
+        Route::middleware('platform:users')->group(function () {
+            Route::get('/accounts/{type?}', [SuperPortalController::class, 'accounts'])->name('accounts')->where('type', 'super|admin');
+            Route::post('/accounts', [SuperPortalController::class, 'storeAccount'])->name('accounts.store');
+            Route::patch('/accounts/{user}', [SuperPortalController::class, 'updateAccount'])->name('accounts.update');
+            Route::delete('/accounts/{user}', [SuperPortalController::class, 'deleteAccount'])->name('accounts.destroy');
+        });
+
+        Route::middleware('platform:notifications')->group(function () {
+            Route::get('/notifications', [SuperPortalController::class, 'notifications'])->name('notifications');
+            Route::post('/notifications', [SuperPortalController::class, 'storeNotification'])->name('notifications.store');
+            Route::patch('/notifications/{notification}', [SuperPortalController::class, 'updateNotification'])->name('notifications.update');
+            Route::delete('/notifications/{notification}', [SuperPortalController::class, 'deleteNotification'])->name('notifications.destroy');
+        });
+
+        Route::middleware('platform:languages')->group(function () {
+            Route::get('/languages', [SuperPortalController::class, 'languages'])->name('languages');
+            Route::post('/languages', [SuperPortalController::class, 'storeLanguage'])->name('languages.store');
+            Route::patch('/languages/{language}', [SuperPortalController::class, 'updateLanguage'])->name('languages.update');
+        });
+
+        Route::middleware('platform:agreements')->group(function () {
+            Route::get('/agreements', [SuperPortalController::class, 'agreements'])->name('agreements');
+            Route::post('/agreements', [SuperPortalController::class, 'storeAgreement'])->name('agreements.store');
+            Route::patch('/agreements/{agreement}', [SuperPortalController::class, 'updateAgreement'])->name('agreements.update');
+        });
+
+        Route::middleware('platform:system_mails')->group(function () {
+            Route::get('/system-mails', [SuperPortalController::class, 'systemMails'])->name('system-mails');
+            Route::patch('/system-mails/{systemMail}', [SuperPortalController::class, 'updateSystemMail'])->name('system-mails.update');
+        });
+
+        Route::middleware('platform:plans')->group(function () {
+            Route::get('/plans', [SuperPortalController::class, 'plans'])->name('plans');
+            Route::post('/plans', [SuperPortalController::class, 'storePlan'])->name('plans.store');
+        });
+
+        Route::middleware('platform:store')->group(function () {
+            Route::get('/store/apps', [SuperPortalController::class, 'storeApps'])->name('store.apps');
+            Route::get('/store/users', [SuperPortalController::class, 'storeUsers'])->name('store.users');
+            Route::patch('/store/apps/{appStore}', [SuperPortalController::class, 'updateStoreApp'])->name('store.apps.update');
+        });
+
+        Route::middleware('platform:bounty')->group(function () {
+            Route::get('/bounty/users', [SuperPortalController::class, 'bountyUsers'])->name('bounty.users');
+            Route::patch('/bounty/users/{bountyUser}', [SuperPortalController::class, 'bountyUserStatus'])->name('bounty.users.status');
+            Route::get('/bounty/reports', [SuperPortalController::class, 'bountyReports'])->name('bounty.reports');
+            Route::patch('/bounty/reports/{bountyReport}', [SuperPortalController::class, 'bountyReportStatus'])->name('bounty.reports.status');
+            Route::get('/bounty/programs', [SuperPortalController::class, 'bountyPrograms'])->name('bounty.programs');
+            Route::post('/bounty/programs', [SuperPortalController::class, 'storeBountyProgram'])->name('bounty.programs.store');
+            Route::patch('/bounty/programs/{bountyProgram}', [SuperPortalController::class, 'updateBountyProgram'])->name('bounty.programs.update');
+            Route::get('/bounty/categories', [SuperPortalController::class, 'bountyCategories'])->name('bounty.categories');
+            Route::post('/bounty/categories', [SuperPortalController::class, 'storeBountyCategory'])->name('bounty.categories.store');
+        });
+
+        Route::middleware('platform:support')->group(function () {
+            Route::get('/support/contacts', [SuperPortalController::class, 'contacts'])->name('support.contacts');
+            Route::patch('/support/contacts/{contactSubmission}', [SuperPortalController::class, 'updateContactStatus'])->name('support.contacts.status');
+            Route::get('/support/bookings', [SuperPortalController::class, 'bookings'])->name('support.bookings');
+            Route::patch('/support/bookings/{contactBooking}', [SuperPortalController::class, 'updateBookingStatus'])->name('support.bookings.status');
+        });
     });
 
     // Company admin — organization credentials & user management
@@ -194,12 +274,67 @@ Route::prefix('')->middleware(['auth'])->group(function () {
         Route::get('/credentials', [OrganizationAdminController::class, 'credentials'])->name('credentials');
         Route::post('/credentials/generate', [OrganizationAdminController::class, 'generateCredentials'])->name('credentials.generate');
         Route::delete('/credentials', [OrganizationAdminController::class, 'revokeCredentials'])->name('credentials.revoke');
+        Route::post('/credentials/service-keys', [OrganizationAdminController::class, 'generateServiceKey'])->name('credentials.service-keys.store');
+        Route::delete('/credentials/service-keys/{uuid}', [OrganizationAdminController::class, 'revokeServiceKey'])->name('credentials.service-keys.destroy');
         Route::get('/users', [OrganizationAdminController::class, 'users'])->name('users.index');
         Route::post('/users', [OrganizationAdminController::class, 'storeUser'])->name('users.store');
         Route::patch('/users/{user}', [OrganizationAdminController::class, 'updateUser'])->name('users.update');
         Route::patch('/users/{user}/role', [OrganizationAdminController::class, 'setUserRole'])->name('users.role');
         Route::patch('/users/{user}/status', [OrganizationAdminController::class, 'setUserStatus'])->name('users.status');
         Route::delete('/users/{user}/tokens', [OrganizationAdminController::class, 'revokeUserTokens'])->name('users.tokens.revoke');
+
+        // Company portal (socket-equivalent)
+        Route::get('/notifications', [CompanyPortalController::class, 'notifications'])->name('notifications');
+        Route::post('/notifications', [CompanyPortalController::class, 'storeNotification'])->name('notifications.store');
+        Route::get('/groups', [CompanyPortalController::class, 'groups'])->name('groups');
+        Route::post('/groups', [CompanyPortalController::class, 'storeGroup'])->name('groups.store');
+        Route::patch('/groups/{group}', [CompanyPortalController::class, 'updateGroup'])->name('groups.update');
+        Route::delete('/groups/{group}', [CompanyPortalController::class, 'destroyGroup'])->name('groups.destroy');
+        Route::post('/groups/{group}/members', [CompanyPortalController::class, 'addGroupMember'])->name('groups.members.store');
+        Route::delete('/groups/{group}/members/{user}', [CompanyPortalController::class, 'removeGroupMember'])->name('groups.members.destroy');
+
+        Route::get('/forms', [\App\Http\Controllers\Portal\EventFormController::class, 'index'])->name('forms');
+        Route::post('/forms', [\App\Http\Controllers\Portal\EventFormController::class, 'store'])->name('forms.store');
+        Route::patch('/forms/{form}', [\App\Http\Controllers\Portal\EventFormController::class, 'update'])->name('forms.update');
+        Route::delete('/forms/{form}', [\App\Http\Controllers\Portal\EventFormController::class, 'destroy'])->name('forms.destroy');
+        Route::get('/forms/{form}/applications', [\App\Http\Controllers\Portal\EventFormController::class, 'applications'])->name('forms.applications');
+        Route::post('/forms/{form}/applications/mail', [\App\Http\Controllers\Portal\EventFormController::class, 'mailApplicants'])->name('forms.applications.mail');
+        Route::get('/forms/{form}/attendance', [\App\Http\Controllers\Portal\EventFormController::class, 'attendance'])->name('forms.attendance');
+        Route::post('/forms/{form}/attendance/mark', [\App\Http\Controllers\Portal\EventFormController::class, 'markAttendance'])->name('forms.attendance.mark');
+        Route::get('/forms/{form}/certificates', [\App\Http\Controllers\Portal\EventFormController::class, 'certificates'])->name('forms.certificates');
+        Route::post('/forms/{form}/certificates', [\App\Http\Controllers\Portal\EventFormController::class, 'storeCertificate'])->name('forms.certificates.store');
+        Route::patch('/forms/{form}/certificates/{certificate}', [\App\Http\Controllers\Portal\EventFormController::class, 'updateCertificate'])->name('forms.certificates.update');
+        Route::delete('/forms/{form}/certificates/{certificate}', [\App\Http\Controllers\Portal\EventFormController::class, 'destroyCertificate'])->name('forms.certificates.destroy');
+        Route::get('/forms/{form}/certificates/{certificate}/applicants', [\App\Http\Controllers\Portal\EventFormController::class, 'certificateApplicants'])->name('forms.certificates.applicants');
+        Route::post('/forms/{form}/certificates/{certificate}/collect', [\App\Http\Controllers\Portal\EventFormController::class, 'toggleCertificateCollect'])->name('forms.certificates.collect');
+        Route::post('/forms/{form}/certificates/{certificate}/mail', [\App\Http\Controllers\Portal\EventFormController::class, 'mailCertificates'])->name('forms.certificates.mail');
+        Route::get('/forms/{form}/souvenirs', [\App\Http\Controllers\Portal\EventFormController::class, 'souvenirs'])->name('forms.souvenirs');
+        Route::post('/forms/{form}/souvenirs', [\App\Http\Controllers\Portal\EventFormController::class, 'storeSouvenir'])->name('forms.souvenirs.store');
+        Route::patch('/forms/{form}/souvenirs/{souvenir}', [\App\Http\Controllers\Portal\EventFormController::class, 'updateSouvenir'])->name('forms.souvenirs.update');
+        Route::delete('/forms/{form}/souvenirs/{souvenir}', [\App\Http\Controllers\Portal\EventFormController::class, 'destroySouvenir'])->name('forms.souvenirs.destroy');
+        Route::get('/forms/{form}/souvenirs/{souvenir}/applicants', [\App\Http\Controllers\Portal\EventFormController::class, 'souvenirApplicants'])->name('forms.souvenirs.applicants');
+        Route::post('/forms/{form}/souvenirs/{souvenir}/collect', [\App\Http\Controllers\Portal\EventFormController::class, 'toggleSouvenirCollect'])->name('forms.souvenirs.collect');
+
+        Route::get('/files', [CompanyPortalController::class, 'files'])->name('files');
+        Route::get('/meetings', [CompanyPortalController::class, 'meetings'])->name('meetings');
+        Route::get('/profile', [CompanyPortalController::class, 'profile'])->name('profile');
+        Route::patch('/profile', [CompanyPortalController::class, 'updateProfile'])->name('profile.update');
+    });
+
+    // Client / user portal (socket-equivalent workspace)
+    Route::middleware(['auth'])->prefix('app')->name('app.')->group(function () {
+        Route::get('/contacts', [UserPortalController::class, 'contacts'])->name('contacts');
+        Route::post('/contacts/{userId}', [UserPortalController::class, 'addContact'])->name('contacts.store');
+        Route::delete('/contacts/{id}', [UserPortalController::class, 'removeContact'])->name('contacts.destroy');
+        Route::get('/files', [UserPortalController::class, 'files'])->name('files');
+        Route::get('/groups', [UserPortalController::class, 'groups'])->name('groups');
+        Route::post('/groups/{id}/accept', [UserPortalController::class, 'acceptGroup'])->name('groups.accept');
+        Route::post('/groups/{id}/decline', [UserPortalController::class, 'declineGroup'])->name('groups.decline');
+        Route::get('/profile', [UserPortalController::class, 'profile'])->name('profile');
+        Route::patch('/profile', [UserPortalController::class, 'updateProfile'])->name('profile.update');
+        Route::get('/chat', [UserPortalController::class, 'chat'])->name('chat');
+        Route::post('/chat', [UserPortalController::class, 'sendChat'])->name('chat.send');
+        Route::get('/walkie', [UserPortalController::class, 'walkie'])->name('walkie');
     });
 
     // Route::get('/services/translator', [ServiceController::class, 'translator'])->name('translator');

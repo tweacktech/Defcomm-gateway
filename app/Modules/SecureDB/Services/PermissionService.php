@@ -15,7 +15,7 @@ class PermissionService
             abort(403, 'Authentication required.');
         }
 
-        if ($user->role === 'admin') {
+        if ($user->isSuperAdmin() && $user->canAccessPlatform('secure_db')) {
             return;
         }
 
@@ -44,7 +44,7 @@ class PermissionService
             return [];
         }
 
-        if ($user->role === 'admin') {
+        if ($user->isSuperAdmin() && $user->canAccessPlatform('secure_db')) {
             return \App\Modules\SecureDB\Enums\SecureDbPermission::all();
         }
 

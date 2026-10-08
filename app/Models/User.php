@@ -3,7 +3,9 @@
 namespace App\Models;
 
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
+use App\Enums\SuperPlatformRole;
 use App\Enums\UserRole;
+use App\Enums\UserStatus;
 use App\Models\Subscription;
 use App\Models\UserPlan;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -36,8 +38,15 @@ class User extends Authenticatable
         'password',
         'status',
         'organization_id',
+        'platform_role',
         'plan_id',
         'subscription_active',
+        'phone',
+        'fcm_token',
+        'device_token',
+        'device_type',
+        'is_online',
+        'last_heartbeat_at',
     ];
 
     /**
@@ -79,7 +88,32 @@ class User extends Authenticatable
 
     public function userRole(): UserRole
     {
-        return UserRole::tryFrom($this->role) ?? UserRole::Client;
+        return UserRole::tryFrom($this->role) ?? UserRole::User;
+    }
+
+    public function platformRole(): ?SuperPlatformRole
+    {
+        if (! $this->isSuperAdmin()) {
+            return null;
+        }
+
+        return SuperPlatformRole::tryFrom((string) $this->platform_role)
+            ?? SuperPlatformRole::GeneralAdmin;
+    }
+
+    public function canAccessPlatform(string $area): bool
+    {
+        if (! $this->isSuperAdmin()) {
+            return false;
+        }
+
+        return $this->platformRole()?->canAccess($area) ?? false;
+    }
+
+    public function isGeneralAdmin(): bool
+    {
+        return $this->isSuperAdmin()
+            && $this->platformRole() === SuperPlatformRole::GeneralAdmin;
     }
 
     public function isSuperAdmin(): bool
@@ -92,6 +126,11 @@ class User extends Authenticatable
         return $this->userRole()->isCompanyAdmin();
     }
 
+    public function isAdmin(): bool
+    {
+        return $this->isCompanyAdmin();
+    }
+
     public function isAtLeastCompanyAdmin(): bool
     {
         return $this->userRole()->isAtLeastCompanyAdmin();
@@ -99,7 +138,16 @@ class User extends Authenticatable
 
     public function roleLabel(): string
     {
+        if ($this->isSuperAdmin() && $this->platformRole()) {
+            return 'Super · '.$this->platformRole()->label();
+        }
+
         return $this->userRole()->label();
+    }
+
+    public function isActive(): bool
+    {
+        return $this->status === UserStatus::Active->value;
     }
 
     public function plan(): BelongsTo
@@ -138,8 +186,8 @@ class User extends Authenticatable
     public function rolePermissions(): array
     {
         return match ($this->role) {
-            UserRole::SuperAdmin->value => ['manage_system', 'manage_users', 'manage_organizations', 'view_reports'],
-            UserRole::CompanyAdmin->value => ['manage_organization_users', 'manage_organization_settings', 'view_organization_reports'],
+            UserRole::Super->value => ['manage_system', 'manage_users', 'manage_organizations', 'view_reports'],
+            UserRole::Admin->value => ['manage_organization_users', 'manage_organization_settings', 'view_organization_reports'],
             default => [],
         };
     }

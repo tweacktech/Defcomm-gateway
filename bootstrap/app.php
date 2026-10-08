@@ -3,6 +3,8 @@
 use App\Http\Middleware\ApiTokenAuth;
 use App\Http\Middleware\ClientCredentialsMiddleware;
 use App\Http\Middleware\EnsureCompanyAdmin;
+use App\Http\Middleware\EnsureServiceKey;
+use App\Http\Middleware\EnsurePlatformAccess;
 use App\Http\Middleware\EnsureSuperAdmin;
 use App\Http\Middleware\HandleAppearance;
 use App\Http\Middleware\HandleInertiaRequests;
@@ -36,8 +38,10 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->alias([
             'api.token' => ApiTokenAuth::class,
             'service.auth' => ServiceAuthMiddleware::class,
+            'service.key' => EnsureServiceKey::class,
             'client.credentials' => ClientCredentialsMiddleware::class,
             'super.admin' => EnsureSuperAdmin::class,
+            'platform' => EnsurePlatformAccess::class,
             'company.admin' => EnsureCompanyAdmin::class,
         ]);
     })

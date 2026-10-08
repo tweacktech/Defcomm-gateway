@@ -101,7 +101,7 @@ export default function AdminOrganizationShow() {
                                     </div>
                                     <div className="flex items-center gap-3 text-xs">
                                         <span className="flex items-center gap-1 capitalize">
-                                            {user.role === 'company_admin' ? <ShieldCheck className="h-3 w-3" /> : <UserCog className="h-3 w-3" />}
+                                            {user.role === 'admin' ? <ShieldCheck className="h-3 w-3" /> : <UserCog className="h-3 w-3" />}
                                             {user.role_label}
                                         </span>
                                         <span className="capitalize text-muted-foreground">{user.status}</span>

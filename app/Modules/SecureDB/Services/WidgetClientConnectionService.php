@@ -49,6 +49,10 @@ class WidgetClientConnectionService
 
         $this->storeSessionConnection($sessionToken, $connection->id);
 
+        $metadata = $widget->metadata ?? [];
+        $metadata['last_connection_id'] = $connection->id;
+        $widget->update(['metadata' => $metadata]);
+
         return [
             'connection_id' => $connection->id,
             'host' => $connection->host,
@@ -82,6 +86,23 @@ class WidgetClientConnectionService
             'database_type' => $connection->database_type,
             'health_status' => $connection->health_status,
         ];
+    }
+
+    public function latestForWidget(SecureDbWidget $widget): ?SecureDbConnection
+    {
+        $lastId = $widget->metadata['last_connection_id'] ?? $widget->connection_id;
+        if ($lastId) {
+            $connection = SecureDbConnection::find($lastId);
+            if ($connection) {
+                return $connection;
+            }
+        }
+
+        return SecureDbConnection::query()
+            ->where('project_id', $widget->project_id)
+            ->where('connection_metadata->widget_id', $widget->uuid)
+            ->latest()
+            ->first();
     }
 
     public function resolve(string $sessionToken): ?SecureDbConnection

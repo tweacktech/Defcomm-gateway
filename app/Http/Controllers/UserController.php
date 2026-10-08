@@ -2,7 +2,11 @@
 
 namespace App\Http\Controllers;
 
+use App\Enums\UserRole;
+use App\Enums\UserStatus;
+use App\Models\Organization;
 use App\Models\User;
+use App\Services\UserInviteService;
 use App\Traits\LogsActivity;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -15,14 +19,14 @@ class UserController extends Controller
 {
     use LogsActivity;
 
-    private const STATUSES = ['active', 'inactive', 'suspended'];
+    private const STATUSES = ['pending', 'active', 'block'];
 
-    private const ROLES = ['admin', 'company_admin', 'client'];
+    private const ROLES = ['user', 'admin', 'super'];
 
     // ── Pages ─────────────────────────────────────────────────────────────────
 
     /**
-     * GET /admin/users
+     * GET /admin/users — super admin only; lists every user.
      */
     public function index(Request $request): Response
     {
@@ -50,7 +54,68 @@ class UserController extends Controller
             'status' => $status,
             'role' => $role,
             'summary' => $this->userSummary(),
+            'organizations' => Organization::query()->orderBy('name')->get(['id', 'name']),
+            'can_invite_super' => $request->user()->isGeneralAdmin(),
         ]);
+    }
+
+    /**
+     * POST /admin/users/invite
+     */
+    public function invite(Request $request): RedirectResponse
+    {
+        $this->requireAdmin($request);
+
+        $validated = $request->validate([
+            'name' => ['nullable', 'string', 'max:255'],
+            'email' => ['required', 'email', 'max:255'],
+            'role' => ['required', Rule::in(self::ROLES)],
+            'platform_role' => [
+                Rule::requiredIf(fn () => $request->input('role') === 'super'),
+                'nullable',
+                Rule::in(['general_admin', 'billing', 'support', 'developer']),
+            ],
+            'organization_id' => [
+                Rule::requiredIf(fn () => $request->input('role') !== 'super'),
+                'nullable',
+                'integer',
+                'exists:organizations,id',
+            ],
+        ]);
+
+        if ($validated['role'] === 'super' && ! $request->user()->isGeneralAdmin()) {
+            return redirect()->back()->withErrors(['role' => 'Only general admins can invite super accounts.']);
+        }
+
+        $organization = null;
+        if ($validated['role'] !== 'super') {
+            $organization = Organization::query()->findOrFail($validated['organization_id']);
+        }
+
+        try {
+            app(UserInviteService::class)->invite(
+                $organization,
+                $validated['email'],
+                $validated['role'],
+                $request->user(),
+                $validated['name'] ?? null,
+                $validated['platform_role'] ?? null,
+            );
+        } catch (\Throwable $e) {
+            report($e);
+
+            return redirect()->back()->withErrors([
+                'email' => $e->getMessage() ?: 'Failed to send invitation.',
+            ]);
+        }
+
+        $this->log('invited', "Invited {$validated['email']} as {$validated['role']}".(
+            $validated['role'] === 'super' ? " ({$validated['platform_role']})" : ''
+        ), 'auth');
+
+        return redirect()->back()->with('success', $validated['role'] === 'super'
+            ? "Invitation sent to {$validated['email']} as Super · ".str_replace('_', ' ', $validated['platform_role']).'.'
+            : "Invitation sent to {$validated['email']}.");
     }
 
     // ── Mutations ─────────────────────────────────────────────────────────────
@@ -88,7 +153,7 @@ class UserController extends Controller
 
     /**
      * PATCH /admin/users/{user}/role
-     * Set role: admin (super admin) | company_admin | client.
+     * Set role: super | admin | user.
      */
     public function setRole(Request $request, User $user): RedirectResponse
     {
@@ -103,10 +168,21 @@ class UserController extends Controller
 
         $validated = $request->validate([
             'role' => ['required', Rule::in(self::ROLES)],
+            'platform_role' => ['nullable', Rule::in(['general_admin', 'billing', 'support', 'developer'])],
         ]);
 
+        if ($validated['role'] === 'super' && ! $request->user()->isGeneralAdmin()) {
+            return redirect()->back()->withErrors(['role' => 'Only general admins can assign super roles.']);
+        }
+
         $old = $user->role;
-        $user->update(['role' => $validated['role']]);
+        $payload = [
+            'role' => $validated['role'],
+            'platform_role' => $validated['role'] === 'super'
+                ? ($validated['platform_role'] ?? 'general_admin')
+                : null,
+        ];
+        $user->update($payload);
 
         $this->log(
             'role_changed',
@@ -154,7 +230,7 @@ class UserController extends Controller
 
     /**
      * PATCH /admin/users/{user}/status
-     * Set status: active | inactive | suspended.
+     * Set status: pending | active | block.
      */
     public function setStatus(Request $request, User $user): RedirectResponse
     {
@@ -266,6 +342,7 @@ class UserController extends Controller
             'email' => $user->email,
             'role' => $user->role,
             'role_label' => $user->roleLabel(),
+            'platform_role' => $user->platform_role,
             'status' => $user->status,
             'token_count' => (int) ($user->tokens_count ?? $user->tokens()->count()),
             'created_at' => $user->created_at->toIso8601String(),
@@ -279,13 +356,12 @@ class UserController extends Controller
     {
         return [
             'total' => User::count(),
-            'active' => User::where('status', 'active')->count(),
-            'inactive' => User::where('status', 'inactive')->count(),
-            'suspended' => User::where('status', 'suspended')->count(),
-            'admins' => User::whereIn('role', ['admin', 'company_admin'])->count(),
-            'super_admins' => User::where('role', 'admin')->count(),
-            'company_admins' => User::where('role', 'company_admin')->count(),
-            'clients' => User::where('role', 'client')->count(),
+            'active' => User::where('status', UserStatus::Active->value)->count(),
+            'pending' => User::where('status', UserStatus::Pending->value)->count(),
+            'block' => User::where('status', UserStatus::Block->value)->count(),
+            'supers' => User::where('role', UserRole::Super->value)->count(),
+            'admins' => User::where('role', UserRole::Admin->value)->count(),
+            'users' => User::where('role', UserRole::User->value)->count(),
             'new_this_week' => User::where('created_at', '>=', now()->subWeek())->count(),
         ];
     }

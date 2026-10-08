@@ -1,7 +1,7 @@
 import { Head, Link, usePage } from '@inertiajs/react';
 import {
     Package, ArrowUpRight, CheckCircle2,
-    ShoppingCart, Clock, Settings, Sparkles,
+    ShoppingCart, Clock, Settings, Sparkles, Users,
 } from 'lucide-react';
 import AppLayout from '@/layouts/app-layout';
 import { ActivityFeed, type ActivityEntry } from '@/components/activity-feed';
@@ -19,10 +19,20 @@ interface Service {
     created_at: string;
 }
 
+interface OrgSummary {
+    total_users: number;
+    active_users: number;
+    pending_users: number;
+    admins: number;
+    users: number;
+}
+
 interface PageProps extends Record<string, unknown> {
     services: Service[];
     activity_logs: ActivityEntry[];
-    auth: { user: { name: string } };
+    organization?: { id: number; name: string } | null;
+    org_summary?: OrgSummary | null;
+    auth: { user: { name: string; is_company_admin?: boolean } };
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -34,9 +44,10 @@ const breadcrumbs: BreadcrumbItem[] = [{ title: 'Dashboard', href: '/dashboard' 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function Dashboard() {
-    const { services, activity_logs, auth } = usePage<PageProps>().props;
+    const { services, activity_logs, auth, organization, org_summary } = usePage<PageProps>().props;
 
     const activeServices = services.filter(s => s.is_active);
+    const isCompanyAdmin = Boolean(organization && org_summary);
 
     return (
         <AppLayout breadcrumbs={breadcrumbs}>
@@ -56,16 +67,41 @@ export default function Dashboard() {
                                     Welcome back, {auth.user.name}
                                 </h1>
                                 <p className="text-sm text-muted-foreground">
-                                    Explore our services and manage your account below. Make sure you generate your access credentials before 
+                                    {isCompanyAdmin
+                                        ? `Managing ${organization?.name} — users and activity are scoped to your organization.`
+                                        : 'Explore our services and manage your account below. Make sure you generate your access credentials before'}
                                 </p>
                             </div>
                         </div>
-                        <Link href="/orders/create"
-                            className="flex shrink-0 items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition hover:opacity-90">
-                            <ShoppingCart className="h-4 w-4" />New Order
-                        </Link>
+                        {isCompanyAdmin ? (
+                            <Link href="/company/users"
+                                className="flex shrink-0 items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition hover:opacity-90">
+                                <Users className="h-4 w-4" />Company Users
+                            </Link>
+                        ) : (
+                            <Link href="/orders/create"
+                                className="flex shrink-0 items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition hover:opacity-90">
+                                <ShoppingCart className="h-4 w-4" />New Order
+                            </Link>
+                        )}
                     </div>
                 </div>
+
+                {isCompanyAdmin && org_summary && (
+                    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                        {[
+                            { label: 'Org users', value: org_summary.total_users },
+                            { label: 'Active', value: org_summary.active_users },
+                            { label: 'Pending', value: org_summary.pending_users },
+                            { label: 'Admins', value: org_summary.admins },
+                        ].map((stat) => (
+                            <div key={stat.label} className="rounded-xl border border-sidebar-border/70 bg-card p-5">
+                                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{stat.label}</p>
+                                <p className="mt-2 text-2xl font-bold">{stat.value}</p>
+                            </div>
+                        ))}
+                    </div>
+                )}
 
                 {/* ── Services + quick links ──────────────────────────────── */}
                 <div className="grid gap-6 lg:grid-cols-3">
@@ -151,11 +187,18 @@ export default function Dashboard() {
                                 </div>
                             </div>
                             <div className="space-y-1 p-4">
-                                {[
-                                    { icon: ShoppingCart, label: 'My Orders',     href: '/orders' },
-                                    { icon: Clock,        label: 'Order History', href: '/orders/history' },
-                                    { icon: Settings,     label: 'My Account',    href: '/settings/profile' },
-                                ].map(({ icon: Icon, label, href }) => (
+                                {(isCompanyAdmin
+                                    ? [
+                                        { icon: Users, label: 'Company Users', href: '/company/users' },
+                                        { icon: Settings, label: 'Credentials', href: '/company/credentials' },
+                                        { icon: Clock, label: 'Notifications', href: '/company/notifications' },
+                                    ]
+                                    : [
+                                        { icon: ShoppingCart, label: 'My Orders', href: '/orders' },
+                                        { icon: Clock, label: 'Order History', href: '/orders/history' },
+                                        { icon: Settings, label: 'My Account', href: '/settings/profile' },
+                                    ]
+                                ).map(({ icon: Icon, label, href }) => (
                                     <Link key={label} href={href}
                                         className="flex items-center gap-3 rounded-lg p-2.5 transition hover:bg-accent/50">
                                         <div className="rounded-md bg-primary/10 p-2">
@@ -194,12 +237,12 @@ export default function Dashboard() {
                     </div>
                 </div>
 
-                {/* ── Personal activity log ───────────────────────────────── */}
+                {/* ── Activity log ────────────────────────────────────────── */}
                 <ActivityFeed
                     logs={activity_logs}
-                    showCauser={false}
-                    title="My Recent Activity"
-                    limit={10}
+                    showCauser={isCompanyAdmin}
+                    title={isCompanyAdmin ? 'Organization Activity' : 'My Recent Activity'}
+                    limit={isCompanyAdmin ? 15 : 10}
                 />
 
             </div>

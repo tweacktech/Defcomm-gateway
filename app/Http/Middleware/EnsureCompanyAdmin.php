@@ -16,6 +16,11 @@ class EnsureCompanyAdmin
             abort(403, 'Company admin access required.');
         }
 
+        // Company admins must be tied to an organization.
+        if ($user->isCompanyAdmin() && ! $user->isSuperAdmin() && ! $user->organization_id) {
+            abort(422, 'You are not assigned to an organization.');
+        }
+
         return $next($request);
     }
 }

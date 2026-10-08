@@ -22,6 +22,28 @@ class FileSharesController extends Controller
     }
 
     /**
+     * Resolve acting user from Sanctum auth (preferred) or legacy user_id param.
+     */
+    private function resolveUser(Request $request, bool $requireUserId = false): User
+    {
+        if ($request->user()) {
+            if ($request->filled('user_id') && (int) $request->input('user_id') !== (int) $request->user()->id) {
+                abort(403, 'user_id does not match authenticated user.');
+            }
+
+            return $request->user();
+        }
+
+        $validated = $request->validate([
+            'user_id' => ($requireUserId ? 'required' : 'nullable').'|integer|exists:users,id',
+        ]);
+
+        abort_unless(! empty($validated['user_id']), 401, 'Authentication required.');
+
+        return $this->getUserOrFail((int) $validated['user_id']);
+    }
+
+    /**
      * Validate user exists and return user instance
      */
     private function getUserOrFail(int $userId): User
@@ -39,14 +61,8 @@ class FileSharesController extends Controller
      */
     public function index(Request $request): JsonResponse
     {
-        $validated = $request->validate([
-            'user_id' => 'required|integer|exists:users,id',
-            'page' => 'nullable|integer|min:1',
-            'per_page' => 'nullable|integer|min:1|max:100',
-        ]);
-
-        $user = $this->getUserOrFail($validated['user_id']);
-        $perPage = $validated['per_page'] ?? 15;
+        $user = $this->resolveUser($request, true);
+        $perPage = min(100, max(1, (int) $request->input('per_page', 15)));
 
         $files = File::where('user_id', $user->id)
             ->orWhereHas('sharedWith', function ($query) use ($user) {
@@ -78,15 +94,15 @@ class FileSharesController extends Controller
      */
     public function store(Request $request): JsonResponse
     {
+        $user = $this->resolveUser($request, true);
         $validated = $request->validate([
-            'user_id' => 'required|integer|exists:users,id',
+            'user_id' => 'nullable|integer|exists:users,id',
             'file' => 'required|file|max:104857600', // 100MB max
             'name' => 'required|string|max:255',
             'description' => 'nullable|string|max:1000',
             'visibility' => 'required|in:private,shared,public',
         ]);
 
-        $user = $this->getUserOrFail($validated['user_id']);
         $uploadedFile = $request->file('file');
 
         try {

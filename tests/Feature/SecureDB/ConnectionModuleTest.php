@@ -34,14 +34,14 @@ class ConnectionModuleTest extends TestCase
     #[Test]
     public function admin_can_view_connections_page(): void
     {
-        $admin = User::factory()->create(['role' => 'admin']);
+        $admin = User::factory()->create(['role' => 'super']);
         $this->actingAs($admin)->get('/admin/secure-db/connections')->assertOk();
     }
 
     #[Test]
     public function admin_can_create_connection_with_encrypted_credentials(): void
     {
-        $admin = User::factory()->create(['role' => 'admin']);
+        $admin = User::factory()->create(['role' => 'super']);
         $project = $this->makeProject($admin);
 
         Queue::fake();
@@ -69,7 +69,7 @@ class ConnectionModuleTest extends TestCase
     #[Test]
     public function connection_test_returns_json_details(): void
     {
-        $admin = User::factory()->create(['role' => 'admin']);
+        $admin = User::factory()->create(['role' => 'super']);
         $connection = $this->makeConnection($this->makeProject($admin));
 
         $this->mockExplorerTest(true, ping: 12.5, version: '8.0.36');
@@ -85,7 +85,7 @@ class ConnectionModuleTest extends TestCase
     #[Test]
     public function failed_connection_does_not_expose_password(): void
     {
-        $admin = User::factory()->create(['role' => 'admin']);
+        $admin = User::factory()->create(['role' => 'super']);
         $connection = $this->makeConnection($this->makeProject($admin));
 
         $this->mockExplorerTest(false, message: 'Access denied for user root using password secret123');
@@ -100,8 +100,8 @@ class ConnectionModuleTest extends TestCase
     #[Test]
     public function non_admin_cannot_access_explorer(): void
     {
-        $user = User::factory()->create(['role' => 'client']);
-        $connection = $this->makeConnection($this->makeProject(User::factory()->create(['role' => 'admin'])));
+        $user = User::factory()->create(['role' => 'user']);
+        $connection = $this->makeConnection($this->makeProject(User::factory()->create(['role' => 'super'])));
 
         $this->actingAs($user)
             ->get("/admin/secure-db/connections/{$connection->uuid}/explorer")
@@ -111,7 +111,7 @@ class ConnectionModuleTest extends TestCase
     #[Test]
     public function admin_can_queue_connection_encryption(): void
     {
-        $admin = User::factory()->create(['role' => 'admin']);
+        $admin = User::factory()->create(['role' => 'super']);
         $connection = $this->makeConnection($this->makeProject($admin));
         $connection->update(['health_status' => 'healthy']);
 
